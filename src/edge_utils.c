@@ -2503,6 +2503,7 @@ void process_pdu (struct n3n_runtime_data *eee,
     uint32_t header_enc = 0;
     uint64_t stamp = 0;
     int skip_add = 0;
+    int retval = 0;            /* return code from deocde calls */
 
     /* REVISIT: when UDP/IPv6 is supported we will need a flag to indicate which
      * IP transport version the packet arrived on. May need to UDP sockets. */
@@ -2561,7 +2562,8 @@ void process_pdu (struct n3n_runtime_data *eee,
 
     rem = udp_size; /* Counts down bytes of packet to protect against buffer overruns. */
     idx = 0; /* marches through packet header as parts are decoded. */
-    if(decode_common(&cmn, udp_buf, &rem, &idx) < 0) {
+    retval = decode_common(&cmn, udp_buf, &rem, &idx);
+    if(retval < 0) {
         if(via_multicast) {
             // from some other edge on local network, possibly header encrypted
             traceEvent(TRACE_DEBUG, "dropped packet arriving via multicast due to error while decoding N2N_UDP");
@@ -2569,6 +2571,12 @@ void process_pdu (struct n3n_runtime_data *eee,
             traceEvent(TRACE_INFO, "failed to decode common section in N2N_UDP");
         }
         return; /* failed to decode packet */
+    }
+    // length check: only check retval here (underrun scene)
+    // rem (overrun scenario) can be better checked for each packet type seperately
+    if(retval != N2N_COMMON_SIZE) {
+        traceEvent(TRACE_INFO, "common section in N2N_UDP too short");
+        return;
     }
 
     msg_type = cmn.pc; /* packet code */
@@ -2620,7 +2628,17 @@ void process_pdu (struct n3n_runtime_data *eee,
             /* process PACKET - most frequent so first in list. */
             n2n_PACKET_t pkt;
 
-            decode_PACKET(&pkt, &cmn, udp_buf, &rem, &idx);
+            retval = decode_PACKET(&pkt, &cmn, udp_buf, &rem, &idx);
+
+            // length check: only check retval here for healthy values, no structural check
+            // TODO: this can also be checked against the flags (has socket and type of socket)
+            // rem is not checked because any amount following is packet data
+            if((retval != N2N_PACKET_SIZE)
+            && (retval != N2N_PACKET_SIZE + N2N_SOCK_V4_SIZE)
+            && (retval != N2N_PACKET_SIZE + N2N_SOCK_V6_SIZE)) {
+                traceEvent(TRACE_INFO, "packet section in N2N_UDP too short and of wrong size");
+                return;
+            }
 
             if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED) {
                 if(!find_peer_time_stamp_and_verify(

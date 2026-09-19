@@ -244,11 +244,11 @@ int decode_common (n2n_common_t * out,
                    size_t * idx) {
 
     size_t idx0 = *idx;
-    uint8_t dummy = 0;
+    uint8_t version = 0;
 
-    decode_uint8(&dummy, base, rem, idx);
+    decode_uint8(&version, base, rem, idx);
 
-    if(N2N_PKT_VERSION != dummy) {
+    if(N2N_PKT_VERSION != version) {
         return -1;
     }
 

@@ -46,6 +46,11 @@ int encode_common (uint8_t * base,
                    size_t * idx,
                    const n2n_common_t * common);
 
+#define N2N_COMMON_SIZE ( sizeof(uint8_t)    /* version   */ \
+                        + sizeof(uint8_t)    /* ttl       */ \
+                        + sizeof(uint16_t)   /* flags     */ \
+                        + N2N_COMMUNITY_SIZE /* community */ )
+
 int decode_common (n2n_common_t * out,
                    const uint8_t * base,
                    size_t * rem,
@@ -142,6 +147,18 @@ int encode_PACKET (uint8_t * base,
                    size_t * idx,
                    const n2n_common_t * common,
                    const n2n_PACKET_t * pkt);
+
+#define N2N_PACKET_SIZE ( N2N_MAC_SIZE    /* src mac     */ \
+                        + N2N_MAC_SIZE    /* dst mac     */ \
+                        + sizeof(uint8_t) /* compression */ \
+                        + sizeof(uint8_t) /* transfrom   */ )
+
+#define N2N_SOCK_V4_SIZE ( sizeof(uint16_t) /* flags   */ \
+                         + sizeof(uint16_t) /* port    */ \
+                         + IPV4_SIZE        /* address */ )
+
+#define N2N_SOCK_V6_SIZE ( N2N_SOCK_V4_SIZE        /* V4 size              */ \
+                         + (IPV6_SIZE - IPV4_SIZE) /* type size difference */ )
 
 int decode_PACKET (n2n_PACKET_t * pkt,
                    const n2n_common_t * cmn, /* info on how to interpret it */
