@@ -306,7 +306,7 @@ static int decode_sock (n3n_sock_t * sock,
                         size_t * rem,
                         size_t * idx) {
 
-    size_t * idx0 = idx;
+    size_t idx0 = *idx;
     uint16_t f = 0;
 
     decode_uint16(&f, base, rem, idx);
@@ -331,7 +331,7 @@ static int decode_sock (n3n_sock_t * sock,
         sock->type = SOCK_DGRAM;
     }
 
-    return (idx - idx0);
+    return (*idx - idx0);
 }
 
 
