@@ -2694,7 +2694,19 @@ void process_pdu (struct n3n_runtime_data *eee,
             /* Another edge is registering with us */
             n2n_REGISTER_t reg;
 
-            decode_REGISTER(&reg, &cmn, udp_buf, &rem, &idx);
+            retval = decode_REGISTER(&reg, &cmn, udp_buf, &rem, &idx);
+
+            // pdu length check
+            if((retval != N2N_REGISTER_SIZE)
+            && (retval != N2N_REGISTER_SIZE + N2N_SOCK_V4_SIZE)
+            && (retval != N2N_REGISTER_SIZE + N2N_SOCK_V6_SIZE)) {
+                traceEvent(TRACE_INFO, "register section in N2N_UDP of wrong size");
+                return;
+            }
+            if(rem != 0) {
+                traceEvent(TRACE_INFO, "register section in N2N_UDP too long");
+                return;
+            }
 
             via_multicast &= is_null_mac(reg.dstMac);
 

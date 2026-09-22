@@ -74,6 +74,20 @@ int encode_REGISTER (uint8_t * base,
                      const n2n_common_t * common,
                      const n2n_REGISTER_t * reg);
 
+#define N2N_SOCK_V4_SIZE ( sizeof(uint16_t) /* flags   */ \
+                         + sizeof(uint16_t) /* port    */ \
+                         + IPV4_SIZE        /* address */ )
+
+#define N2N_SOCK_V6_SIZE ( N2N_SOCK_V4_SIZE        /* V4 size              */ \
+                         + (IPV6_SIZE - IPV4_SIZE) /* type size difference */ )
+
+#define N2N_REGISTER_SIZE ( sizeof(uint32_t) /* cookie      */ \
+                          + N2N_MAC_SIZE     /* dst mac     */ \
+                          + N2N_MAC_SIZE     /* src mac     */ \
+                          + sizeof(uint32_t) /* net addr    */ \
+                          + sizeof(uint32_t) /* net bitlen  */ \
+                          + N2N_DESC_SIZE    /* dev desc    */ )
+
 int decode_REGISTER (n2n_REGISTER_t * pkt,
                      const n2n_common_t * cmn, /* info on how to interpret it */
                      const uint8_t * base,
@@ -152,13 +166,6 @@ int encode_PACKET (uint8_t * base,
                         + N2N_MAC_SIZE    /* dst mac     */ \
                         + sizeof(uint8_t) /* compression */ \
                         + sizeof(uint8_t) /* transfrom   */ )
-
-#define N2N_SOCK_V4_SIZE ( sizeof(uint16_t) /* flags   */ \
-                         + sizeof(uint16_t) /* port    */ \
-                         + IPV4_SIZE        /* address */ )
-
-#define N2N_SOCK_V6_SIZE ( N2N_SOCK_V4_SIZE        /* V4 size              */ \
-                         + (IPV6_SIZE - IPV4_SIZE) /* type size difference */ )
 
 int decode_PACKET (n2n_PACKET_t * pkt,
                    const n2n_common_t * cmn, /* info on how to interpret it */
