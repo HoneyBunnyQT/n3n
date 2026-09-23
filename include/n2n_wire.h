@@ -85,7 +85,7 @@ int encode_REGISTER (uint8_t * base,
                           + N2N_MAC_SIZE     /* dst mac     */ \
                           + N2N_MAC_SIZE     /* src mac     */ \
                           + sizeof(uint32_t) /* net addr    */ \
-                          + sizeof(uint32_t) /* net bitlen  */ \
+                          + sizeof(uint8_t)  /* net bitlen  */ \
                           + N2N_DESC_SIZE    /* dev desc    */ )
 
 int decode_REGISTER (n2n_REGISTER_t * pkt,
@@ -120,6 +120,10 @@ int encode_REGISTER_ACK (uint8_t * base,
                          size_t * idx,
                          const n2n_common_t * common,
                          const n2n_REGISTER_ACK_t * reg);
+
+#define N2N_REGISTER_ACK_SIZE ( sizeof(uint32_t) /* cookie      */ \
+                              + N2N_MAC_SIZE     /* dst mac     */ \
+                              + N2N_MAC_SIZE     /* src mac     */ )
 
 int decode_REGISTER_ACK (n2n_REGISTER_ACK_t * pkt,
                          const n2n_common_t * cmn, /* info on how to interpret it */

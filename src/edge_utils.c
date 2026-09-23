@@ -2700,7 +2700,7 @@ void process_pdu (struct n3n_runtime_data *eee,
             if((retval != N2N_REGISTER_SIZE)
             && (retval != N2N_REGISTER_SIZE + N2N_SOCK_V4_SIZE)
             && (retval != N2N_REGISTER_SIZE + N2N_SOCK_V6_SIZE)) {
-                traceEvent(TRACE_INFO, "register section in N2N_UDP of wrong size");
+                traceEvent(TRACE_INFO, "register section in N2N_UDP too short and of wrong size");
                 return;
             }
             if(rem != 0) {
@@ -2765,7 +2765,19 @@ void process_pdu (struct n3n_runtime_data *eee,
             /* Peer edge is acknowledging our register request */
             n2n_REGISTER_ACK_t ra;
 
-            decode_REGISTER_ACK(&ra, &cmn, udp_buf, &rem, &idx);
+            retval = decode_REGISTER_ACK(&ra, &cmn, udp_buf, &rem, &idx);
+
+             // pdu length check
+            if((retval != N2N_REGISTER_ACK_SIZE)
+            && (retval != N2N_REGISTER_ACK_SIZE + N2N_SOCK_V4_SIZE)
+            && (retval != N2N_REGISTER_ACK_SIZE + N2N_SOCK_V6_SIZE)) {
+                traceEvent(TRACE_INFO, "register ack section in N2N_UDP too short and of wrong size");
+                return;
+            }
+            if(rem != 0) {
+                traceEvent(TRACE_INFO, "register ack section in N2N_UDP too long");
+                return;
+            }
 
             if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED) {
                 if(!find_peer_time_stamp_and_verify(
