@@ -137,6 +137,16 @@ int encode_REGISTER_SUPER_ACK (uint8_t * base,
                                const n2n_REGISTER_SUPER_ACK_t * reg,
                                uint8_t * tmpbuf);
 
+#define N2N_REGISTER_SUPER_ACK_SIZE ( sizeof(uint32_t) /* cookie      */ \
+                                    + N2N_MAC_SIZE     /* src mac     */ \
+                                    + sizeof(uint32_t) /* net addr    */ \
+                                    + sizeof(uint8_t)  /* net bitlen  */ \
+                                    + sizeof(uint16_t) /* life time   */ \
+                                    + sizeof(uint16_t) /* auth scheme */ \
+                                    + sizeof(uint16_t) /* token size  */ \
+                                    + sizeof(uint8_t)  /* num sn      */ \
+                                    + sizeof(uint32_t) /* key time    */ )
+
 int decode_REGISTER_SUPER_ACK (n2n_REGISTER_SUPER_ACK_t * reg,
                                const n2n_common_t * cmn, /* info on how to interpret it */
                                const uint8_t * base,

@@ -2767,7 +2767,7 @@ void process_pdu (struct n3n_runtime_data *eee,
 
             retval = decode_REGISTER_ACK(&ra, &cmn, udp_buf, &rem, &idx);
 
-             // pdu length check
+            // pdu length check
             if((retval != N2N_REGISTER_ACK_SIZE)
             && (retval != N2N_REGISTER_ACK_SIZE + N2N_SOCK_V4_SIZE)
             && (retval != N2N_REGISTER_ACK_SIZE + N2N_SOCK_V6_SIZE)) {
@@ -2819,7 +2819,25 @@ void process_pdu (struct n3n_runtime_data *eee,
                 return;
             }
 
-            decode_REGISTER_SUPER_ACK(&ra, &cmn, udp_buf, &rem, &idx, tmpbuf);
+            retval = decode_REGISTER_SUPER_ACK(&ra, &cmn, udp_buf, &rem, &idx, tmpbuf);
+
+            // errors from decode for auth token or payload
+            if(retval < 0) {
+                traceEvent(TRACE_INFO, "register super ack section in N2N_UDP has payload issue");
+                return;
+            }
+
+            // pdu length check
+            if((retval != N2N_REGISTER_SUPER_ACK_SIZE + N2N_SOCK_V4_SIZE + ra.auth.token_size + ra.num_sn *REG_SUPER_ACK_PAYLOAD_ENTRY_SIZE )
+            && (retval != N2N_REGISTER_SUPER_ACK_SIZE + N2N_SOCK_V6_SIZE + ra.auth.token_size + ra.num_sn *REG_SUPER_ACK_PAYLOAD_ENTRY_SIZE )) {
+                traceEvent(TRACE_INFO, "register super ack section in N2N_UDP too short and of wrong size");
+                return;
+            }
+            if(((eee->conf.shared_secret) && (rem != N2N_REG_SUP_HASH_CHECK_LEN))
+            ||((!eee->conf.shared_secret) && (rem != 0))) {
+                traceEvent(TRACE_INFO, "register super ack section in N2N_UDP of wrong size");
+                return;
+            }
 
             if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED) {
                 if(!find_peer_time_stamp_and_verify(
