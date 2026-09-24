@@ -159,6 +159,11 @@ int encode_REGISTER_SUPER_NAK (uint8_t * base,
                                const n2n_common_t * cmn,
                                const n2n_REGISTER_SUPER_NAK_t * nak);
 
+#define N2N_REGISTER_SUPER_NAK_SIZE ( sizeof(uint32_t) /* cookie      */ \
+                                    + N2N_MAC_SIZE     /* src mac     */ \
+                                    + sizeof(uint16_t) /* auth scheme */ \
+                                    + sizeof(uint16_t) /* token size  */ )
+
 int decode_REGISTER_SUPER_NAK (n2n_REGISTER_SUPER_NAK_t * nak,
                                const n2n_common_t * cmn, /* info on how to interpret it */
                                const uint8_t * base,
@@ -191,6 +196,13 @@ int encode_PEER_INFO (uint8_t * base,
                       size_t * idx,
                       const n2n_common_t * common,
                       const n2n_PEER_INFO_t * pkt);
+
+#define N2N_PEER_INFO_SIZE ( sizeof(uint16_t)      /* flags      */ \
+                           + N2N_MAC_SIZE          /* src mac    */ \
+                           + N2N_MAC_SIZE          /* mac        */ \
+                           + sizeof(uint32_t)      /* load       */ \
+                           + sizeof(uint32_t)      /* uptime     */ \
+                           + sizeof(n2n_version_t) /* version    */ )
 
 int decode_PEER_INFO (n2n_PEER_INFO_t * pkt,
                       const n2n_common_t * cmn, /* info on how to interpret it */
