@@ -2634,8 +2634,8 @@ void process_pdu (struct n3n_runtime_data *eee,
             // TODO: this can also be checked against the flags (has socket and type of socket)
             // rem is not checked because any amount following is packet data
             if((retval != N2N_PACKET_SIZE)
-            && (retval != N2N_PACKET_SIZE + N2N_SOCK_V4_SIZE)
-            && (retval != N2N_PACKET_SIZE + N2N_SOCK_V6_SIZE)) {
+               && (retval != N2N_PACKET_SIZE + N2N_SOCK_V4_SIZE)
+               && (retval != N2N_PACKET_SIZE + N2N_SOCK_V6_SIZE)) {
                 traceEvent(TRACE_INFO, "packet section in N2N_UDP too short and of wrong size");
                 return;
             }
@@ -2698,8 +2698,8 @@ void process_pdu (struct n3n_runtime_data *eee,
 
             // pdu length check
             if((retval != N2N_REGISTER_SIZE)
-            && (retval != N2N_REGISTER_SIZE + N2N_SOCK_V4_SIZE)
-            && (retval != N2N_REGISTER_SIZE + N2N_SOCK_V6_SIZE)) {
+               && (retval != N2N_REGISTER_SIZE + N2N_SOCK_V4_SIZE)
+               && (retval != N2N_REGISTER_SIZE + N2N_SOCK_V6_SIZE)) {
                 traceEvent(TRACE_INFO, "register section in N2N_UDP too short and of wrong size");
                 return;
             }
@@ -2769,8 +2769,8 @@ void process_pdu (struct n3n_runtime_data *eee,
 
             // pdu length check
             if((retval != N2N_REGISTER_ACK_SIZE)
-            && (retval != N2N_REGISTER_ACK_SIZE + N2N_SOCK_V4_SIZE)
-            && (retval != N2N_REGISTER_ACK_SIZE + N2N_SOCK_V6_SIZE)) {
+               && (retval != N2N_REGISTER_ACK_SIZE + N2N_SOCK_V4_SIZE)
+               && (retval != N2N_REGISTER_ACK_SIZE + N2N_SOCK_V6_SIZE)) {
                 traceEvent(TRACE_INFO, "register ack section in N2N_UDP too short and of wrong size");
                 return;
             }
@@ -2827,12 +2827,12 @@ void process_pdu (struct n3n_runtime_data *eee,
                 return;
             }
             if((retval != N2N_REGISTER_SUPER_ACK_SIZE + N2N_SOCK_V4_SIZE + ra.auth.token_size + ra.num_sn *REG_SUPER_ACK_PAYLOAD_ENTRY_SIZE )
-            && (retval != N2N_REGISTER_SUPER_ACK_SIZE + N2N_SOCK_V6_SIZE + ra.auth.token_size + ra.num_sn *REG_SUPER_ACK_PAYLOAD_ENTRY_SIZE )) {
+               && (retval != N2N_REGISTER_SUPER_ACK_SIZE + N2N_SOCK_V6_SIZE + ra.auth.token_size + ra.num_sn *REG_SUPER_ACK_PAYLOAD_ENTRY_SIZE )) {
                 traceEvent(TRACE_INFO, "register super ack section in N2N_UDP too short and of wrong size");
                 return;
             }
             if(((eee->conf.shared_secret) && (rem != N2N_REG_SUP_HASH_CHECK_LEN))
-            ||((!eee->conf.shared_secret) && (rem != 0))) {
+               ||((!eee->conf.shared_secret) && (rem != 0))) {
                 traceEvent(TRACE_INFO, "register super ack section in N2N_UDP of wrong size");
                 return;
             }
@@ -2968,7 +2968,7 @@ void process_pdu (struct n3n_runtime_data *eee,
             }
             // tricky, the hash is not consumed or used here but can be present anyway see sn_utils.c when encode_REGISTER_SUPER_NAK is called
             if(((eee->conf.shared_secret) && (rem != N2N_REG_SUP_HASH_CHECK_LEN))
-            ||((!eee->conf.shared_secret) && (rem != 0))) {
+               ||((!eee->conf.shared_secret) && (rem != 0))) {
                 traceEvent(TRACE_INFO, "register super nak section in N2N_UDP of wrong size");
                 return;
             }
@@ -3036,11 +3036,11 @@ void process_pdu (struct n3n_runtime_data *eee,
             // pdu length check
             // tricky, at least one socket, one extra socket optional
             if((retval != N2N_PEER_INFO_SIZE + N2N_SOCK_V4_SIZE)
-            && (retval != N2N_PEER_INFO_SIZE + N2N_SOCK_V6_SIZE)
-            && (retval != N2N_PEER_INFO_SIZE + N2N_SOCK_V4_SIZE + N2N_SOCK_V4_SIZE)
-            && (retval != N2N_PEER_INFO_SIZE + N2N_SOCK_V4_SIZE + N2N_SOCK_V6_SIZE)
-         /* && (retval != N2N_PEER_INFO_SIZE + N2N_SOCK_V6_SIZE + N2N_SOCK_V4_SIZE) like line before */
-            && (retval != N2N_PEER_INFO_SIZE + N2N_SOCK_V6_SIZE + N2N_SOCK_V6_SIZE)) {
+               && (retval != N2N_PEER_INFO_SIZE + N2N_SOCK_V6_SIZE)
+               && (retval != N2N_PEER_INFO_SIZE + N2N_SOCK_V4_SIZE + N2N_SOCK_V4_SIZE)
+               && (retval != N2N_PEER_INFO_SIZE + N2N_SOCK_V4_SIZE + N2N_SOCK_V6_SIZE)
+               /* && (retval != N2N_PEER_INFO_SIZE + N2N_SOCK_V6_SIZE + N2N_SOCK_V4_SIZE) like line before */
+               && (retval != N2N_PEER_INFO_SIZE + N2N_SOCK_V6_SIZE + N2N_SOCK_V6_SIZE)) {
                 traceEvent(TRACE_INFO, "peer info section in N2N_UDP too short and of wrong size");
                 return;
             }
@@ -3123,9 +3123,9 @@ void process_pdu (struct n3n_runtime_data *eee,
 
         case MSG_TYPE_RE_REGISTER_SUPER: {
 
-           // pdu length check
-           // common header is everything, no payload
-           if(rem != 0) {
+            // pdu length check
+            // common header is everything, no payload
+            if(rem != 0) {
                 traceEvent(TRACE_INFO, "re register super section in N2N_UDP too long");
                 return;
             }

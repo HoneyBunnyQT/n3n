@@ -46,10 +46,10 @@ int encode_common (uint8_t * base,
                    size_t * idx,
                    const n2n_common_t * common);
 
-#define N2N_COMMON_SIZE ( sizeof(uint8_t)    /* version   */ \
-                        + sizeof(uint8_t)    /* ttl       */ \
-                        + sizeof(uint16_t)   /* flags     */ \
-                        + N2N_COMMUNITY_SIZE /* community */ )
+#define N2N_COMMON_SIZE ( sizeof(uint8_t)      /* version   */ \
+                          + sizeof(uint8_t)    /* ttl       */ \
+                          + sizeof(uint16_t)   /* flags     */ \
+                          + N2N_COMMUNITY_SIZE /* community */ )
 
 int decode_common (n2n_common_t * out,
                    const uint8_t * base,
@@ -74,19 +74,19 @@ int encode_REGISTER (uint8_t * base,
                      const n2n_common_t * common,
                      const n2n_REGISTER_t * reg);
 
-#define N2N_SOCK_V4_SIZE ( sizeof(uint16_t) /* flags   */ \
-                         + sizeof(uint16_t) /* port    */ \
-                         + IPV4_SIZE        /* address */ )
+#define N2N_SOCK_V4_SIZE ( sizeof(uint16_t)   /* flags   */ \
+                           + sizeof(uint16_t) /* port    */ \
+                           + IPV4_SIZE /*        address */ )
 
-#define N2N_SOCK_V6_SIZE ( N2N_SOCK_V4_SIZE        /* V4 size              */ \
-                         + (IPV6_SIZE - IPV4_SIZE) /* type size difference */ )
+#define N2N_SOCK_V6_SIZE ( N2N_SOCK_V4_SIZE          /* V4 size              */ \
+                           + (IPV6_SIZE - IPV4_SIZE) /* type size difference */ )
 
-#define N2N_REGISTER_SIZE ( sizeof(uint32_t) /* cookie      */ \
-                          + N2N_MAC_SIZE     /* dst mac     */ \
-                          + N2N_MAC_SIZE     /* src mac     */ \
-                          + sizeof(uint32_t) /* net addr    */ \
-                          + sizeof(uint8_t)  /* net bitlen  */ \
-                          + N2N_DESC_SIZE    /* dev desc    */ )
+#define N2N_REGISTER_SIZE ( sizeof(uint32_t)   /* cookie     */ \
+                            + N2N_MAC_SIZE     /* dst mac    */ \
+                            + N2N_MAC_SIZE     /* src mac    */ \
+                            + sizeof(uint32_t) /* net addr   */ \
+                            + sizeof(uint8_t)  /* net bitlen */ \
+                            + N2N_DESC_SIZE /*    dev desc   */ )
 
 int decode_REGISTER (n2n_REGISTER_t * pkt,
                      const n2n_common_t * cmn, /* info on how to interpret it */
@@ -121,9 +121,9 @@ int encode_REGISTER_ACK (uint8_t * base,
                          const n2n_common_t * common,
                          const n2n_REGISTER_ACK_t * reg);
 
-#define N2N_REGISTER_ACK_SIZE ( sizeof(uint32_t) /* cookie      */ \
-                              + N2N_MAC_SIZE     /* dst mac     */ \
-                              + N2N_MAC_SIZE     /* src mac     */ )
+#define N2N_REGISTER_ACK_SIZE ( sizeof(uint32_t) /* cookie  */ \
+                                + N2N_MAC_SIZE   /* dst mac */ \
+                                + N2N_MAC_SIZE /*   src mac */ )
 
 int decode_REGISTER_ACK (n2n_REGISTER_ACK_t * pkt,
                          const n2n_common_t * cmn, /* info on how to interpret it */
@@ -137,15 +137,15 @@ int encode_REGISTER_SUPER_ACK (uint8_t * base,
                                const n2n_REGISTER_SUPER_ACK_t * reg,
                                uint8_t * tmpbuf);
 
-#define N2N_REGISTER_SUPER_ACK_SIZE ( sizeof(uint32_t) /* cookie      */ \
-                                    + N2N_MAC_SIZE     /* src mac     */ \
-                                    + sizeof(uint32_t) /* net addr    */ \
-                                    + sizeof(uint8_t)  /* net bitlen  */ \
-                                    + sizeof(uint16_t) /* life time   */ \
-                                    + sizeof(uint16_t) /* auth scheme */ \
-                                    + sizeof(uint16_t) /* token size  */ \
-                                    + sizeof(uint8_t)  /* num sn      */ \
-                                    + sizeof(uint32_t) /* key time    */ )
+#define N2N_REGISTER_SUPER_ACK_SIZE ( sizeof(uint32_t) /* cookie        */ \
+                                      + N2N_MAC_SIZE     /* src mac     */ \
+                                      + sizeof(uint32_t) /* net addr    */ \
+                                      + sizeof(uint8_t)  /* net bitlen  */ \
+                                      + sizeof(uint16_t) /* life time   */ \
+                                      + sizeof(uint16_t) /* auth scheme */ \
+                                      + sizeof(uint16_t) /* token size  */ \
+                                      + sizeof(uint8_t)  /* num sn      */ \
+                                      + sizeof(uint32_t) /* key time    */ )
 
 int decode_REGISTER_SUPER_ACK (n2n_REGISTER_SUPER_ACK_t * reg,
                                const n2n_common_t * cmn, /* info on how to interpret it */
@@ -159,10 +159,10 @@ int encode_REGISTER_SUPER_NAK (uint8_t * base,
                                const n2n_common_t * cmn,
                                const n2n_REGISTER_SUPER_NAK_t * nak);
 
-#define N2N_REGISTER_SUPER_NAK_SIZE ( sizeof(uint32_t) /* cookie      */ \
-                                    + N2N_MAC_SIZE     /* src mac     */ \
-                                    + sizeof(uint16_t) /* auth scheme */ \
-                                    + sizeof(uint16_t) /* token size  */ )
+#define N2N_REGISTER_SUPER_NAK_SIZE ( sizeof(uint32_t)   /* cookie      */ \
+                                      + N2N_MAC_SIZE     /* src mac     */ \
+                                      + sizeof(uint16_t) /* auth scheme */ \
+                                      + sizeof(uint16_t) /* token size  */ )
 
 int decode_REGISTER_SUPER_NAK (n2n_REGISTER_SUPER_NAK_t * nak,
                                const n2n_common_t * cmn, /* info on how to interpret it */
@@ -181,10 +181,10 @@ int encode_PACKET (uint8_t * base,
                    const n2n_common_t * common,
                    const n2n_PACKET_t * pkt);
 
-#define N2N_PACKET_SIZE ( N2N_MAC_SIZE    /* src mac     */ \
-                        + N2N_MAC_SIZE    /* dst mac     */ \
-                        + sizeof(uint8_t) /* compression */ \
-                        + sizeof(uint8_t) /* transfrom   */ )
+#define N2N_PACKET_SIZE ( N2N_MAC_SIZE      /* src mac     */ \
+                          + N2N_MAC_SIZE    /* dst mac     */ \
+                          + sizeof(uint8_t) /* compression */ \
+                          + sizeof(uint8_t) /* transfrom   */ )
 
 int decode_PACKET (n2n_PACKET_t * pkt,
                    const n2n_common_t * cmn, /* info on how to interpret it */
@@ -197,12 +197,12 @@ int encode_PEER_INFO (uint8_t * base,
                       const n2n_common_t * common,
                       const n2n_PEER_INFO_t * pkt);
 
-#define N2N_PEER_INFO_SIZE ( sizeof(uint16_t)      /* flags      */ \
-                           + N2N_MAC_SIZE          /* src mac    */ \
-                           + N2N_MAC_SIZE          /* mac        */ \
-                           + sizeof(uint32_t)      /* load       */ \
-                           + sizeof(uint32_t)      /* uptime     */ \
-                           + sizeof(n2n_version_t) /* version    */ )
+#define N2N_PEER_INFO_SIZE ( sizeof(uint16_t)        /* flags      */ \
+                             + N2N_MAC_SIZE          /* src mac    */ \
+                             + N2N_MAC_SIZE          /* mac        */ \
+                             + sizeof(uint32_t)      /* load       */ \
+                             + sizeof(uint32_t)      /* uptime     */ \
+                             + sizeof(n2n_version_t) /* version    */ )
 
 int decode_PEER_INFO (n2n_PEER_INFO_t * pkt,
                       const n2n_common_t * cmn, /* info on how to interpret it */
