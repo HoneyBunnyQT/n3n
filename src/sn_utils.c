@@ -1829,6 +1829,8 @@ static int process_pdu (struct n3n_runtime_data * sss,
         traceEvent(TRACE_ERROR, "failed to decode common section");
         return -1; /* failed to decode packet */
     }
+    // the includes the length check for underrun scenario
+    // rem can better be checked for each special message type
 
     msg_type = cmn.pc; /* packet code */
 
@@ -1883,7 +1885,11 @@ static int process_pdu (struct n3n_runtime_data * sss,
             }
 
             sss->last_sn_fwd = now;
-            decode_PACKET(&pkt, &cmn, udp_buf, &rem, &idx);
+            if(decode_PACKET(&pkt, &cmn, udp_buf, &rem, &idx) < 0) {
+                traceEvent(TRACE_ERROR, "failed to decode PACKET section");
+                return -1; /* failed to decode packet */
+            }
+            // no sense to check rem because any data can follow
 
             // already checked for valid comm
             if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
@@ -1972,7 +1978,15 @@ static int process_pdu (struct n3n_runtime_data * sss,
             }
 
             sss->last_sn_fwd = now;
-            decode_REGISTER(&reg, &cmn, udp_buf, &rem, &idx);
+
+            if(decode_REGISTER(&reg, &cmn, udp_buf, &rem, &idx) < 0) {
+                traceEvent(TRACE_ERROR, "failed to decode REGISTER section");
+                return -1; /* failed to decode register */
+            }
+            if(rem != 0) {
+                traceEvent(TRACE_ERROR, "REGISTER section too long");
+                return -1; /* failed to decode register */
+            }
 
             // already checked for valid comm
             if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
@@ -2064,7 +2078,12 @@ static int process_pdu (struct n3n_runtime_data * sss,
             /* Edge/supernode requesting registration with us.    */
             sss->last_sn_reg=now;
             ++(sss->stats.sn_reg);
-            decode_REGISTER_SUPER(&reg, &cmn, udp_buf, &rem, &idx);
+
+            if(decode_REGISTER_SUPER(&reg, &cmn, udp_buf, &rem, &idx) < 0) {
+                traceEvent(TRACE_ERROR, "failed to decode REGISTER_SUPER section");
+                return -1; /* failed to decode register super */
+            }
+            // do rem check later after all the following security checks
 
             if(comm) {
                 if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
@@ -2131,6 +2150,14 @@ static int process_pdu (struct n3n_runtime_data * sss,
                 traceEvent(TRACE_INFO, "discarded registration with unallowed community '%s'",
                            (char*)cmn.community);
                 return -1;
+            }
+
+            // pdu lengh check delayed after the security checks
+            // tricky, there can be a hash which is not officially consumed
+            if(((comm->allowed_users) && (rem != N2N_REG_SUP_HASH_CHECK_LEN))
+               ||((!comm->allowed_users) && (rem != 0))) {
+                traceEvent(TRACE_ERROR, "REGISTER_SUPER section too long");
+                return -1; /* failed to decode register super */
             }
 
             // hash check (user/pw auth only)
@@ -2368,7 +2395,14 @@ static int process_pdu (struct n3n_runtime_data * sss,
                 return -1;
             }
 
-            decode_UNREGISTER_SUPER(&unreg, &cmn, udp_buf, &rem, &idx);
+            if(decode_UNREGISTER_SUPER(&unreg, &cmn, udp_buf, &rem, &idx) < 0) {
+                traceEvent(TRACE_ERROR, "failed to decode UNREGISTER_SUPER section");
+                return -1; /* failed to decode unregister super */
+            }
+            if(rem != 0) {
+                traceEvent(TRACE_ERROR, "UNREGISTER_SUPER section too long");
+                return -1; /* failed to decode unregister super */
+            }
 
             if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
                 if(!find_peer_time_stamp_and_verify(
@@ -2423,7 +2457,17 @@ static int process_pdu (struct n3n_runtime_data * sss,
                 return -1;
             }
 
-            decode_REGISTER_SUPER_ACK(&ack, &cmn, udp_buf, &rem, &idx, dec_tmpbuf);
+            if(decode_REGISTER_SUPER_ACK(&ack, &cmn, udp_buf, &rem, &idx, dec_tmpbuf) < 0) {
+                traceEvent(TRACE_ERROR, "failed to decode REGISTER_SUPER_ACK section");
+                return -1; /* failed to decode register super ack */
+            }
+            // tricky, it can have a hash which is never consumed and not shown in code bellow
+            if(((comm->allowed_users) && (rem != N2N_REG_SUP_HASH_CHECK_LEN))
+               ||((!comm->allowed_users) && (rem != 0))) {
+                traceEvent(TRACE_ERROR, "REGISTER_SUPER_ACK section too long");
+                return -1; /* failed to decode register super ack*/
+            }
+
             orig_sender = &(ack.sock);
 
             if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
@@ -2518,7 +2562,11 @@ static int process_pdu (struct n3n_runtime_data * sss,
                 return -1;
             }
 
-            decode_REGISTER_SUPER_NAK(&nak, &cmn, udp_buf, &rem, &idx);
+            if(decode_REGISTER_SUPER_NAK(&nak, &cmn, udp_buf, &rem, &idx) < 0) {
+                traceEvent(TRACE_ERROR, "failed to decode REGISTER_SUPER_NAK section");
+                return -1; /* failed to decode register super nak */
+            }
+            // rem check delayed after we know if hash can be present
 
             if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
                 if(!find_peer_time_stamp_and_verify(
@@ -2538,6 +2586,13 @@ static int process_pdu (struct n3n_runtime_data * sss,
                        sock_to_cstr(sockbuf, &sender));
 
             HASH_FIND_PEER(comm->edges, nak.srcMac, peer);
+
+            if(((comm->allowed_users) && (rem != N2N_REG_SUP_HASH_CHECK_LEN))
+               ||((!comm->allowed_users) && (rem != 0))) {
+                traceEvent(TRACE_ERROR, "REGISTER_SUPER_NAK section too long");
+                return -1; /* failed to decode register super nak */
+            }
+
             if(comm->is_federation) {
                 if(peer != NULL) {
                     // this is a NAK for one of the edges conencted to this supernode, forward,
@@ -2606,7 +2661,14 @@ static int process_pdu (struct n3n_runtime_data * sss,
                 return -1;
             }
 
-            decode_QUERY_PEER( &query, &cmn, udp_buf, &rem, &idx );
+            if(decode_QUERY_PEER( &query, &cmn, udp_buf, &rem, &idx ) < 0) {
+                traceEvent(TRACE_ERROR, "failed to decode QUERY_PEER section");
+                return -1; /* failed to decode query peer */
+            }
+            if(rem != 0) {
+                traceEvent(TRACE_ERROR, "QUERY_PEER section too long");
+                return -1; /* failed to decode query peer */
+            }
 
             // to answer a PING, it is sufficient if the provided communtiy would be a valid one, there does not
             // neccessarily need to be a comm entry present, e.g. because there locally are no edges of the
@@ -2745,7 +2807,14 @@ static int process_pdu (struct n3n_runtime_data * sss,
                 return -1;
             }
 
-            decode_PEER_INFO(&pi, &cmn, udp_buf, &rem, &idx);
+            if(decode_PEER_INFO(&pi, &cmn, udp_buf, &rem, &idx) < 0) {
+                traceEvent(TRACE_ERROR, "failed to decode PEER INFO section");
+                return -1; /* failed to decode peer info */
+            }
+            if(rem != 0) {
+                traceEvent(TRACE_ERROR, "PEER INFO section too long");
+                return -1; /* failed to decode peer info */
+            }
 
             if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
                 if(!find_peer_time_stamp_and_verify(
