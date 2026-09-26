@@ -143,7 +143,7 @@ static int decode_uint64 (uint64_t * out,
                           size_t * idx) {
 
     if(*rem >= 8) {
-        *out  = be64toh(*(uint64_t*)base + *idx);
+        *out  = be64toh(*(uint64_t*)(base + *idx));
         *idx += 8;
         *rem -= 8;
     }
@@ -366,7 +366,7 @@ int decode_sock_payload (n3n_sock_t * sock,
     int retval = 0;
     uint8_t port_low = 0;
     uint8_t port_high = 0;
-    uint8_t dummy;
+    uint8_t dummy = 0;
 
     memset(sock, 0, sizeof(*sock));
     retval += decode_uint8(&(sock->family), base, rem, idx);
@@ -415,6 +415,7 @@ int decode_REGISTER (n2n_REGISTER_t *reg,
 
     size_t idx0 = *idx;
     int retval = 0;
+    int retsock = 0;
 
     memset(reg, 0, sizeof(n2n_REGISTER_t));
 
@@ -422,7 +423,12 @@ int decode_REGISTER (n2n_REGISTER_t *reg,
     retval += decode_mac(reg->srcMac, base, rem, idx);
     retval += decode_mac(reg->dstMac, base, rem, idx);
     if(cmn->flags & N2N_FLAGS_SOCKET) {
-        retval += decode_sock(&(reg->sock), base, rem, idx);
+        // decode_sock can return -1 which can mess up the hole sum
+        retsock = decode_sock(&(reg->sock), base, rem, idx);
+        if(retsock < 0) {
+            return -1;
+        }
+        retval += retsock;
     }
     retval += decode_uint32(&(reg->dev_addr.net_addr), base, rem, idx);
     retval += decode_uint8(&(reg->dev_addr.net_bitlen), base, rem, idx);
@@ -469,13 +475,19 @@ int decode_REGISTER_SUPER (n2n_REGISTER_SUPER_t *reg,
 
     size_t idx0 = *idx;
     int retval = 0;
+    int retsock = 0;
 
     memset(reg, 0, sizeof(n2n_REGISTER_SUPER_t));
 
     retval += decode_cookie(&reg->cookie, base, rem, idx);
     retval += decode_mac(reg->edgeMac, base, rem, idx);
     if(cmn->flags & N2N_FLAGS_SOCKET) {
-        retval += decode_sock(&(reg->sock), base, rem, idx);
+        // decode_sock can return -1 which can mess up the hole sum
+        retsock = decode_sock(&(reg->sock), base, rem, idx);
+        if(retsock < 0) {
+            return -1;
+        }
+        retval += retsock;
     }
     retval += decode_uint32(&(reg->dev_addr.net_addr), base, rem, idx);
     retval += decode_uint8(&(reg->dev_addr.net_bitlen), base, rem, idx);
@@ -576,6 +588,7 @@ int decode_REGISTER_ACK (n2n_REGISTER_ACK_t *reg,
 
     size_t idx0 = *idx;
     int retval = 0;
+    int retsock = 0;
 
     memset(reg, 0, sizeof(n2n_REGISTER_ACK_t));
 
@@ -587,9 +600,13 @@ int decode_REGISTER_ACK (n2n_REGISTER_ACK_t *reg,
      * arrived. This is sent back to the sender so it knows what its public
      * socket is. */
     if(cmn->flags & N2N_FLAGS_SOCKET) {
-        retval += decode_sock(&(reg->sock), base, rem, idx);
+        // decode_sock can return -1 which can mess up the hole sum
+        retsock = decode_sock(&(reg->sock), base, rem, idx);
+        if(retsock < 0) {
+            return -1;
+        }
+        retval += retsock;
     }
-
     if((*idx - idx0) != retval) {
         return -1;
     } else {
@@ -637,6 +654,7 @@ int decode_REGISTER_SUPER_ACK (n2n_REGISTER_SUPER_ACK_t *reg,
 
     size_t idx0 = *idx;
     int retval = 0;
+    int retsock = 0;
 
     memset(reg, 0, sizeof(n2n_REGISTER_SUPER_ACK_t));
 
@@ -647,7 +665,12 @@ int decode_REGISTER_SUPER_ACK (n2n_REGISTER_SUPER_ACK_t *reg,
     retval += decode_uint16(&(reg->lifetime), base, rem, idx);
 
     /* Socket is mandatory in this message type */
-    retval += decode_sock(&(reg->sock), base, rem, idx);
+    // decode_sock can return -1 which can mess up the hole sum
+    retsock = decode_sock(&(reg->sock), base, rem, idx);
+    if(retsock < 0) {
+        return -1;
+    }
+    retval += retsock;
 
     retval += decode_uint16(&(reg->auth.scheme), base, rem, idx);
     retval += decode_uint16(&(reg->auth.token_size), base, rem, idx);
@@ -824,6 +847,7 @@ int decode_PACKET (n2n_PACKET_t * pkt,
 
     size_t idx0 = *idx;
     int retval = 0;
+    int retsock = 0;
 
     memset(pkt, 0, sizeof(n2n_PACKET_t));
 
@@ -831,7 +855,12 @@ int decode_PACKET (n2n_PACKET_t * pkt,
     retval += decode_mac(pkt->dstMac, base, rem, idx);
 
     if(cmn->flags & N2N_FLAGS_SOCKET) {
-        retval += decode_sock(&(pkt->sock), base, rem, idx);
+        // decode_sock can return -1 which can mess up the hole sum
+        retsock = decode_sock(&(pkt->sock), base, rem, idx);
+        if(retsock < 0) {
+            return -1;
+        }
+        retval += retsock;
     }
 
     retval += decode_uint8(&(pkt->compression), base, rem, idx);
@@ -876,15 +905,26 @@ int decode_PEER_INFO (n2n_PEER_INFO_t *pkt,
 
     size_t idx0 = *idx;
     int retval = 0;
+    int retsock = 0;
 
     memset(pkt, 0, sizeof(n2n_PEER_INFO_t));
 
     retval += decode_uint16(&(pkt->aflags), base, rem, idx);
     retval += decode_mac(pkt->srcMac, base, rem, idx);
     retval += decode_mac(pkt->mac, base, rem, idx);
-    retval += decode_sock(&pkt->sock, base, rem, idx);
+    // decode_sock can return -1 which can mess up the hole sum
+    retsock = decode_sock(&(pkt->sock), base, rem, idx);
+    if(retsock < 0) {
+        return -1;
+    }
+    retval += retsock;
     if(cmn->flags & N2N_FLAGS_SOCKET) {
-        retval += decode_sock(&pkt->preferred_sock, base, rem, idx);
+        // decode_sock can return -1 which can mess up the hole sum
+        retsock = decode_sock(&(pkt->preferred_sock), base, rem, idx);
+        if(retsock < 0) {
+            return -1;
+        }
+        retval += retsock;
     }
     retval += decode_uint32(&pkt->load, base, rem, idx);
     retval += decode_uint32((uint32_t*)&pkt->uptime, base, rem, idx);
