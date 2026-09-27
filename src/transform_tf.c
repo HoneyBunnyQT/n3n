@@ -131,6 +131,95 @@ static int transop_encode_tf (n2n_trans_op_t *arg,
 }
 
 
+
+// how many payloads transop_encode_tf_multi() hands to tf_cbc_encrypt_multi()
+// in one call; a multiple of the three rails there, and what bounds the
+// assembly buffers on the stack (6 x 2 KB)
+#define TF_MULTI_CHUNK 6
+
+
+// the batched form of transop_encode_tf(): every job comes out exactly as
+// transop_encode_tf() would have made it - same checks, same random preamble,
+// same padding and block exchange - only the CBC encryption of the payloads
+// runs side by side, which it cannot do within one of them
+static void transop_encode_tf_multi (n2n_trans_op_t *arg,
+                                     n2n_transform_job_t *job,
+                                     int count) {
+
+    transop_tf_t *priv = (transop_tf_t *)arg->priv;
+
+    uint8_t assembly[TF_MULTI_CHUNK][N2N_PKT_BUF_SIZE];
+    const unsigned char *in[TF_MULTI_CHUNK];
+    unsigned char *out[TF_MULTI_CHUNK];
+    size_t padded_len[TF_MULTI_CHUNK];
+    n2n_transform_job_t *jobs[TF_MULTI_CHUNK];
+    uint8_t buf[TF_BLOCK_SIZE];
+    int i = 0;
+    int n, k;
+
+    while(i < count) {
+
+        // assemble up to TF_MULTI_CHUNK payloads; one that fails the checks
+        // gets the same 0 result transop_encode_tf() would give it
+        for(n = 0; (n < TF_MULTI_CHUNK) && (i < count); i++) {
+            n2n_transform_job_t *j = &job[i];
+            size_t idx = 0;
+
+            j->result = 0;
+
+            if(j->in_len > N2N_PKT_BUF_SIZE) {
+                traceEvent(TRACE_ERROR, "transop_encode_tf inbuf too big to encrypt");
+                continue;
+            }
+            if((j->in_len + TF_PREAMBLE_SIZE + TF_BLOCK_SIZE) > j->out_len) {
+                traceEvent(TRACE_ERROR, "transop_encode_tf outbuf too small");
+                continue;
+            }
+
+            traceEvent(TRACE_DEBUG, "transop_encode_tf %lu bytes plaintext", j->in_len);
+
+            // full block sized random value (128 bit)
+            *(uint64_t *)(&assembly[n][0]) = n3n_rand();
+            *(uint64_t *)(&assembly[n][8]) = n3n_rand();
+
+            // adjust for maybe differently chosen TF_PREAMBLE_SIZE
+            idx = TF_PREAMBLE_SIZE;
+
+            // the plaintext data
+            memcpy((assembly[n] + idx), j->in, j->in_len);
+            idx += j->in_len;
+
+            // round up to next whole TF block size, pad with zero
+            padded_len[n] = (((idx - 1) / TF_BLOCK_SIZE) + 1) * TF_BLOCK_SIZE;
+            memset(assembly[n] + idx, 0, TF_BLOCK_SIZE);
+
+            in[n] = assembly[n];
+            out[n] = j->out;
+            jobs[n] = j;
+            j->result = idx;
+            n++;
+        }
+
+        if(n == 0) {
+            continue;
+        }
+
+        tf_cbc_encrypt_multi(out, in, padded_len, tf_null_iv, priv->ctx, n);
+
+        for(k = 0; k < n; k++) {
+            if(padded_len[k] != (size_t)jobs[k]->result) {
+                // exchange last two cipher blocks
+                uint8_t *o = out[k];
+                size_t pl = padded_len[k];
+
+                memcpy(buf, o + pl - TF_BLOCK_SIZE, TF_BLOCK_SIZE);
+                memcpy(o + pl - TF_BLOCK_SIZE, o + pl - 2 * TF_BLOCK_SIZE, TF_BLOCK_SIZE);
+                memcpy(o + pl - 2 * TF_BLOCK_SIZE, buf, TF_BLOCK_SIZE);
+            }
+        }
+    }
+}
+
 // see transop_encode_tf for packet format
 static int transop_decode_tf (n2n_trans_op_t *arg,
                               uint8_t *outbuf,
@@ -227,6 +316,7 @@ int n2n_transop_tf_init (const n2n_edge_conf_t *conf, n2n_trans_op_t *ttt) {
 
     ttt->deinit       = transop_deinit_tf;
     ttt->fwd          = transop_encode_tf;
+    ttt->fwd_multi    = transop_encode_tf_multi;
     ttt->rev          = transop_decode_tf;
 
     priv = (transop_tf_t*)calloc(1, sizeof(transop_tf_t));
