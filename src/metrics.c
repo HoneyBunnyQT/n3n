@@ -140,6 +140,10 @@ void n3n_metrics_render (strbuf_t **reply) {
     for(module = registered_metrics; module; module = module->next) {
         sb_reprintf(reply, "## module=%s\n", module->name);
 
+        if(module->prepare) {
+            module->prepare(module);
+        }
+
         switch(module->type) {
             case n3n_metrics_type_invalid:
                 break;

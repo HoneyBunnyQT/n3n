@@ -10,11 +10,16 @@
 #include <string.h>
 
 #include "pktbuf.h"
+#include "counter.h"       // for COUNTER_INC, COUNTER_READ
+#include "thread_local.h"  // for N3N_THREAD_LOCAL
 
-static struct metrics {
+struct metrics {
     uint32_t alloc;     // n3n_pktbuf_alloc() is called
     uint32_t free;      // n3n_pktbuf_free() is called
-} metrics;
+};
+
+// The metrics page shows this: the counters of all pools added up
+static struct metrics metrics;
 
 static struct n3n_metrics_items_llu32 metrics_items = {
     .name = "count",
@@ -33,83 +38,162 @@ static struct n3n_metrics_items_llu32 metrics_items = {
     },
 };
 
+static void metrics_prepare (struct n3n_metrics_module *module);
+
 static struct n3n_metrics_module metrics_module_static = {
     .name = "pktbuf",
     .data = &metrics,
     .items_llu32 = &metrics_items,
     .type = n3n_metrics_type_llu32,
+    .prepare = metrics_prepare,
 };
 
-static void *pool_buf;
-static struct n3n_pktbuf *pool;
-static struct n3n_pktbuf *pool_item_next_search;
-static struct n3n_pktbuf *pool_item_max;
-static ssize_t pool_item_size;
-static int pool_item_count;
+// Every thread that handles packets has a pool of its own, so allocating and
+// freeing never touches anything another thread uses. A buffer must be freed
+// by the thread that allocated it.
+struct pktbuf_pool {
+    struct pktbuf_pool *next;   // the list of all pools, for the metrics
+    void *buf;
+    struct n3n_pktbuf *items;
+    struct n3n_pktbuf *item_next_search;
+    struct n3n_pktbuf *item_max;
+    ssize_t item_size;
+    int item_count;
+    struct metrics metrics;
+};
 
-void n3n_pktbuf_initialise (ssize_t mtu, int count) {
-    if(pool) {
-        if(metrics.alloc != metrics.free) {
-            // Simplify logic by not allowing the pool shape to change while
-            // there are any users
-            return;
-        }
-        free(pool);
-        free(pool_buf);
-    }
+// the calling thread's pool
+static N3N_THREAD_LOCAL struct pktbuf_pool *pool;
+
+// All pools ever created, newest first. Pools are only ever added, never
+// removed: a thread that finishes leaves its pool empty but listed, so that
+// its counts stay in the totals. That makes the list safe to walk from any
+// thread while others add to it.
+static struct pktbuf_pool *all_pools;
+
+// The shape every pool gets, set by n3n_pktbuf_initialise() before any other
+// thread is started
+static ssize_t shape_mtu;
+static int shape_count;
+
+static void pool_fill (struct pktbuf_pool *p, ssize_t mtu, int count) {
 
     // Round up to a multiple
     int item_size = (mtu + 2047) & ~0x7ff;
 
-    pool_buf = calloc(count, item_size);
-    if(!pool_buf) {
+    p->buf = calloc(count, item_size);
+    if(!p->buf) {
         abort();
     }
 
-    pool = calloc(count, sizeof(struct n3n_pktbuf));
+    p->items = calloc(count, sizeof(struct n3n_pktbuf));
+    if(!p->items) {
+        abort();
+    }
+
+    p->item_size = item_size;
+    p->item_count = count;
+    p->item_next_search = p->items;
+    p->item_max = &p->items[count - 1];
+
+    int i;
+    for(i=0; i < p->item_count; i++) {
+        p->items[i].buf = (uint8_t *)p->buf + i * item_size;
+        *(short *)&p->items[i].capacity = item_size;
+        p->items[i].owner = n3n_pktbuf_owner_none;
+        n3n_pktbuf_zero(&p->items[i]);
+    }
+}
+
+static void pool_empty (struct pktbuf_pool *p) {
+    free(p->items);
+    free(p->buf);
+    p->items = NULL;
+    p->buf = NULL;
+    p->item_size = 0;
+    p->item_count = 0;
+    p->item_next_search = NULL;
+    p->item_max = NULL;
+}
+
+// Give the calling thread a pool, if it has none yet and the shape is known
+void n3n_pktbuf_thread_init () {
+    if(pool || !shape_count) {
+        return;
+    }
+
+    pool = calloc(1, sizeof(*pool));
     if(!pool) {
         abort();
     }
+    pool_fill(pool, shape_mtu, shape_count);
 
-    pool_item_size = item_size;
-    pool_item_count = count;
-    pool_item_next_search = pool;
-    pool_item_max = &pool[count - 1];
-
-    int i;
-    for(i=0; i < pool_item_count; i++) {
-        pool[i].buf = pool_buf + i * item_size;
-        *(short *)&pool[i].capacity = item_size;
-        pool[i].owner = n3n_pktbuf_owner_none;
-        n3n_pktbuf_zero(&pool[i]);
-    }
+    // add it to the front of the list; another thread may be doing the same
+    struct pktbuf_pool *head = __atomic_load_n(&all_pools, __ATOMIC_RELAXED);
+    do {
+        pool->next = head;
+    } while(!__atomic_compare_exchange_n(&all_pools, &head, pool, 1,
+                                         __ATOMIC_RELEASE, __ATOMIC_RELAXED));
 }
 
+void n3n_pktbuf_initialise (ssize_t mtu, int count) {
+    if(pool) {
+        if(pool->metrics.alloc != pool->metrics.free) {
+            // Simplify logic by not allowing the pool shape to change while
+            // there are any users
+            return;
+        }
+        pool_empty(pool);
+        shape_mtu = mtu;
+        shape_count = count;
+        pool_fill(pool, mtu, count);
+        return;
+    }
+
+    shape_mtu = mtu;
+    shape_count = count;
+    n3n_pktbuf_thread_init();
+}
+
+// Release the calling thread's buffers. The pool itself stays listed with its
+// counts, and is filled again if the thread allocates once more.
 void n3n_pktbuf_deinitialise () {
-    free(pool);
-    free(pool_buf);
+    if(!pool) {
+        return;
+    }
+    pool_empty(pool);
 }
 
 struct n3n_pktbuf *n3n_pktbuf_alloc (ssize_t size) {
+    if(!pool) {
+        n3n_pktbuf_thread_init();
+        if(!pool) {
+            return NULL;
+        }
+    }
+    if(!pool->items && shape_count) {
+        pool_fill(pool, shape_mtu, shape_count);
+    }
+
     // We only have one pool, so we can use a simple check
-    if(size > pool_item_size) {
+    if(size > pool->item_size) {
         return NULL;
     }
 
-    struct n3n_pktbuf *p = pool_item_next_search;
-    int count = pool_item_count;
+    struct n3n_pktbuf *p = pool->item_next_search;
+    int count = pool->item_count;
 
     while(count) {
-        if(p > pool_item_max) {
-            p = pool;
+        if(p > pool->item_max) {
+            p = pool->items;
         }
 
         if(p->owner == n3n_pktbuf_owner_none) {
             p->owner = n3n_pktbuf_owner_alloc;
             n3n_pktbuf_zero(p);
 
-            pool_item_next_search = p + 1;
-            metrics.alloc++;
+            pool->item_next_search = p + 1;
+            COUNTER_INC(pool->metrics.alloc);
             return p;
         }
 
@@ -120,17 +204,33 @@ struct n3n_pktbuf *n3n_pktbuf_alloc (ssize_t size) {
 }
 
 void n3n_pktbuf_free (struct n3n_pktbuf *p) {
-    // Confirm we are within the pool boundaries
-    if(p < (struct n3n_pktbuf *)pool) {
+    if(!pool || !pool->items) {
         return;
     }
-    if(p > pool_item_max) {
+
+    // Confirm we are within the pool boundaries - of this thread's pool
+    if(p < pool->items) {
+        return;
+    }
+    if(p > pool->item_max) {
         return;
     }
 
     p->owner = n3n_pktbuf_owner_none;
-    pool_item_next_search = p;
-    metrics.free++;
+    pool->item_next_search = p;
+    COUNTER_INC(pool->metrics.free);
+}
+
+// add up the counters of all pools just before the metrics page shows them
+static void metrics_prepare (struct n3n_metrics_module *module) {
+    struct pktbuf_pool *p;
+
+    metrics.alloc = 0;
+    metrics.free = 0;
+    for(p = __atomic_load_n(&all_pools, __ATOMIC_ACQUIRE); p; p = p->next) {
+        metrics.alloc += COUNTER_READ(p->metrics.alloc);
+        metrics.free += COUNTER_READ(p->metrics.free);
+    }
 }
 
 void n3n_pktbuf_zero (struct n3n_pktbuf *p) {

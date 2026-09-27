@@ -28,7 +28,16 @@ struct n3n_pktbuf {
     enum n3n_pktbuf_owner owner;    // What process and data owns this
 };
 
+// Set the shape of the pools and give the calling thread its pool
 void n3n_pktbuf_initialise (ssize_t mtu, int count);
+
+// Give the calling thread a pool of the shape set by n3n_pktbuf_initialise().
+// Allocating does this on first use; a thread may call it when it starts, to
+// have the memory allocated before its first packet.
+void n3n_pktbuf_thread_init ();
+
+// Release the calling thread's buffers
+void n3n_pktbuf_deinitialise ();
 
 struct n3n_pktbuf *n3n_pktbuf_alloc(ssize_t);
 void n3n_pktbuf_free (struct n3n_pktbuf *);

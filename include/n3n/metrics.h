@@ -56,6 +56,9 @@ struct n3n_metrics_module {
         void (*cb)(strbuf_t **, const struct n3n_metrics_module *);
     };
     const enum n3n_metrics_items_type type;
+    // optional: called just before the module is rendered, for instance to
+    // add up counters that are kept in several places
+    void (*prepare)(struct n3n_metrics_module *);
 };
 
 // Register a block of metrics
