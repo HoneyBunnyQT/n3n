@@ -11,7 +11,7 @@
 #include <stdio.h>   // for snprinf
 #include <stdlib.h>  // for getenv
 #include <string.h>  // for strlen
-#include <time.h>    // for time_t
+#include <time.h>    // for time_t, localtime_r, strftime
 
 #ifdef _WIN32
 #else
@@ -119,7 +119,14 @@ void _traceEvent (int eventTraceLevel, char* file, int line, char * format, ...)
         char theDate[N2N_TRACE_DATESIZE] = "";
         if(output_dateprefix == 1) {
             time_t theTime = time(NULL);
-            strftime(theDate, N2N_TRACE_DATESIZE, "%d/%b/%Y %H:%M:%S ", localtime(&theTime));
+            struct tm tm;
+            // not localtime(), which hands every thread the same static buffer
+#ifdef _WIN32
+            localtime_s(&tm, &theTime);
+#else
+            localtime_r(&theTime, &tm);
+#endif
+            strftime(theDate, N2N_TRACE_DATESIZE, "%d/%b/%Y %H:%M:%S ", &tm);
         }
 
         if(traceFile == NULL) {
