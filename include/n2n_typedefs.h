@@ -357,12 +357,12 @@ struct network_traffic_filter {
 
     n2n_verdict (*filter_packet_from_tap)(network_traffic_filter_t* filter, struct n3n_runtime_data *eee, uint8_t *payload, uint16_t payload_size);
 
+    // set up once at start, only read afterwards
     filter_rule_t *rules;
 
-    filter_rule_pair_cache_t *connections_rule_cache;
-
-    uint32_t work_count_scene_last_clear;
-
+    // tells the per-thread verdict caches which filter they belong to, see
+    // network_traffic_filter.c
+    uint32_t id;
 };
 
 /* *************************************************** */

@@ -28,17 +28,76 @@
 
 #include "uthash.h"                  // for UT_hash_handle, HASH_ITER, HASH_DEL
 #include "n2n_typedefs.h"
+#include "thread_local.h"            // for N3N_THREAD_LOCAL, n3n_thread_on_cleanup
 
 #ifdef _WIN32
 #include "win32/defs.h"
 #else
-#include <arpa/inet.h>               // for inet_ntoa, inet_addr
+#include <arpa/inet.h>               // for inet_ntop, inet_addr
 #include <netinet/in.h>              // for in_addr, in_addr_t, ntohs, ntohl
 #endif
 
 // cache that hit less than 10 while 10000 package processed will be delete;
 #define CLEAR_CACHE_EVERY_X_COUNT 10000
 #define CLAER_CACHE_ACTIVE_COUNT  10
+
+
+// The cache of verdicts per connection is written on every packet: entries
+// are added, counted and pruned. Every thread keeps a cache of its own, so no
+// lock is needed. The rules it is filled from are only read and never change
+// after start-up.
+//
+// A thread's cache belongs to one filter, named by the filter's id. A filter
+// created later - even at the same address - has a new id, so a thread meeting
+// it starts again with an empty cache instead of stale verdicts.
+struct filter_thread_cache {
+    uint32_t filter_id;
+    filter_rule_pair_cache_t *connections_rule_cache;
+    uint32_t work_count_scene_last_clear;
+    int cleanup_registered;
+};
+
+static N3N_THREAD_LOCAL struct filter_thread_cache thread_cache;
+
+// the id handed to the last filter created
+static uint32_t filter_id_last;
+
+
+static void thread_cache_clear (void) {
+
+    filter_rule_pair_cache_t *item = NULL, *tmp = NULL;
+
+    HASH_ITER(hh, thread_cache.connections_rule_cache, item, tmp) {
+        HASH_DEL(thread_cache.connections_rule_cache, item);
+        free(item);
+    }
+    thread_cache.work_count_scene_last_clear = 0;
+    thread_cache.filter_id = 0;
+}
+
+
+// called through n3n_thread_cleanup()
+static void thread_cache_release (void) {
+
+    thread_cache_clear();
+    thread_cache.cleanup_registered = 0;
+}
+
+
+// the calling thread's cache for this filter
+static struct filter_thread_cache *thread_cache_get (network_traffic_filter_t *filter) {
+
+    if(thread_cache.filter_id != filter->id) {
+        thread_cache_clear();
+        thread_cache.filter_id = filter->id;
+        if(!thread_cache.cleanup_registered) {
+            n3n_thread_on_cleanup(thread_cache_release);
+            thread_cache.cleanup_registered = 1;
+        }
+    }
+
+    return &thread_cache;
+}
 
 /* for [-Wmissing-declarations] */
 const char* get_filter_packet_proto_name (filter_packet_proto proto);
@@ -67,7 +126,8 @@ const char* get_filter_packet_info_log_string (packet_address_proto_info_t* info
 
 const char* get_filter_packet_info_log_string (packet_address_proto_info_t* info) {
 
-    static char buf[1024] = {0};
+    // the returned string lives in here, one per thread
+    static N3N_THREAD_LOCAL char buf[1024];
 
     switch(info->proto) {
         case FPP_ARP:
@@ -83,9 +143,11 @@ const char* get_filter_packet_info_log_string (packet_address_proto_info_t* info
             const char* proto = get_filter_packet_proto_name(info->proto);
             char src_ip[64] = {0};
             char dst_ip[64] = {0};
-            strcpy(src_ip, inet_ntoa(src));
-            strcpy(dst_ip, inet_ntoa(dst));
-            sprintf(buf, "%s\t%s:%d->%s:%d", proto, src_ip, info->src_port, dst_ip, info->dst_port);
+            // not inet_ntoa(), which returns a static buffer on some C
+            // libraries, musl among them
+            inet_ntop(AF_INET, &src, src_ip, sizeof(src_ip));
+            inet_ntop(AF_INET, &dst, dst_ip, sizeof(dst_ip));
+            snprintf(buf, sizeof(buf), "%s\t%s:%d->%s:%d", proto, src_ip, info->src_port, dst_ip, info->dst_port);
             return buf;
         }
         default:
@@ -181,7 +243,8 @@ const char* get_filter_rule_info_log_string (filter_rule_t* rule);
 
 const char* get_filter_rule_info_log_string (filter_rule_t* rule) {
 
-    static char buf[1024] = {0};
+    // the returned string lives in here, one per thread
+    static N3N_THREAD_LOCAL char buf[1024];
     char* print_start = buf;
     char src_net[64] = {0};
     char dst_net[64] = {0};
@@ -189,8 +252,8 @@ const char* get_filter_rule_info_log_string (filter_rule_t* rule) {
 
     src.s_addr = rule->key.src_net_cidr;
     dst.s_addr = rule->key.dst_net_cidr;
-    strcpy(src_net, inet_ntoa(src));
-    strcpy(dst_net, inet_ntoa(dst));
+    inet_ntop(AF_INET, &src, src_net, sizeof(src_net));
+    inet_ntop(AF_INET, &dst, dst_net, sizeof(dst_net));
     print_start += sprintf(print_start, "%s/%d:[%d,%d],%s/%d:[%d,%d]",
                            src_net, rule->key.src_net_bit_len,
                            rule->key.src_port_range.start_port, rule->key.src_port_range.end_port,
@@ -300,23 +363,23 @@ filter_rule_t* get_filter_rule (filter_rule_t **rules, packet_address_proto_info
 
 
 /* for [-Wmissing-declarations] */
-void update_and_clear_cache_if_need (network_traffic_filter_t *filter);
+void update_and_clear_cache_if_need (struct filter_thread_cache *cache);
 
-void update_and_clear_cache_if_need (network_traffic_filter_t *filter) {
+void update_and_clear_cache_if_need (struct filter_thread_cache *cache) {
 
-    if(++(filter->work_count_scene_last_clear) > CLEAR_CACHE_EVERY_X_COUNT) {
+    if(++(cache->work_count_scene_last_clear) > CLEAR_CACHE_EVERY_X_COUNT) {
         filter_rule_pair_cache_t *item = NULL, *tmp = NULL;
-        HASH_ITER(hh, filter->connections_rule_cache, item, tmp) {
+        HASH_ITER(hh, cache->connections_rule_cache, item, tmp) {
             /* ... it is safe to delete and free s here */
             if(item->active_count < CLAER_CACHE_ACTIVE_COUNT) {
                 traceEvent(TRACE_DEBUG, "### DELETE filter cache %s", get_filter_packet_info_log_string(&item->key));
-                HASH_DEL(filter->connections_rule_cache, item);
+                HASH_DEL(cache->connections_rule_cache, item);
                 free(item);
             } else {
                 item->active_count = 0;
             }
         }
-        filter->work_count_scene_last_clear = 0;
+        cache->work_count_scene_last_clear = 0;
     }
 }
 
@@ -325,8 +388,9 @@ filter_rule_pair_cache_t* get_or_create_filter_rule_cache (network_traffic_filte
 
 filter_rule_pair_cache_t* get_or_create_filter_rule_cache (network_traffic_filter_t *filter, packet_address_proto_info_t *pkt_addr_info) {
 
+    struct filter_thread_cache *cache = thread_cache_get(filter);
     filter_rule_pair_cache_t* rule_cache_find_result = 0;
-    HASH_FIND(hh, filter->connections_rule_cache, pkt_addr_info, sizeof(packet_address_proto_info_t), rule_cache_find_result);
+    HASH_FIND(hh, cache->connections_rule_cache, pkt_addr_info, sizeof(packet_address_proto_info_t), rule_cache_find_result);
     if(!rule_cache_find_result) {
         filter_rule_t* rule = get_filter_rule(&filter->rules, pkt_addr_info);
         if(!rule) {
@@ -351,10 +415,10 @@ filter_rule_pair_cache_t* get_or_create_filter_rule_cache (network_traffic_filte
                 return NULL;
         }
         traceEvent(TRACE_DEBUG, "### ADD filter cache %s", get_filter_packet_info_log_string(&rule_cache_find_result->key));
-        HASH_ADD(hh, filter->connections_rule_cache, key, sizeof(packet_address_proto_info_t), rule_cache_find_result);
+        HASH_ADD(hh, cache->connections_rule_cache, key, sizeof(packet_address_proto_info_t), rule_cache_find_result);
     }
     ++(rule_cache_find_result->active_count);
-    update_and_clear_cache_if_need(filter);
+    update_and_clear_cache_if_need(cache);
 
     return rule_cache_find_result;
 }
@@ -403,6 +467,10 @@ network_traffic_filter_t *create_network_traffic_filter () {
     network_traffic_filter_t *filter = malloc(sizeof(network_traffic_filter_t));
 
     memset(filter, 0, sizeof(network_traffic_filter_t));
+    // never 0, which marks a thread cache that belongs to no filter
+    do {
+        filter->id = __atomic_add_fetch(&filter_id_last, 1, __ATOMIC_RELAXED);
+    } while(!filter->id);
     filter->filter_packet_from_peer = filter_packet_from_peer;
     filter->filter_packet_from_tap = filter_packet_from_tap;
 
@@ -415,7 +483,6 @@ void destroy_network_traffic_filter (network_traffic_filter_t *filter);
 void destroy_network_traffic_filter (network_traffic_filter_t *filter) {
 
     filter_rule_t *el = 0, *tmp = 0;
-    filter_rule_pair_cache_t* el1 = 0, * tmp1 = 0;
 
     if(!filter) {
         return;
@@ -428,11 +495,10 @@ void destroy_network_traffic_filter (network_traffic_filter_t *filter) {
         }
     }
 
-    if(filter->connections_rule_cache) {
-        HASH_ITER(hh, filter->connections_rule_cache, el1, tmp1) {
-            HASH_DEL(filter->connections_rule_cache, el1);
-            free(el);
-        }
+    // the calling thread's cache; other threads drop theirs when they meet a
+    // different filter or when they end
+    if(thread_cache.filter_id == filter->id) {
+        thread_cache_clear();
     }
 
     free(filter);
