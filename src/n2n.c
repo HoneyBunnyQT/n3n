@@ -501,7 +501,9 @@ int memxor (uint8_t *destination, const uint8_t *source, size_t len) {
 
 /* *********************************************** */
 
-// stores the previously issued time stamp
+// stores the previously issued time stamp, shared by all threads: every stamp
+// is issued with a compare-and-swap on it, so that they stay unique and
+// rising across threads, as the receiver's replay protection expects
 static uint64_t previously_issued_time_stamp = 0;
 
 
@@ -519,21 +521,13 @@ static uint64_t previously_issued_time_stamp = 0;
 //      F       a 4-bit flag field with
 //      ...c    being the accuracy indicator (if set, only counter and no sub-second accuracy)
 //
-uint64_t time_stamp (void) {
+// the stamp to issue after "previous" at time "micro_seconds"
+static uint64_t time_stamp_next (uint64_t previous, uint64_t micro_seconds) {
 
-    struct timeval tod;
-    uint64_t micro_seconds;
     uint64_t co, mask_lo, mask_hi, hi_unchanged, counter, new_co;
 
-    gettimeofday(&tod, NULL);
-
-    // (roughly) calculate the microseconds since 1970, leftbound
-    micro_seconds = ((uint64_t)(tod.tv_sec) << 32) + ((uint64_t)tod.tv_usec << 12);
-    // more exact but more costly due to the multiplication:
-    // micro_seconds = ((uint64_t)(tod.tv_sec) * 1000000ULL + tod.tv_usec) << 12;
-
     // extract "counter only" flag (lowest bit)
-    co = (previously_issued_time_stamp << 63) >> 63;
+    co = (previous << 63) >> 63;
     // set mask accordingly
     mask_lo   = -co;
     mask_lo >>= 32;
@@ -544,11 +538,11 @@ uint64_t time_stamp (void) {
 
     mask_hi   = ~mask_lo;
 
-    hi_unchanged = ((previously_issued_time_stamp & mask_hi) == (micro_seconds & mask_hi));
+    hi_unchanged = ((previous & mask_hi) == (micro_seconds & mask_hi));
     // 0 if upper bits unchanged (compared to previous stamp), 1 otherwise
 
     // read counter and shift right for flags
-    counter   = (previously_issued_time_stamp & mask_lo) >> 4;
+    counter   = (previous & mask_lo) >> 4;
 
     counter  += hi_unchanged;
     counter  &= -hi_unchanged;
@@ -571,7 +565,32 @@ uint64_t time_stamp (void) {
     micro_seconds |= counter;
     micro_seconds |= new_co;
 
-    previously_issued_time_stamp = micro_seconds;
-
     return micro_seconds;
+}
+
+
+uint64_t time_stamp (void) {
+
+    struct timeval tod;
+    uint64_t micro_seconds;
+    uint64_t previous, stamp;
+
+    // If another thread issued a stamp in between, start over - including
+    // reading the clock again: a stamp worked out from an older reading on
+    // top of that thread's newer stamp could be lower than it. With one
+    // thread the first attempt always succeeds.
+    previous = __atomic_load_n(&previously_issued_time_stamp, __ATOMIC_RELAXED);
+    do {
+        gettimeofday(&tod, NULL);
+
+        // (roughly) calculate the microseconds since 1970, leftbound
+        micro_seconds = ((uint64_t)(tod.tv_sec) << 32) + ((uint64_t)tod.tv_usec << 12);
+        // more exact but more costly due to the multiplication:
+        // micro_seconds = ((uint64_t)(tod.tv_sec) * 1000000ULL + tod.tv_usec) << 12;
+
+        stamp = time_stamp_next(previous, micro_seconds);
+    } while(!__atomic_compare_exchange_n(&previously_issued_time_stamp, &previous, stamp, 1,
+                                         __ATOMIC_RELAXED, __ATOMIC_RELAXED));
+
+    return stamp;
 }
