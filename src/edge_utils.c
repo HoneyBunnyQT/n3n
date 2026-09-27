@@ -2693,201 +2693,60 @@ int edge_read_from_tap_batch (struct n3n_runtime_data * eee, int max) {
 /* ************************************** */
 
 
-/** handle a datagram from the main UDP socket to the internet. */
-void process_pdu (struct n3n_runtime_data *eee,
-                  const struct sockaddr *sender_sock,
-                  const SOCKET in_sock,
-                  uint8_t *udp_buf,
-                  size_t udp_size,
-                  time_t now
-) {
+/* What the control path needs from process_pdu(), all by value - nothing in
+ * here points into the peer tables, so it stays valid on its way to another
+ * thread. buf is the PDU itself, with its header already decrypted. */
+struct pdu_control {
+    uint8_t *buf;
+    size_t size;
+    n2n_common_t cmn;
+    size_t rem;                 /* decoding position after the common header */
+    size_t idx;
+    n3n_sock_t sender;
+    uint8_t from_supernode;
+    uint8_t via_multicast;
+    uint64_t stamp;
+    uint8_t hash_buf[16];       /* of the still encrypted PDU, user/pw auth only */
+    time_t now;
+};
 
-    n2n_common_t cmn;          /* common fields in the packet header */
+
+/** handle a control message - anything but PACKET - from process_pdu(). */
+static void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_control *c) {
+
+    n2n_common_t cmn = c->cmn;
+    uint8_t *udp_buf = c->buf;
+    size_t udp_size = c->size;
+    size_t rem = c->rem;
+    size_t idx = c->idx;
+    size_t msg_type = cmn.pc;
+    n3n_sock_t sender = c->sender;
+    n3n_sock_t *orig_sender = &sender;
+    uint8_t from_supernode = c->from_supernode;
+    uint8_t via_multicast = c->via_multicast;
+    uint64_t stamp = c->stamp;
+    uint8_t *hash_buf = c->hash_buf;
+    time_t now = c->now;
+    struct peer_info *sn = NULL;
     n3n_sock_str_t sockbuf1;
     n3n_sock_str_t sockbuf2;        /* don't clobber sockbuf1 if writing two addresses to trace */
     macstr_t mac_buf1;
     macstr_t mac_buf2;
-    uint8_t hash_buf[16];
-    size_t rem;
-    size_t idx;
-    size_t msg_type;
-    uint8_t from_supernode;
-    uint8_t via_multicast;
-    struct peer_info *sn = NULL;
-    n3n_sock_t sender;
-    n3n_sock_t *orig_sender = NULL;
-    uint32_t header_enc = 0;
-    uint64_t stamp = 0;
-    int skip_add = 0;
 
-    /* REVISIT: when UDP/IPv6 is supported we will need a flag to indicate which
-     * IP transport version the packet arrived on. May need to UDP sockets. */
-
-    // TODO: pass the sender to process_pdu, dont calculate it here
-    if(eee->conf.connect_tcp)
-        // TCP expects that we know our comm partner and does not deliver the sender
-        memcpy(&sender, &(eee->curr_sn->sock), sizeof(sender));
-    else {
-        // REVISIT: type conversion back and forth, choose a consistent approach throughout whole code,
-        //          i.e. stick with more general sockaddr as long as possible and narrow only if required
-        fill_n3nsock(&sender, sender_sock);
-    }
-    /* The packet may not have an orig_sender socket spec. So default to last
-     * hop as sender. */
-    orig_sender = &sender;
-
-#ifdef SKIP_MULTICAST_PEERS_DISCOVERY
-    via_multicast = 0;
-#else
-    via_multicast = ((in_sock == eee->udp_multicast_sock_v4) ||
-                     (in_sock == eee->udp_multicast_sock_v6));
-#endif
-
-    traceEvent(TRACE_DEBUG, "Rx VPN packet of size %d from [%s]",
-               (signed int)udp_size, sock_to_cstr(sockbuf1, &sender));
-
-    if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED) {
-        // match with static (1) or dynamic (2) ctx?
-        // check dynamic first as it is identical to static in normal header encryption mode
-        if(packet_header_decrypt(udp_buf, udp_size,
-                                 (char *)eee->conf.community_name,
-                                 eee->conf.header_encryption_ctx_dynamic, eee->conf.header_iv_ctx_dynamic,
-                                 &stamp)) {
-            header_enc = 2;     /* not accurate with normal header encryption but does not matter */
-        }
-        if(!header_enc) {
-            // check static now (very likely to be REGISTER_SUPER_ACK, REGISTER_SUPER_NAK or invalid)
-            if(eee->conf.shared_secret) {
-                // hash the still encrypted packet to eventually be able to check it later (required for REGISTER_SUPER_ACK with user/pw auth)
-                pearson_hash_128(hash_buf, udp_buf, MAX(0, (int)udp_size - (int)N2N_REG_SUP_HASH_CHECK_LEN));
-            }
-            header_enc = packet_header_decrypt(udp_buf, MAX(0, (int)udp_size - (int)N2N_REG_SUP_HASH_CHECK_LEN),
-                                               (char *)eee->conf.community_name,
-                                               eee->conf.header_encryption_ctx_static, eee->conf.header_iv_ctx_static,
-                                               &stamp);
-        }
-        if(!header_enc) {
-            traceEvent(TRACE_DEBUG, "failed to decrypt header");
-            return;
-        }
-        // time stamp verification follows in the packet specific section as it requires to determine the
-        // sender from the hash list by its MAC, or the packet might be from the supernode, this all depends
-        // on packet type, path taken (via supernode) and packet structure (MAC is not always in the same place)
-    }
-
-    rem = udp_size; /* Counts down bytes of packet to protect against buffer overruns. */
-    idx = 0; /* marches through packet header as parts are decoded. */
-    if(decode_common(&cmn, udp_buf, &rem, &idx) < 0) {
-        if(via_multicast) {
-            // from some other edge on local network, possibly header encrypted
-            traceEvent(TRACE_DEBUG, "dropped packet arriving via multicast due to error while decoding N2N_UDP");
-        } else {
-            traceEvent(TRACE_INFO, "failed to decode common section in N2N_UDP");
-        }
-        return; /* failed to decode packet */
-    }
-
-    msg_type = cmn.pc; /* packet code */
-
-    // special case for user/pw auth
-    // community's auth scheme and message type need to match the used key (dynamic)
-    if((eee->conf.shared_secret)
-       && (msg_type != MSG_TYPE_REGISTER_SUPER_ACK)
-       && (msg_type != MSG_TYPE_REGISTER_SUPER_NAK)) {
-        if(header_enc != 2) {
-            traceEvent(TRACE_INFO, "dropped packet encrypted with static key where dynamic key expected");
-            return;
-        }
-    }
-
-    // check if packet is from supernode and find the corresponding supernode in list
-    from_supernode = cmn.flags & N2N_FLAGS_FROM_SUPERNODE;
+    // the supernode is looked up again rather than passed in: a pointer into
+    // the list must not travel with the PDU. process_pdu() has already
+    // dropped the PDU if this lookup fails, so it only fails if the supernode
+    // was removed in between.
     if(from_supernode) {
-        skip_add = SN_ADD_SKIP;
-        sn = add_sn_to_list_by_mac_or_sock(&(eee->supernodes), &sender, null_mac, &skip_add);
+        int sn_skip_add = SN_ADD_SKIP;
+        sn = add_sn_to_list_by_mac_or_sock(&(eee->supernodes), &sender, null_mac, &sn_skip_add);
         if(!sn) {
             traceEvent(TRACE_DEBUG, "dropped incoming data from unknown supernode");
             return;
         }
     }
 
-    if(0 != memcmp(cmn.community, eee->conf.community_name, N2N_COMMUNITY_SIZE)) {
-        // The community in the packet is not matching ours
-
-        if(from_supernode) {
-            traceEvent(TRACE_INFO, "received packet with unknown community");
-            // TODO:
-            // stats.errors.community.supernode ++;
-        } else {
-            traceEvent(
-                TRACE_INFO,
-                "ignoring packet with unknown community (%s)",
-                cmn.community
-            );
-            // TODO:
-            // stats.errors.community.other ++;
-        }
-
-        return;
-    }
-
     switch(msg_type) {
-        case MSG_TYPE_PACKET: {
-            /* process PACKET - most frequent so first in list. */
-            n2n_PACKET_t pkt;
-
-            decode_PACKET(&pkt, &cmn, udp_buf, &rem, &idx);
-
-            if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED) {
-                if(!find_peer_time_stamp_and_verify(
-                       eee->pending_peers,
-                       eee->known_peers,
-                       sn,
-                       pkt.srcMac,
-                       stamp,
-                       TIME_STAMP_ALLOW_JITTER)) {
-                    traceEvent(TRACE_DEBUG, "dropped PACKET due to time stamp error");
-                    return;
-                }
-            }
-
-            if(!eee->last_sup) {
-                // drop packets received before first registration with supernode
-                traceEvent(TRACE_DEBUG, "dropped PACKET recevied before first registration with supernode");
-                return;
-            }
-
-            if(!from_supernode) {
-                /* This is a P2P packet from the peer. We purge a pending
-                 * registration towards the possibly nat-ted peer address as we now have
-                 * a valid channel. We still use check_peer_registration_needed in
-                 * handle_PACKET to double check this.
-                 */
-                traceEvent(TRACE_DEBUG, "[p2p] from %s",
-                           macaddr_str(mac_buf1, pkt.srcMac));
-                find_and_remove_peer(&eee->pending_peers, pkt.srcMac);
-            } else {
-                /* [PsP] : edge Peer->Supernode->edge Peer */
-
-                if(is_valid_peer_sock(&pkt.sock))
-                    orig_sender = &(pkt.sock);
-
-                traceEvent(TRACE_DEBUG, "[pSp] from %s via [%s]",
-                           macaddr_str(mac_buf1, pkt.srcMac),
-                           sock_to_cstr(sockbuf1, &sender));
-            }
-
-            /* Update the sender in peer table entry */
-            check_peer_registration_needed(eee, from_supernode, via_multicast,
-                                           pkt.srcMac,
-                                           // REVISIT: also consider PORT_REG_COOKIEs when implemented
-                                           from_supernode ? N2N_FORWARDED_REG_COOKIE : N2N_REGULAR_REG_COOKIE,
-                                           NULL, NULL, orig_sender);
-
-            handle_PACKET(eee, from_supernode, &pkt, orig_sender, udp_buf + idx, udp_size - idx);
-            break;
-        }
-
         case MSG_TYPE_REGISTER: {
             /* Another edge is registering with us */
             n2n_REGISTER_t reg;
@@ -3281,6 +3140,225 @@ void process_pdu (struct n3n_runtime_data *eee,
             /* Not a known message type */
             traceEvent(TRACE_INFO, "unable to handle packet type %d: ignored", (signed int)msg_type);
             return;
+    } /* switch(msg_type) */
+}
+
+
+/** handle a datagram from the main UDP socket to the internet. */
+void process_pdu (struct n3n_runtime_data *eee,
+                  const struct sockaddr *sender_sock,
+                  const SOCKET in_sock,
+                  uint8_t *udp_buf,
+                  size_t udp_size,
+                  time_t now
+) {
+
+    n2n_common_t cmn;          /* common fields in the packet header */
+    n3n_sock_str_t sockbuf1;
+    macstr_t mac_buf1;
+    uint8_t hash_buf[16] = {0};
+    size_t rem;
+    size_t idx;
+    size_t msg_type;
+    uint8_t from_supernode;
+    uint8_t via_multicast;
+    struct peer_info *sn = NULL;
+    n3n_sock_t sender;
+    n3n_sock_t *orig_sender = NULL;
+    uint32_t header_enc = 0;
+    uint64_t stamp = 0;
+    int skip_add = 0;
+
+    /* REVISIT: when UDP/IPv6 is supported we will need a flag to indicate which
+     * IP transport version the packet arrived on. May need to UDP sockets. */
+
+    // TODO: pass the sender to process_pdu, dont calculate it here
+    if(eee->conf.connect_tcp)
+        // TCP expects that we know our comm partner and does not deliver the sender
+        memcpy(&sender, &(eee->curr_sn->sock), sizeof(sender));
+    else {
+        // REVISIT: type conversion back and forth, choose a consistent approach throughout whole code,
+        //          i.e. stick with more general sockaddr as long as possible and narrow only if required
+        fill_n3nsock(&sender, sender_sock);
+    }
+    /* The packet may not have an orig_sender socket spec. So default to last
+     * hop as sender. */
+    orig_sender = &sender;
+
+#ifdef SKIP_MULTICAST_PEERS_DISCOVERY
+    via_multicast = 0;
+#else
+    via_multicast = ((in_sock == eee->udp_multicast_sock_v4) ||
+                     (in_sock == eee->udp_multicast_sock_v6));
+#endif
+
+    traceEvent(TRACE_DEBUG, "Rx VPN packet of size %d from [%s]",
+               (signed int)udp_size, sock_to_cstr(sockbuf1, &sender));
+
+    if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED) {
+        // match with static (1) or dynamic (2) ctx?
+        // check dynamic first as it is identical to static in normal header encryption mode
+        if(packet_header_decrypt(udp_buf, udp_size,
+                                 (char *)eee->conf.community_name,
+                                 eee->conf.header_encryption_ctx_dynamic, eee->conf.header_iv_ctx_dynamic,
+                                 &stamp)) {
+            header_enc = 2;     /* not accurate with normal header encryption but does not matter */
+        }
+        if(!header_enc) {
+            // check static now (very likely to be REGISTER_SUPER_ACK, REGISTER_SUPER_NAK or invalid)
+            if(eee->conf.shared_secret) {
+                // hash the still encrypted packet to eventually be able to check it later (required for REGISTER_SUPER_ACK with user/pw auth)
+                pearson_hash_128(hash_buf, udp_buf, MAX(0, (int)udp_size - (int)N2N_REG_SUP_HASH_CHECK_LEN));
+            }
+            header_enc = packet_header_decrypt(udp_buf, MAX(0, (int)udp_size - (int)N2N_REG_SUP_HASH_CHECK_LEN),
+                                               (char *)eee->conf.community_name,
+                                               eee->conf.header_encryption_ctx_static, eee->conf.header_iv_ctx_static,
+                                               &stamp);
+        }
+        if(!header_enc) {
+            traceEvent(TRACE_DEBUG, "failed to decrypt header");
+            return;
+        }
+        // time stamp verification follows in the packet specific section as it requires to determine the
+        // sender from the hash list by its MAC, or the packet might be from the supernode, this all depends
+        // on packet type, path taken (via supernode) and packet structure (MAC is not always in the same place)
+    }
+
+    rem = udp_size; /* Counts down bytes of packet to protect against buffer overruns. */
+    idx = 0; /* marches through packet header as parts are decoded. */
+    if(decode_common(&cmn, udp_buf, &rem, &idx) < 0) {
+        if(via_multicast) {
+            // from some other edge on local network, possibly header encrypted
+            traceEvent(TRACE_DEBUG, "dropped packet arriving via multicast due to error while decoding N2N_UDP");
+        } else {
+            traceEvent(TRACE_INFO, "failed to decode common section in N2N_UDP");
+        }
+        return; /* failed to decode packet */
+    }
+
+    msg_type = cmn.pc; /* packet code */
+
+    // special case for user/pw auth
+    // community's auth scheme and message type need to match the used key (dynamic)
+    if((eee->conf.shared_secret)
+       && (msg_type != MSG_TYPE_REGISTER_SUPER_ACK)
+       && (msg_type != MSG_TYPE_REGISTER_SUPER_NAK)) {
+        if(header_enc != 2) {
+            traceEvent(TRACE_INFO, "dropped packet encrypted with static key where dynamic key expected");
+            return;
+        }
+    }
+
+    // check if packet is from supernode and find the corresponding supernode in list
+    from_supernode = cmn.flags & N2N_FLAGS_FROM_SUPERNODE;
+    if(from_supernode) {
+        skip_add = SN_ADD_SKIP;
+        sn = add_sn_to_list_by_mac_or_sock(&(eee->supernodes), &sender, null_mac, &skip_add);
+        if(!sn) {
+            traceEvent(TRACE_DEBUG, "dropped incoming data from unknown supernode");
+            return;
+        }
+    }
+
+    if(0 != memcmp(cmn.community, eee->conf.community_name, N2N_COMMUNITY_SIZE)) {
+        // The community in the packet is not matching ours
+
+        if(from_supernode) {
+            traceEvent(TRACE_INFO, "received packet with unknown community");
+            // TODO:
+            // stats.errors.community.supernode ++;
+        } else {
+            traceEvent(
+                TRACE_INFO,
+                "ignoring packet with unknown community (%s)",
+                cmn.community
+            );
+            // TODO:
+            // stats.errors.community.other ++;
+        }
+
+        return;
+    }
+
+    switch(msg_type) {
+        case MSG_TYPE_PACKET: {
+            /* process PACKET - most frequent so first in list. */
+            n2n_PACKET_t pkt;
+
+            decode_PACKET(&pkt, &cmn, udp_buf, &rem, &idx);
+
+            if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED) {
+                if(!find_peer_time_stamp_and_verify(
+                       eee->pending_peers,
+                       eee->known_peers,
+                       sn,
+                       pkt.srcMac,
+                       stamp,
+                       TIME_STAMP_ALLOW_JITTER)) {
+                    traceEvent(TRACE_DEBUG, "dropped PACKET due to time stamp error");
+                    return;
+                }
+            }
+
+            if(!eee->last_sup) {
+                // drop packets received before first registration with supernode
+                traceEvent(TRACE_DEBUG, "dropped PACKET recevied before first registration with supernode");
+                return;
+            }
+
+            if(!from_supernode) {
+                /* This is a P2P packet from the peer. We purge a pending
+                 * registration towards the possibly nat-ted peer address as we now have
+                 * a valid channel. We still use check_peer_registration_needed in
+                 * handle_PACKET to double check this.
+                 */
+                traceEvent(TRACE_DEBUG, "[p2p] from %s",
+                           macaddr_str(mac_buf1, pkt.srcMac));
+                find_and_remove_peer(&eee->pending_peers, pkt.srcMac);
+            } else {
+                /* [PsP] : edge Peer->Supernode->edge Peer */
+
+                if(is_valid_peer_sock(&pkt.sock))
+                    orig_sender = &(pkt.sock);
+
+                traceEvent(TRACE_DEBUG, "[pSp] from %s via [%s]",
+                           macaddr_str(mac_buf1, pkt.srcMac),
+                           sock_to_cstr(sockbuf1, &sender));
+            }
+
+            /* Update the sender in peer table entry */
+            check_peer_registration_needed(eee, from_supernode, via_multicast,
+                                           pkt.srcMac,
+                                           // REVISIT: also consider PORT_REG_COOKIEs when implemented
+                                           from_supernode ? N2N_FORWARDED_REG_COOKIE : N2N_REGULAR_REG_COOKIE,
+                                           NULL, NULL, orig_sender);
+
+            handle_PACKET(eee, from_supernode, &pkt, orig_sender, udp_buf + idx, udp_size - idx);
+            break;
+        }
+
+        default: {
+            // everything else is a control message: registrations, peer
+            // info, supernode answers. The control path gets all it needs by
+            // value, so that it can later run on another thread with a copy of
+            // the PDU, while the buffer it arrived in is reused.
+            struct pdu_control c;
+
+            c.buf = udp_buf;
+            c.size = udp_size;
+            c.cmn = cmn;
+            c.rem = rem;
+            c.idx = idx;
+            c.sender = sender;
+            c.from_supernode = from_supernode;
+            c.via_multicast = via_multicast;
+            c.stamp = stamp;
+            memcpy(c.hash_buf, hash_buf, sizeof(c.hash_buf));
+            c.now = now;
+
+            process_pdu_control(eee, &c);
+            return;
+        }
     } /* switch(msg_type) */
 }
 
