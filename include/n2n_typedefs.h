@@ -535,8 +535,12 @@ typedef struct n2n_tcp_connection {
 
 typedef struct slots slots_t;
 
+struct edge_threads;
+
 struct n3n_runtime_data {
     n2n_edge_conf_t conf;
+
+    struct edge_threads *threads;       /* NULL unless PACKETs are handled by several threads, see edge_threads.h */
 
     /* Status */
     bool                             *keep_running;                      /**< Pointer to edge loop stop/go flag */

@@ -112,6 +112,7 @@ OBJS=\
 	src/crypto/pearson.o \
 	src/crypto/speck.o \
 	src/crypto/tf.o \
+	src/edge_threads.o \
 	src/edge_utils.o \
 	src/header_encryption.o \
 	src/hexdump.o \

@@ -26,6 +26,7 @@ enum __attribute__((__packed__)) fd_info_proto {
     fd_info_proto_v3udp,
     fd_info_proto_v3tcp,
     fd_info_proto_http,
+    fd_info_proto_wakeup,       // only wakes the main loop, see edge_threads.c
 };
 
 // Place debug info from the slots into the strbuf

@@ -28,6 +28,7 @@
 #endif
 
 #include "edge_utils.h"         // for edge_read_from_tap
+#include "edge_threads.h"    // for edge_threads_main_release, ...
 #include "management.h"         // for readFromMgmtSocket
 #include "minmax.h"             // for min, max
 #include "pktbuf.h"
@@ -100,6 +101,7 @@ static char *proto_str[] = {
     [fd_info_proto_v3udp] = "v3udp",
     [fd_info_proto_v3tcp] = "v3tcp",
     [fd_info_proto_http] = "http",
+    [fd_info_proto_wakeup] = "wakeup",
 };
 
 struct fd_info {
@@ -382,6 +384,11 @@ static void handle_fd (const time_t now, const struct fd_info info, struct n3n_r
             assert(false);
             return;
 
+        case fd_info_proto_wakeup:
+            // a packet thread queued something; the edge loop takes it
+            // right after this loop iteration, see edge_threads_drain()
+            return;
+
         case fd_info_proto_tuntap:
             // read ethernet frames from the TAP socket; write on the IP
             // socket
@@ -638,7 +645,10 @@ int mainloop_runonce (struct n3n_runtime_data *eee) {
     }
     wait_time.tv_usec = 0;
 
+    // Packet threads, if any, may run only while the main thread waits
+    edge_threads_main_release(eee);
     int ready = select(maxfd + 1, &rd, &wr, NULL, &wait_time);
+    edge_threads_main_acquire(eee);
 
     // One timestamp to use for this entire loop iteration
     time_t now = time(NULL);
