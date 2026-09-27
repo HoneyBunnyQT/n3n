@@ -276,7 +276,15 @@ N2N_THREAD_RETURN_DATATYPE resolve_thread (N2N_THREAD_PARAMETER_DATATYPE p) {
     time_t now;
 
     while(1) {
+        int cancel_state;
+
+        // sleep() is where resolve_cancel_thread() stops this thread
         sleep(N2N_RESOLVE_INTERVAL / 60); /* wake up in-between to check for signaled requests */
+
+        // Not while holding the lock, though: the name lookups below have
+        // cancellation points too, and a thread cancelled in there would
+        // leave the lock locked for good.
+        pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancel_state);
 
         // what's the time?
         now = time(NULL);
@@ -313,6 +321,8 @@ N2N_THREAD_RETURN_DATATYPE resolve_thread (N2N_THREAD_PARAMETER_DATATYPE p) {
 
         // unlock access
         pthread_mutex_unlock(&param->access);
+
+        pthread_setcancelstate(cancel_state, NULL);
     }
 }
 
@@ -347,6 +357,9 @@ int resolve_create_thread (n3n_resolve_parameter_t **param, struct peer_info *sn
         return -1;
     }
 
+    // the thread takes the mutex straight away, so it has to exist first
+    pthread_mutex_init(&((*param)->access), NULL);
+
     // create thread
     ret = pthread_create(&((*param)->id), NULL, resolve_thread, (void *)*param);
     if(ret) {
@@ -354,14 +367,28 @@ int resolve_create_thread (n3n_resolve_parameter_t **param, struct peer_info *sn
         return -1;
     }
 
-    pthread_mutex_init(&((*param)->access), NULL);
-
     return 0;
 }
 
 
 void resolve_cancel_thread (n3n_resolve_parameter_t *param) {
+    struct n3n_resolve_ip_sock *entry, *tmp_entry;
+
+    if(!param) {
+        return;
+    }
+
+    // Cancelling only asks the thread to stop; wait until it has, before
+    // freeing what it works on - and before the caller frees the supernode
+    // list, whose host names the entries point to.
     pthread_cancel(param->id);
+    pthread_join(param->id, NULL);
+    pthread_mutex_destroy(&param->access);
+
+    HASH_ITER(hh, param->list, entry, tmp_entry) {
+        HASH_DEL(param->list, entry);
+        free(entry);
+    }
     free(param);
 }
 
