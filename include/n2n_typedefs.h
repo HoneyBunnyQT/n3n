@@ -513,8 +513,9 @@ struct n2n_edge_stats {
     uint32_t transop_rx;        /* Payloads decoded by the transform. */
 };
 
-// one slot of counters per thread, see stats.h
-#define N3N_STATS_SLOTS 1
+// one slot of counters per packet thread, see stats.h - the same number as
+// N3N_THREADS_MAX in src/thread_local.h, which stats.h checks
+#define N3N_STATS_SLOTS 16
 
 typedef struct n2n_tcp_connection {
     int socket_fd;                                        /* file descriptor for tcp socket */

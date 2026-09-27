@@ -14,6 +14,8 @@
 // is enough. Running out is a programming error, not a runtime condition.
 #define N3N_THREAD_CLEANUP_MAX 8
 
+N3N_THREAD_LOCAL int n3n_thread_slot = 0;
+
 static N3N_THREAD_LOCAL n3n_thread_cleanup_f cleanup_fn[N3N_THREAD_CLEANUP_MAX];
 static N3N_THREAD_LOCAL int cleanup_count;
 

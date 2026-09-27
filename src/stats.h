@@ -6,7 +6,7 @@
  *
  * Every thread counts into a slot of its own, so no counter is ever written
  * by two threads at once. Whoever wants the totals adds the slots up with
- * n3n_stats_sum(). There is one thread and so one slot for now.
+ * n3n_stats_sum(). The main thread uses slot 0, see n3n_thread_slot.
  */
 
 #ifndef N3N_STATS_H
@@ -18,9 +18,14 @@
 
 #include "counter.h"         // for COUNTER_INC, COUNTER_READ
 #include "n2n_typedefs.h"    // for n2n_edge_stats, n3n_runtime_data
+#include "thread_local.h"    // for n3n_thread_slot, N3N_THREADS_MAX
+
+#if N3N_STATS_SLOTS != N3N_THREADS_MAX
+#error "N3N_STATS_SLOTS must match N3N_THREADS_MAX"
+#endif
 
 // the slot the calling thread counts into
-#define N3N_STATS_THIS_SLOT 0
+#define N3N_STATS_THIS_SLOT n3n_thread_slot
 
 // count one event in the calling thread's slot
 #define STATS_INC(rt, field) COUNTER_INC((rt)->stats_slot[N3N_STATS_THIS_SLOT].field)

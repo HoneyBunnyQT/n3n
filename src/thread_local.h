@@ -16,6 +16,15 @@
 #define N3N_THREAD_LOCAL __thread
 #endif
 
+// The most threads that handle packets: the main thread plus the workers
+#define N3N_THREADS_MAX 16
+
+// Which of those the calling thread is: 0 for the main thread (and any
+// thread that does not handle packets), 1 .. N3N_THREADS_MAX-1 for the
+// workers. Things kept once per packet thread, like the packet counters,
+// are indexed with it.
+extern N3N_THREAD_LOCAL int n3n_thread_slot;
+
 // Scratch memory that a module allocates for each thread on first use - so
 // that no two threads ever work in the same buffer - is registered here with
 // the function that frees it.
