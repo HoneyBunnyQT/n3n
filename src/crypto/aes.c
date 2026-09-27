@@ -26,6 +26,7 @@
 #include <string.h>  // for memcpy, size_t
 #include "aes.h"     // for AES_BLOCK_SIZE, aes_context_t, AES128_KEY_BYTES
 #include "portable_endian.h"  // for be32toh, htobe32
+#include "../thread_local.h"  // for N3N_THREAD_LOCAL, n3n_thread_on_cleanup
 
 
 #ifdef HAVE_LIBCRYPTO // openSSL 1.1 ---------------------------------------------------------------------
@@ -52,17 +53,53 @@ static char *openssl_err_as_string (void) {
 }
 
 
+// OpenSSL's EVP context is scratch space here: every call below sets it up
+// with cipher, key and IV and resets it when done, so it carries nothing from
+// one call to the next - but two threads must never use the same one. So every
+// thread gets its own on first use, shared by all aes contexts of that
+// thread.
+static N3N_THREAD_LOCAL EVP_CIPHER_CTX *evp_ctx;
+
+
+static void evp_ctx_free (void) {
+
+    EVP_CIPHER_CTX_free(evp_ctx);
+    evp_ctx = NULL;
+}
+
+
+static EVP_CIPHER_CTX *evp_ctx_get (void) {
+
+    if(!evp_ctx) {
+        evp_ctx = EVP_CIPHER_CTX_new();
+        if(!evp_ctx) {
+            traceEvent(TRACE_ERROR, "aes openssl's evp_* context creation failed: %s",
+                       openssl_err_as_string());
+            return NULL;
+        }
+        n3n_thread_on_cleanup(evp_ctx_free);
+    }
+
+    return evp_ctx;
+}
+
+
 int aes_cbc_encrypt (unsigned char *out, const unsigned char *in, size_t in_len,
                      const unsigned char *iv, aes_context_t *ctx) {
 
+    EVP_CIPHER_CTX *evp = evp_ctx_get();
     int evp_len;
     int evp_ciphertext_len;
 
-    if(1 == EVP_EncryptInit_ex(ctx->enc_ctx, ctx->cipher, NULL, ctx->key, iv)) {
-        if(1 == EVP_CIPHER_CTX_set_padding(ctx->enc_ctx, 0)) {
-            if(1 == EVP_EncryptUpdate(ctx->enc_ctx, out, &evp_len, in, in_len)) {
+    if(!evp) {
+        return -1;
+    }
+
+    if(1 == EVP_EncryptInit_ex(evp, ctx->cipher, NULL, ctx->key, iv)) {
+        if(1 == EVP_CIPHER_CTX_set_padding(evp, 0)) {
+            if(1 == EVP_EncryptUpdate(evp, out, &evp_len, in, in_len)) {
                 evp_ciphertext_len = evp_len;
-                if(1 == EVP_EncryptFinal_ex(ctx->enc_ctx, out + evp_len, &evp_len)) {
+                if(1 == EVP_EncryptFinal_ex(evp, out + evp_len, &evp_len)) {
                     evp_ciphertext_len += evp_len;
                     if(evp_ciphertext_len != in_len)
                         traceEvent(TRACE_ERROR, "aes_cbc_encrypt openssl encryption: encrypted %u bytes where %u were expected",
@@ -80,7 +117,7 @@ int aes_cbc_encrypt (unsigned char *out, const unsigned char *in, size_t in_len,
         traceEvent(TRACE_ERROR, "aes_cbc_encrypt openssl init: %s",
                    openssl_err_as_string());
 
-    EVP_CIPHER_CTX_reset(ctx->enc_ctx);
+    EVP_CIPHER_CTX_reset(evp);
 
     return 0;
 }
@@ -104,14 +141,19 @@ int aes_cbc_encrypt_multi (unsigned char *out[], const unsigned char *in[], cons
 int aes_cbc_decrypt (unsigned char *out, const unsigned char *in, size_t in_len,
                      const unsigned char *iv, aes_context_t *ctx) {
 
+    EVP_CIPHER_CTX *evp = evp_ctx_get();
     int evp_len;
     int evp_plaintext_len;
 
-    if(1 == EVP_DecryptInit_ex(ctx->dec_ctx, ctx->cipher, NULL, ctx->key, iv)) {
-        if(1 == EVP_CIPHER_CTX_set_padding(ctx->dec_ctx, 0)) {
-            if(1 == EVP_DecryptUpdate(ctx->dec_ctx, out, &evp_len, in, in_len)) {
+    if(!evp) {
+        return -1;
+    }
+
+    if(1 == EVP_DecryptInit_ex(evp, ctx->cipher, NULL, ctx->key, iv)) {
+        if(1 == EVP_CIPHER_CTX_set_padding(evp, 0)) {
+            if(1 == EVP_DecryptUpdate(evp, out, &evp_len, in, in_len)) {
                 evp_plaintext_len = evp_len;
-                if(1 == EVP_DecryptFinal_ex(ctx->dec_ctx, out + evp_len, &evp_len)) {
+                if(1 == EVP_DecryptFinal_ex(evp, out + evp_len, &evp_len)) {
                     evp_plaintext_len += evp_len;
                     if(evp_plaintext_len != in_len)
                         traceEvent(TRACE_ERROR, "aes_cbc_decrypt openssl decryption: decrypted %u bytes where %u were expected",
@@ -129,7 +171,7 @@ int aes_cbc_decrypt (unsigned char *out, const unsigned char *in, size_t in_len,
         traceEvent(TRACE_ERROR, "aes_cbc_decrypt openssl init: %s",
                    openssl_err_as_string());
 
-    EVP_CIPHER_CTX_reset(ctx->dec_ctx);
+    EVP_CIPHER_CTX_reset(evp);
 
     return 0;
 }
@@ -151,19 +193,6 @@ int aes_init (const unsigned char *key, size_t key_size, aes_context_t **ctx) {
         return -1;
 
     // ...and fill her up:
-
-    // initialize data structures
-    if(!((*ctx)->enc_ctx = EVP_CIPHER_CTX_new())) {
-        traceEvent(TRACE_ERROR, "aes_init openssl's evp_* encryption context creation failed: %s",
-                   openssl_err_as_string());
-        return -1;
-    }
-
-    if(!((*ctx)->dec_ctx = EVP_CIPHER_CTX_new())) {
-        traceEvent(TRACE_ERROR, "aes_init openssl's evp_* decryption context creation failed: %s",
-                   openssl_err_as_string());
-        return -1;
-    }
 
     // check key size and make key size (given in bytes) dependant settings
     switch(key_size) {

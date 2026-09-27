@@ -41,8 +41,6 @@
 #include <openssl/err.h>
 
 typedef struct aes_context_t {
-    EVP_CIPHER_CTX      *enc_ctx;                /* openssl's reusable evp_* en/de-cryption context */
-    EVP_CIPHER_CTX      *dec_ctx;                /* openssl's reusable evp_* en/de-cryption context */
     const EVP_CIPHER    *cipher;                 /* cipher to use: e.g. EVP_aes_128_cbc */
     uint8_t key[AES256_KEY_BYTES];               /* the pure key data for payload encryption & decryption */
     AES_KEY ecb_dec_key;                         /* one step ecb decryption key */
