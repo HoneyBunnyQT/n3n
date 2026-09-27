@@ -74,6 +74,11 @@ int tf_ecb_encrypt (unsigned char *out, const unsigned char *in, tf_context_t *c
 int tf_cbc_encrypt (unsigned char *out, const unsigned char *in, size_t in_len,
                     const unsigned char *iv, tf_context_t *ctx);
 
+// encrypts count packets, each with its own CBC chain, all starting from the
+// same iv; returns 0. Three packets at a time run side by side
+int tf_cbc_encrypt_multi (unsigned char *out[], const unsigned char *in[], const size_t in_len[],
+                          const unsigned char *iv, tf_context_t *ctx, int count);
+
 int tf_cbc_decrypt (unsigned char *out, const unsigned char *in, size_t in_len,
                     const unsigned char *iv, tf_context_t *ctx);
 

@@ -86,6 +86,12 @@
 #define IPV6_ADD_MEMBERSHIP 12       // the standard value for this option
 #endif
 
+#ifndef MSG_DONTWAIT
+// Winsock has no per call non blocking flag.  Asking for a blocking read is
+// safe there because the mainloop only ever does one read per readiness event
+#define MSG_DONTWAIT 0
+#endif
+
 /* ************************************** */
 
 // TODO: most of these forward defs can be removed by re-ordering the code
@@ -2245,20 +2251,34 @@ static int send_packet (struct n3n_runtime_data * eee,
  * discarded by policy (e.g. routing rules).  out_destMac receives the n3n
  * destination MAC that should be used to route the PDU.
  */
-size_t edge_encode_packet (struct n3n_runtime_data *eee,
-                           uint8_t *tap_pkt, size_t len,
-                           uint8_t *pktbuf, size_t pktbuf_size,
-                           n2n_mac_t out_destMac) {
+/* The part of encoding a PACKET that comes before the payload transform: the
+ * routing check, working out the destination, compression, and the PACKET
+ * header, which is written to the start of pktbuf.
+ *
+ * Returns the length of that header, or 0 if the frame is not to be sent. On
+ * success, *enc_src and *enc_len say what the transform has to encode: the
+ * frame itself, or compression_buf if it was worth compressing.
+ */
+static size_t edge_encode_packet_head (struct n3n_runtime_data *eee,
+                                       uint8_t *tap_pkt, size_t len,
+                                       uint8_t *pktbuf,
+                                       n2n_mac_t out_destMac,
+                                       uint8_t *compression_buf,
+                                       size_t compression_buf_size,
+                                       const uint8_t **enc_src,
+                                       size_t *enc_len) {
 
     ipstr_t ip_buf;
     n2n_common_t cmn;
     n2n_PACKET_t pkt;
-    uint8_t *enc_src = tap_pkt;
-    size_t enc_len = len;
-    uint8_t compression_buf[N2N_PKT_BUF_SIZE];
     size_t idx = 0;
     n2n_transform_t tx_transop_idx = eee->transop.transform_id;
     ether_hdr_t eh;
+
+    /* unless compression pays off below, the frame itself is what gets
+     * encoded */
+    *enc_src = tap_pkt;
+    *enc_len = len;
 
     /* tap_pkt is not aligned so we have to copy to aligned memory */
     memcpy(&eh, tap_pkt, sizeof(ether_hdr_t));
@@ -2317,7 +2337,7 @@ size_t edge_encode_packet (struct n3n_runtime_data *eee,
         switch(eee->conf.compression) {
             case N2N_COMPRESSION_ID_LZO:
                 compression_len = eee->transop_lzo.fwd(&eee->transop_lzo,
-                                                       compression_buf, sizeof(compression_buf),
+                                                       compression_buf, compression_buf_size,
                                                        tap_pkt, len,
                                                        pkt.dstMac);
 
@@ -2329,7 +2349,7 @@ size_t edge_encode_packet (struct n3n_runtime_data *eee,
 #ifdef HAVE_LIBZSTD
             case N2N_COMPRESSION_ID_ZSTD:
                 compression_len = eee->transop_zstd.fwd(&eee->transop_zstd,
-                                                        compression_buf, sizeof(compression_buf),
+                                                        compression_buf, compression_buf_size,
                                                         tap_pkt, len,
                                                         pkt.dstMac);
 
@@ -2347,22 +2367,33 @@ size_t edge_encode_packet (struct n3n_runtime_data *eee,
             traceEvent(TRACE_DEBUG, "payload compression [%s]: compressed %u bytes to %u bytes\n",
                        n3n_compression_id2str(pkt.compression),
                        len, compression_len);
-            enc_src = compression_buf;
-            enc_len = compression_len;
+            *enc_src = compression_buf;
+            *enc_len = compression_len;
         }
     }
 
     idx = 0;
     encode_PACKET(pktbuf, &idx, &cmn, &pkt);
 
-    uint16_t headerIdx = idx;
+    return idx;
+}
 
-    idx += eee->transop.fwd(&eee->transop,
-                            pktbuf + idx, pktbuf_size - idx,
-                            enc_src, enc_len, pkt.dstMac);
+
+/* The part of encoding a PACKET that comes after the payload transform: header
+ * encryption - which with user-password auth reaches into the transformed
+ * payload, so it has to come after it - and the statistics.
+ *
+ * idx is the length of the header plus the transformed payload, len the
+ * length of the original frame. Returns the length of the finished PDU.
+ */
+static size_t edge_encode_packet_tail (struct n3n_runtime_data *eee,
+                                       uint8_t *pktbuf,
+                                       size_t headerIdx,
+                                       size_t idx,
+                                       size_t len) {
 
     traceEvent(TRACE_DEBUG, "encode PACKET of %u bytes, %u bytes data, %u bytes overhead, transform %u",
-               (u_int)idx, (u_int)len, (u_int)(idx - len), tx_transop_idx);
+               (u_int)idx, (u_int)len, (u_int)(idx - len), eee->transop.transform_id);
 
     if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED)
         // in case of user-password auth, also encrypt the iv of payload assuming ChaCha20 and SPECK having the same iv size
@@ -2384,6 +2415,33 @@ size_t edge_encode_packet (struct n3n_runtime_data *eee,
     return idx;
 }
 
+
+size_t edge_encode_packet (struct n3n_runtime_data *eee,
+                           uint8_t *tap_pkt, size_t len,
+                           uint8_t *pktbuf, size_t pktbuf_size,
+                           n2n_mac_t out_destMac) {
+
+    uint8_t compression_buf[N2N_PKT_BUF_SIZE];
+    const uint8_t *enc_src;
+    size_t enc_len;
+    size_t headerIdx;
+    size_t idx;
+
+    headerIdx = edge_encode_packet_head(eee, tap_pkt, len, pktbuf, out_destMac,
+                                        compression_buf, sizeof(compression_buf),
+                                        &enc_src, &enc_len);
+    if(!headerIdx) {
+        return 0;
+    }
+
+    idx = headerIdx;
+    idx += eee->transop.fwd(&eee->transop,
+                            pktbuf + idx, pktbuf_size - idx,
+                            enc_src, enc_len, out_destMac);
+
+    return edge_encode_packet_tail(eee, pktbuf, headerIdx, idx, len);
+}
+
 void edge_send_packet2net (struct n3n_runtime_data * eee,
                            uint8_t *tap_pkt, size_t len) {
 
@@ -2398,17 +2456,35 @@ void edge_send_packet2net (struct n3n_runtime_data * eee,
 
 /* ************************************** */
 
-/** Read a single packet from the TAP interface, process it and write out the
- *    corresponding packet to the cooked socket.
+/* Take one frame off the TAP interface into eth_pkt and decide whether it is
+ * to be sent at all (multicast, not yet registered, traffic filter).
+ *
+ * Returns 1 if a frame was taken off the queue - *out_len is then its length,
+ * or 0 if it was dropped here - 0 if the queue was empty and -1 if the device
+ * needed to be reopened.
  */
-void edge_read_from_tap (struct n3n_runtime_data * eee) {
+static int edge_tap_take (struct n3n_runtime_data * eee,
+                          uint8_t *eth_pkt,
+                          size_t *out_len) {
 
-    /* tun -> remote */
-    uint8_t eth_pkt[N2N_PKT_BUF_SIZE];
     macstr_t mac_buf;
     ssize_t len;
 
+    /* stays 0 unless a frame is taken that is to be sent */
+    *out_len = 0;
+
+    /* tuntap_read() is not a syscall on every platform, so make sure that we
+     * do not test a stale errno below */
+    errno = 0;
+
     len = tuntap_read( &(eee->device), eth_pkt, N2N_PKT_BUF_SIZE );
+
+    if((len < 0) && ((errno == EAGAIN) || (errno == EWOULDBLOCK))) {
+        /* The tap device is opened non blocking, so this just means that
+         * there is nothing (more) queued for us */
+        return 0;
+    }
+
     if((len <= 0) || (len > N2N_PKT_BUF_SIZE)) {
         // TODO:
         // - how often does this actually happen
@@ -2440,7 +2516,7 @@ void edge_read_from_tap (struct n3n_runtime_data * eee) {
 #ifndef _WIN32
         mainloop_register_fd(eee->device.fd, fd_info_proto_tuntap);
 #endif
-        return;
+        return -1;
 
     }
 
@@ -2453,24 +2529,163 @@ void edge_read_from_tap (struct n3n_runtime_data * eee) {
         is_ethMulticast(eth_pkt, len))) {
         traceEvent(TRACE_INFO, "dropping Tx multicast");
         eee->stats.tx_multicast_drop++;
-        return;
+        return 1;
     }
 
     if(!eee->last_sup) {
         // drop packets before first registration with supernode
         traceEvent(TRACE_DEBUG, "DROP packet before first registration with supernode");
-        return;
+        return 1;
     }
 
     if(eee->network_traffic_filter) {
         if(eee->network_traffic_filter->filter_packet_from_tap(eee->network_traffic_filter, eee, eth_pkt,
                                                                len) == N2N_DROP) {
             traceEvent(TRACE_DEBUG, "filtered packet of size %u", (unsigned int)len);
-            return;
+            return 1;
         }
     }
 
-    edge_send_packet2net(eee, eth_pkt, len);
+    *out_len = len;
+    return 1;
+}
+
+
+/** Read a single packet from the TAP interface, process it and write out the
+ *    corresponding packet to the cooked socket.
+ *
+ * Returns 1 if a frame was taken off the tap queue, 0 if the queue was empty
+ * and -1 if the device needed to be reopened.  The caller can use this to
+ * drain several frames from one readiness event.
+ */
+int edge_read_from_tap (struct n3n_runtime_data * eee) {
+
+    /* tun -> remote */
+    uint8_t eth_pkt[N2N_PKT_BUF_SIZE];
+    size_t len;
+    int rc;
+
+    rc = edge_tap_take(eee, eth_pkt, &len);
+    if((rc > 0) && len) {
+        edge_send_packet2net(eee, eth_pkt, len);
+    }
+
+    return rc;
+}
+
+
+/* How many frames edge_read_from_tap_batch() encodes together at most. A
+ * multiple of 4, because that is how many packets the AES-NI code encrypts
+ * side by side. */
+#define EDGE_TX_BATCH 16
+
+/* Scratch space for one batch of outgoing frames. It is always empty again by
+ * the time edge_read_from_tap_batch() returns, so it carries no state from one
+ * call to the next, and the mainloop that uses it is single threaded - which
+ * is why it can be a static rather than part of the runtime data. */
+static struct edge_tx_batch {
+    int count;
+    struct edge_tx_slot {
+        uint8_t frame[N2N_PKT_BUF_SIZE];     /* as read from the tap device */
+        uint8_t comp[N2N_PKT_BUF_SIZE];      /* the frame compressed, if that paid off */
+        uint8_t pdu[N2N_PKT_BUF_SIZE];       /* header and transformed payload */
+        size_t len;                          /* of the frame */
+        size_t head;                         /* of the header at the start of pdu */
+        n2n_mac_t dest;
+    } slot[EDGE_TX_BATCH];
+    n2n_transform_job_t job[EDGE_TX_BATCH];
+} tx_batch;
+
+
+/* Transform every payload in the batch - all at once if the transform has a
+ * batched form, one by one if not - then finish and send the packets, in the
+ * order their frames were read. */
+static void edge_tx_flush (struct n3n_runtime_data *eee, struct edge_tx_batch *b) {
+
+    int i;
+
+    if(b->count == 0) {
+        return;
+    }
+
+    if(eee->transop.fwd_multi && (b->count > 1)) {
+        eee->transop.fwd_multi(&eee->transop, b->job, b->count);
+    } else {
+        for(i = 0; i < b->count; i++) {
+            n2n_transform_job_t *j = &b->job[i];
+
+            j->result = eee->transop.fwd(&eee->transop,
+                                         j->out, j->out_len,
+                                         j->in, j->in_len, j->peer_mac);
+        }
+    }
+
+    for(i = 0; i < b->count; i++) {
+        struct edge_tx_slot *s = &b->slot[i];
+        size_t idx = s->head;
+
+        idx += b->job[i].result;
+        idx = edge_encode_packet_tail(eee, s->pdu, s->head, idx, s->len);
+        if(idx) {
+            send_packet(eee, s->dest, s->pdu, idx); /* to peer or supernode */
+        }
+    }
+
+    b->count = 0;
+}
+
+
+/** Read up to max frames from the TAP interface and send them, transforming
+ *    them in batches where the transform supports that.
+ *
+ * This is what the mainloop uses. edge_read_from_tap() is still there, one
+ * frame at a time, for the reader thread on Windows.
+ *
+ * Returns how many frames were taken off the tap queue.
+ */
+int edge_read_from_tap_batch (struct n3n_runtime_data * eee, int max) {
+
+    struct edge_tx_batch *b = &tx_batch;
+    int taken = 0;
+
+    while(taken < max) {
+        struct edge_tx_slot *s = &b->slot[b->count];
+        n2n_transform_job_t *j = &b->job[b->count];
+        const uint8_t *enc_src;
+        size_t enc_len;
+
+        if(edge_tap_take(eee, s->frame, &s->len) <= 0) {
+            break;
+        }
+        taken++;
+
+        if(!s->len) {
+            /* taken off the queue, but not to be sent */
+            continue;
+        }
+
+        s->head = edge_encode_packet_head(eee, s->frame, s->len, s->pdu, s->dest,
+                                          s->comp, sizeof(s->comp),
+                                          &enc_src, &enc_len);
+        if(!s->head) {
+            continue;
+        }
+
+        j->out = s->pdu + s->head;
+        j->out_len = sizeof(s->pdu) - s->head;
+        j->in = enc_src;
+        j->in_len = enc_len;
+        j->peer_mac = s->dest;
+        j->result = 0;
+
+        if(++b->count == EDGE_TX_BATCH) {
+            edge_tx_flush(eee, b);
+        }
+    }
+
+    edge_tx_flush(eee, b);
+
+    return taken;
 }
 
 
@@ -3071,19 +3286,28 @@ void process_pdu (struct n3n_runtime_data *eee,
 
 /* ************************************** */
 
-void edge_read_proto3_udp (struct n3n_runtime_data *eee,
-                           SOCKET sock,
-                           struct n3n_pktbuf *pktbuf,
-                           time_t now) {
+/** Read a single datagram from a UDP socket and process it.
+ *
+ * Returns 1 if a datagram was taken off the socket queue, 0 if the queue was
+ * empty and -1 if the socket is no good any more.  The caller can use this to
+ * drain several datagrams from one readiness event.
+ */
+int edge_read_proto3_udp (struct n3n_runtime_data *eee,
+                          SOCKET sock,
+                          struct n3n_pktbuf *pktbuf,
+                          time_t now) {
     struct sockaddr_storage sas;
     struct sockaddr *sender_sock = (struct sockaddr*)&sas;
     socklen_t ss_size = sizeof(sas);
+
+    // The caller may hand us the same buffer several times while draining
+    n3n_pktbuf_zero(pktbuf);
 
     ssize_t bread = recvfrom(
         sock,
         n3n_pktbuf_getbufptr(pktbuf),
         n3n_pktbuf_getbufavail(pktbuf),
-        0 /*flags*/,
+        MSG_DONTWAIT,
         sender_sock,
         &ss_size
     );
@@ -3095,19 +3319,29 @@ void edge_read_proto3_udp (struct n3n_runtime_data *eee,
         if(wsaerr == WSAECONNRESET) {
             // On a UDP-datagram socket this error indicates a previous send
             // operation resulted in an ICMP Port Unreachable message.
-            return;
+            return 0;
+        }
+        if(wsaerr == WSAEWOULDBLOCK) {
+            /* Nothing (more) queued for us */
+            return 0;
         }
         traceEvent(TRACE_ERROR, "WSAGetLastError(): %u", wsaerr);
+#else
+        if((errno == EAGAIN) || (errno == EWOULDBLOCK)) {
+            /* We asked for a non blocking read, so this just means that
+             * there is nothing (more) queued for us */
+            return 0;
+        }
 #endif
 
         /* The fd is no good now. Maybe we lost our interface. */
         traceEvent(TRACE_ERROR, "recvfrom() failed %d errno %d (%s)", bread, errno, strerror(errno));
         *eee->keep_running = false;
-        return;
+        return -1;
     }
     if(bread == 0) {
         /* For UDP bread of zero just means no data (unlike TCP). */
-        return;
+        return 0;
     }
 
     // TODO:
@@ -3125,7 +3359,7 @@ void edge_read_proto3_udp (struct n3n_runtime_data *eee,
         n3n_pktbuf_getbufsize(pktbuf),
         now
     );
-    return;
+    return 1;
 }
 
 void edge_read_proto3_tcp (struct n3n_runtime_data *eee,

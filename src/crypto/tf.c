@@ -726,6 +726,118 @@ int tf_cbc_encrypt (unsigned char *out, const unsigned char *in, size_t in_len,
     return n * TF_BLOCK_SIZE;
 }
 
+// load a plain text block from src, chain it with the preceding cipher text
+// block cv, byteswap and whiten it. cv holds wire order words and is not
+// byteswapped first: XOR commutes with a byteswap. The block is copied in
+// whole, so src needs no particular alignment
+#define ENC_LOAD_CHAINED(X0, X1, X2, X3, src, cv) do { \
+        memcpy(blk, (src), TF_BLOCK_SIZE); \
+        X3 = ctx->K[3] ^ le32toh(blk[3] ^ (cv)[3]); \
+        X2 = ctx->K[2] ^ le32toh(blk[2] ^ (cv)[2]); \
+        X1 = ctx->K[1] ^ le32toh(blk[1] ^ (cv)[1]); \
+        X0 = ctx->K[0] ^ le32toh(blk[0] ^ (cv)[0]); } while(0)
+
+// whiten and byteswap a cipher text block into cv, where it chains the next
+// block, and store it at dst. The words leave the last round in the order
+// X2, X3, X0, X1, as in twofish_internal_encrypt()
+#define ENC_STORE_CHAINED(dst, cv, X0, X1, X2, X3) do { \
+        (cv)[3] = htole32(X1 ^ ctx->K[7]); \
+        (cv)[2] = htole32(X0 ^ ctx->K[6]); \
+        (cv)[1] = htole32(X3 ^ ctx->K[5]); \
+        (cv)[0] = htole32(X2 ^ ctx->K[4]); \
+        memcpy((dst), (cv), TF_BLOCK_SIZE); } while(0)
+
+
+// CBC-encrypts count packets, each with its own chain starting from iv.
+//
+// Within one packet CBC encryption is a serial chain - every block needs the
+// cipher text of the one before - so it cannot be spread over several rails the
+// way tf_cbc_decrypt() spreads the blocks of one packet. Separate packets have
+// no such dependency, so here three packets go down three rails side by side.
+// The rails run in lock step for as many blocks as the shortest of the three
+// has; the rest of each packet is finished by tf_cbc_encrypt(), carrying on
+// from that packet's last chaining value. Fewer than three packets left over
+// are encrypted one by one. The output is exactly what tf_cbc_encrypt() gives
+// for each packet on its own.
+int tf_cbc_encrypt_multi (unsigned char *out[], const unsigned char *in[], const size_t in_len[],
+                          const unsigned char *iv, tf_context_t *ctx, int count) {
+
+    int p;
+
+    for(p = 0; p + 3 <= count; p += 3) {
+
+        size_t n0 = in_len[p] / TF_BLOCK_SIZE;
+        size_t n1 = in_len[p + 1] / TF_BLOCK_SIZE;
+        size_t n2 = in_len[p + 2] / TF_BLOCK_SIZE;
+        size_t n = (n0 < n1) ? n0 : n1;
+        size_t i;
+
+        uint32_t cv0[TF_BLOCK_SIZE / 4], cv1[TF_BLOCK_SIZE / 4], cv2[TF_BLOCK_SIZE / 4]; /* chaining values, wire order */
+        uint32_t blk[TF_BLOCK_SIZE / 4];
+        uint32_t T0, T1;
+        uint32_t Q0, Q1, Q2, Q3, R0, R1, R2, R3, S0, S1, S2, S3;
+
+        if(n2 < n) {
+            n = n2;
+        }
+
+        memcpy(cv0, iv, TF_BLOCK_SIZE);
+        memcpy(cv1, iv, TF_BLOCK_SIZE);
+        memcpy(cv2, iv, TF_BLOCK_SIZE);
+
+        // 3 parallel rails of twofish encryption, one packet each
+        for(i = 0; i < n; i++) {
+            size_t off = i * TF_BLOCK_SIZE;
+
+            ENC_LOAD_CHAINED(Q0, Q1, Q2, Q3, in[p] + off, cv0);
+            ENC_LOAD_CHAINED(R0, R1, R2, R3, in[p + 1] + off, cv1);
+            ENC_LOAD_CHAINED(S0, S1, S2, S3, in[p + 2] + off, cv2);
+
+            ENC_ROUND(Q0, Q1, Q2, Q3,  0); ENC_ROUND(R0, R1, R2, R3,  0); ENC_ROUND(S0, S1, S2, S3,  0);
+            ENC_ROUND(Q2, Q3, Q0, Q1,  1); ENC_ROUND(R2, R3, R0, R1,  1); ENC_ROUND(S2, S3, S0, S1,  1);
+            ENC_ROUND(Q0, Q1, Q2, Q3,  2); ENC_ROUND(R0, R1, R2, R3,  2); ENC_ROUND(S0, S1, S2, S3,  2);
+            ENC_ROUND(Q2, Q3, Q0, Q1,  3); ENC_ROUND(R2, R3, R0, R1,  3); ENC_ROUND(S2, S3, S0, S1,  3);
+            ENC_ROUND(Q0, Q1, Q2, Q3,  4); ENC_ROUND(R0, R1, R2, R3,  4); ENC_ROUND(S0, S1, S2, S3,  4);
+            ENC_ROUND(Q2, Q3, Q0, Q1,  5); ENC_ROUND(R2, R3, R0, R1,  5); ENC_ROUND(S2, S3, S0, S1,  5);
+            ENC_ROUND(Q0, Q1, Q2, Q3,  6); ENC_ROUND(R0, R1, R2, R3,  6); ENC_ROUND(S0, S1, S2, S3,  6);
+            ENC_ROUND(Q2, Q3, Q0, Q1,  7); ENC_ROUND(R2, R3, R0, R1,  7); ENC_ROUND(S2, S3, S0, S1,  7);
+            ENC_ROUND(Q0, Q1, Q2, Q3,  8); ENC_ROUND(R0, R1, R2, R3,  8); ENC_ROUND(S0, S1, S2, S3,  8);
+            ENC_ROUND(Q2, Q3, Q0, Q1,  9); ENC_ROUND(R2, R3, R0, R1,  9); ENC_ROUND(S2, S3, S0, S1,  9);
+            ENC_ROUND(Q0, Q1, Q2, Q3, 10); ENC_ROUND(R0, R1, R2, R3, 10); ENC_ROUND(S0, S1, S2, S3, 10);
+            ENC_ROUND(Q2, Q3, Q0, Q1, 11); ENC_ROUND(R2, R3, R0, R1, 11); ENC_ROUND(S2, S3, S0, S1, 11);
+            ENC_ROUND(Q0, Q1, Q2, Q3, 12); ENC_ROUND(R0, R1, R2, R3, 12); ENC_ROUND(S0, S1, S2, S3, 12);
+            ENC_ROUND(Q2, Q3, Q0, Q1, 13); ENC_ROUND(R2, R3, R0, R1, 13); ENC_ROUND(S2, S3, S0, S1, 13);
+            ENC_ROUND(Q0, Q1, Q2, Q3, 14); ENC_ROUND(R0, R1, R2, R3, 14); ENC_ROUND(S0, S1, S2, S3, 14);
+            ENC_ROUND(Q2, Q3, Q0, Q1, 15); ENC_ROUND(R2, R3, R0, R1, 15); ENC_ROUND(S2, S3, S0, S1, 15);
+
+            ENC_STORE_CHAINED(out[p] + off, cv0, Q0, Q1, Q2, Q3);
+            ENC_STORE_CHAINED(out[p + 1] + off, cv1, R0, R1, R2, R3);
+            ENC_STORE_CHAINED(out[p + 2] + off, cv2, S0, S1, S2, S3);
+        }
+
+        // what is left of each packet, on a single rail
+        if(n0 > n) {
+            tf_cbc_encrypt(out[p] + n * TF_BLOCK_SIZE, in[p] + n * TF_BLOCK_SIZE,
+                           (n0 - n) * TF_BLOCK_SIZE, (const unsigned char *)cv0, ctx);
+        }
+        if(n1 > n) {
+            tf_cbc_encrypt(out[p + 1] + n * TF_BLOCK_SIZE, in[p + 1] + n * TF_BLOCK_SIZE,
+                           (n1 - n) * TF_BLOCK_SIZE, (const unsigned char *)cv1, ctx);
+        }
+        if(n2 > n) {
+            tf_cbc_encrypt(out[p + 2] + n * TF_BLOCK_SIZE, in[p + 2] + n * TF_BLOCK_SIZE,
+                           (n2 - n) * TF_BLOCK_SIZE, (const unsigned char *)cv2, ctx);
+        }
+    }
+
+    // fewer than three packets left
+    for(; p < count; p++) {
+        tf_cbc_encrypt(out[p], in[p], in_len[p], iv, ctx);
+    }
+
+    return 0;
+}
+
 
 int tf_cbc_decrypt (unsigned char *out, const unsigned char *in, size_t in_len,
                     const unsigned char *iv, tf_context_t *ctx) {
