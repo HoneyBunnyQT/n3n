@@ -16,13 +16,14 @@
 #include <stdint.h>          // for uint32_t
 #include <string.h>          // for memset
 
+#include "counter.h"         // for COUNTER_INC, COUNTER_READ
 #include "n2n_typedefs.h"    // for n2n_edge_stats, n3n_runtime_data
 
 // the slot the calling thread counts into
 #define N3N_STATS_THIS_SLOT 0
 
 // count one event in the calling thread's slot
-#define STATS_INC(rt, field) (++((rt)->stats_slot[N3N_STATS_THIS_SLOT].field))
+#define STATS_INC(rt, field) COUNTER_INC((rt)->stats_slot[N3N_STATS_THIS_SLOT].field)
 
 // Add up all slots into *out. Every member of struct n2n_edge_stats is a
 // uint32_t, so this walks the struct word by word and a counter added to it
@@ -39,7 +40,7 @@ static inline void n3n_stats_sum (const struct n3n_runtime_data *rt,
     for(slot = 0; slot < N3N_STATS_SLOTS; slot++) {
         const uint32_t *s = (const uint32_t *)&rt->stats_slot[slot];
         for(i = 0; i < words; i++) {
-            sum[i] += s[i];
+            sum[i] += COUNTER_READ(s[i]);
         }
     }
 }
