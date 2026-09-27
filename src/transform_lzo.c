@@ -33,23 +33,42 @@
 #include "n2n.h"        // for n2n_trans_op_t, N2N_...
 #include "n2n_define.h"
 #include "n2n_typedefs.h"
+#include "thread_local.h"  // for N3N_THREAD_LOCAL, n3n_thread_on_cleanup
 
 
 /* heap allocation for compression as per lzo example doc  */
 #define HEAP_ALLOC(var,size)   lzo_align_t __LZO_MMODEL var [ ((size) + (sizeof(lzo_align_t) - 1)) / sizeof(lzo_align_t) ]
 
 
-typedef struct transop_lzo {
-    HEAP_ALLOC(wrkmem, LZO1X_1_MEM_COMPRESS);
-} transop_lzo_t;
+// LZO needs work memory while it compresses. It used to live in the
+// transform's private data, shared by everyone who compressed. Every thread
+// now gets its own on first use; lzo1x_1_compress() clears it at the start of
+// every call, so it carries nothing from one packet to the next.
+static N3N_THREAD_LOCAL lzo_align_t *lzo_wrkmem;
+
+
+static void lzo_wrkmem_free (void) {
+
+    free(lzo_wrkmem);
+    lzo_wrkmem = NULL;
+}
+
+
+static lzo_align_t *lzo_wrkmem_get (void) {
+
+    if(!lzo_wrkmem) {
+        lzo_wrkmem = calloc(1, LZO1X_1_MEM_COMPRESS);
+        if(!lzo_wrkmem) {
+            return NULL;
+        }
+        n3n_thread_on_cleanup(lzo_wrkmem_free);
+    }
+
+    return lzo_wrkmem;
+}
 
 
 static int transop_deinit_lzo (n2n_trans_op_t *arg) {
-
-    transop_lzo_t *priv = (transop_lzo_t *)arg->priv;
-
-    if(priv)
-        free(priv);
 
     return 0;
 }
@@ -65,8 +84,13 @@ static int transop_encode_lzo (n2n_trans_op_t *arg,
                                size_t in_len,
                                const uint8_t *peer_mac) {
 
-    transop_lzo_t *priv = (transop_lzo_t *)arg->priv;
+    lzo_align_t *wrkmem = lzo_wrkmem_get();
     lzo_uint compression_len = 0;
+
+    if(!wrkmem) {
+        traceEvent(TRACE_ERROR, "encode_lzo cannot allocate work memory");
+        return 0;
+    }
 
     if(in_len > N2N_PKT_BUF_SIZE) {
         traceEvent(TRACE_ERROR, "encode_lzo inbuf wrong size (%ul) to compress", in_len);
@@ -79,7 +103,7 @@ static int transop_encode_lzo (n2n_trans_op_t *arg,
         return 0;
     }
 
-    if(lzo1x_1_compress(inbuf, in_len, outbuf, &compression_len, priv->wrkmem) != LZO_E_OK) {
+    if(lzo1x_1_compress(inbuf, in_len, outbuf, &compression_len, wrkmem) != LZO_E_OK) {
         traceEvent(TRACE_ERROR, "encode_lzo compression error");
         compression_len = 0;
     }
@@ -127,21 +151,12 @@ static int transop_decode_lzo (n2n_trans_op_t *arg,
 // lzo initialization function
 int n2n_transop_lzo_init (const n2n_edge_conf_t *conf, n2n_trans_op_t *ttt) {
 
-    transop_lzo_t *priv;
-
     memset(ttt, 0, sizeof(*ttt));
     ttt->transform_id = N2N_COMPRESSION_ID_LZO;
 
     ttt->deinit       = transop_deinit_lzo;
     ttt->fwd          = transop_encode_lzo;
     ttt->rev          = transop_decode_lzo;
-
-    priv = (transop_lzo_t*)calloc(1, sizeof(transop_lzo_t));
-    if(!priv) {
-        traceEvent(TRACE_ERROR, "lzo_init cannot allocate transop_lzo memory");
-        return -1;
-    }
-    ttt->priv = priv;
 
     if(lzo_init() != LZO_E_OK) {
         traceEvent(TRACE_ERROR, "lzo_init cannot init lzo compression");
@@ -152,7 +167,7 @@ int n2n_transop_lzo_init (const n2n_edge_conf_t *conf, n2n_trans_op_t *ttt) {
 }
 
 struct bench_ctx {
-    transop_lzo_t priv;
+    HEAP_ALLOC(wrkmem, LZO1X_1_MEM_COMPRESS);
     // for compression, want a outbuf (0x200 * 2) / 16 + 64 + 3 bytes
     // for uncompression, want to be able to test the largest expected MTU
     uint8_t outbuf[2048];
@@ -174,7 +189,7 @@ static const ssize_t bench_lzo_comp_run (
         data_in_size,
         ctx->outbuf,
         &ctx->outbuf_size,
-        ctx->priv.wrkmem
+        ctx->wrkmem
     );
 
     if(result != LZO_E_OK) {

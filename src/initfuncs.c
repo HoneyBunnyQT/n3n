@@ -26,6 +26,8 @@ void n3n_deinitfuncs_mainloop ();
 void n3n_deinitfuncs_pktbuf ();
 void n3n_deinitfuncs_resolve ();
 
+void n3n_thread_cleanup ();
+
 void n3n_initfuncs () {
     // TODO:
     // - ideally, these functions would all be defined statically as
@@ -61,4 +63,7 @@ void n3n_deinitfuncs () {
     n3n_deinitfuncs_mainloop();
     n3n_deinitfuncs_pktbuf();
     n3n_deinitfuncs_resolve();
+
+    // what the main thread allocated for itself on first use
+    n3n_thread_cleanup();
 }
