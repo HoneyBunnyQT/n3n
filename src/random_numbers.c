@@ -27,6 +27,8 @@
 #include <unistd.h>  // for syscall
 #include <stdint.h>
 
+#include "thread_local.h"  // for N3N_THREAD_LOCAL
+
 // syscall and inquiring random number from hardware generators might fail, so
 // we will retry
 #define RND_RETRIES      1000
@@ -68,10 +70,25 @@ typedef struct splitmix64_state_t {
 
 // the state must be seeded in a way that it is not all zero, choose some
 // arbitrary defaults (in this case: taken from splitmix64)
-static rn_generator_state_t rn_current_state = {
+//
+// Every thread has its own state. A shared one would let two threads read the
+// same state and hand out the same number twice - and these numbers are what
+// the ciphers put in front of every packet in place of an IV.
+static N3N_THREAD_LOCAL rn_generator_state_t rn_current_state = {
     .a = 0x9E3779B97F4A7C15,
     .b = 0xBF58476D1CE4E5B9
 };
+
+// whether this thread's state has been seeded or explicitly set
+static N3N_THREAD_LOCAL int rn_seeded = 0;
+
+// set by n3n_initfuncs_random() once the main thread is seeded. Until then an
+// unseeded thread keeps the fixed defaults above, exactly as a single threaded
+// program always did; after it, a thread seeds itself on first use. Written
+// once before any other thread is started.
+static int rn_seed_threads = 0;
+
+static void rn_seed_this_thread (void);
 
 
 // used for mixing the initializing seed
@@ -89,6 +106,7 @@ static uint64_t splitmix64 (splitmix64_state_t *state) {
 
 // Used mainly during testing to generate a known random sequence
 void n3n_srand_stable_default () {
+    rn_seeded = 1;
     rn_current_state.a = 0x9E3779B97F4A7C15;
     rn_current_state.b = 0xBF58476D1CE4E5B9;
 }
@@ -97,6 +115,9 @@ static int n3n_srand (uint64_t seed) {
 
     uint8_t i;
     splitmix64_state_t smstate = { seed };
+
+    // before the n3n_rand() calls below, which would otherwise seed again
+    rn_seeded = 1;
 
     rn_current_state.a = 0;
     rn_current_state.b = 0;
@@ -122,6 +143,10 @@ static int n3n_srand (uint64_t seed) {
 // https://en.wikipedia.org/wiki/Xorshift as of July, 2019
 // and thus is considered public domain
 uint64_t n3n_rand (void) {
+
+    if(!rn_seeded && rn_seed_threads) {
+        rn_seed_this_thread();
+    }
 
     uint64_t t       = rn_current_state.a;
     uint64_t const s = rn_current_state.b;
@@ -380,7 +405,20 @@ int memrnd (uint8_t *address, size_t len) {
     return 0;
 }
 
+// Seed the calling thread. The address of its own state goes into the seed,
+// so that two threads seeding in the same instant still start apart even
+// where the only sources are time() and clock()
+static void rn_seed_this_thread (void) {
+
+    splitmix64_state_t mix = { (uint64_t)(uintptr_t)&rn_current_state };
+
+    n3n_srand(n3n_seed() ^ splitmix64(&mix));
+}
+
 void n3n_initfuncs_random () {
     /* Random seed */
     n3n_srand(n3n_seed());
+
+    // from now on, other threads seed themselves on first use
+    rn_seed_threads = 1;
 }
