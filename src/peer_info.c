@@ -385,19 +385,33 @@ static int time_stamp_verify_and_update (uint64_t stamp, uint64_t *previous_stam
 
     // if applicable: is it higher than previous time stamp (including allowed deviation of TIME_STAMP_JITTER)?
     if(NULL != previous_stamp) {
-        diff = stamp - *previous_stamp;
-        if(allow_jitter) {
-            // 8 times higher jitter allowed for counter-only flagged timestamps ( ~ 1.25 sec with 160 ms default jitter)
-            diff += TIME_STAMP_JITTER << (co << 3);
-        }
+        // Check and raise in one step: with several threads receiving from
+        // the same peer, a separate read and write would let two of them pass
+        // the same replayed packet, or lower the stamp again. If another
+        // thread raised it in between, check once more against its value.
+        // With one thread the first attempt always succeeds.
+        uint64_t previous = __atomic_load_n(previous_stamp, __ATOMIC_RELAXED);
+        uint64_t higher;
 
-        if(diff <= 0) {
-            traceEvent(TRACE_DEBUG, "time_stamp_verify_and_update found a timestamp too old compared to previous.");
-            return 0; // failure
-        }
-        // for not allowing to exploit the allowed TIME_STAMP_JITTER to "turn the clock backwards",
-        // set the higher of the values
-        *previous_stamp = (stamp > *previous_stamp ? stamp : *previous_stamp);
+        do {
+            diff = stamp - previous;
+            if(allow_jitter) {
+                // 8 times higher jitter allowed for counter-only flagged timestamps ( ~ 1.25 sec with 160 ms default jitter)
+                diff += TIME_STAMP_JITTER << (co << 3);
+            }
+
+            if(diff <= 0) {
+                traceEvent(TRACE_DEBUG, "time_stamp_verify_and_update found a timestamp too old compared to previous.");
+                return 0; // failure
+            }
+            // for not allowing to exploit the allowed TIME_STAMP_JITTER to "turn the clock backwards",
+            // set the higher of the values
+            higher = (stamp > previous ? stamp : previous);
+            if(higher == previous) {
+                break;
+            }
+        } while(!__atomic_compare_exchange_n(previous_stamp, &previous, higher, 1,
+                                             __ATOMIC_RELAXED, __ATOMIC_RELAXED));
     }
 
     return 1; // success
