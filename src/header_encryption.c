@@ -163,22 +163,50 @@ void packet_header_setup_key (const char *community_name,
 }
 
 
+// Build the new pair of contexts beside the old one, swap both pointers, and
+// only then free the old pair. The old code freed first and built after, so
+// that anyone still holding the old pointers worked in freed memory, and a
+// failed allocation left the keys half set up.
+//
+// Once packets are handled by more than one thread, whoever calls this has to
+// keep the others from reading the two pointers while they change - they
+// must see both old or both new - and from still holding the old pair when it
+// is freed. The main thread will do that by holding the write side of the lock
+// the packet threads take for every batch.
 void packet_header_change_dynamic_key (uint8_t *key_dynamic,
                                        struct speck_context_t **ctx_dynamic,
                                        struct speck_context_t **ctx_iv_dynamic) {
 
-    speck_deinit((speck_context_t*)*ctx_dynamic);
-    speck_deinit((speck_context_t*)*ctx_iv_dynamic);
-
+    speck_context_t *ctx_new = NULL, *ctx_iv_new = NULL;
+    speck_context_t *ctx_old, *ctx_iv_old;
     uint8_t key[16];
+
     pearson_hash_128(key, key_dynamic, N2N_AUTH_CHALLENGE_SIZE);
 
     // for REGISTER_SUPER, REGISTER_SUPER_ACK, REGISTER_SUPER_NAK only
     // for all other packets, same as static by default (changed by user/pw auth scheme)
-    speck_init((speck_context_t**)ctx_dynamic, key, 128);
+    speck_init(&ctx_new, key, 128);
 
     // hash again and use as key for IV encryption
     // REMOVE as soon as checksum and replay protection get their own fields
     pearson_hash_128(key, key, sizeof(key));
-    speck_init((speck_context_t**)ctx_iv_dynamic, key, 128);
+    speck_init(&ctx_iv_new, key, 128);
+
+    // only a failed allocation is caught: speck_init() passes on what the key
+    // expansion returns, and that is 0 in some builds and 1 in the plain C one
+    if(!ctx_new || !ctx_iv_new) {
+        traceEvent(TRACE_ERROR, "cannot set up the new dynamic header keys, keeping the old ones");
+        speck_deinit(ctx_new);
+        speck_deinit(ctx_iv_new);
+        return;
+    }
+
+    ctx_old = (speck_context_t*)*ctx_dynamic;
+    ctx_iv_old = (speck_context_t*)*ctx_iv_dynamic;
+
+    *ctx_dynamic = (struct speck_context_t*)ctx_new;
+    *ctx_iv_dynamic = (struct speck_context_t*)ctx_iv_new;
+
+    speck_deinit(ctx_old);
+    speck_deinit(ctx_iv_old);
 }
