@@ -411,8 +411,6 @@ typedef void (*n2n_transform_multi_f)(struct n2n_trans_op * arg,
  */
 typedef struct n2n_trans_op {
     void *             priv;          /* opaque data. Key schedule goes here. */
-    size_t tx_cnt;
-    size_t rx_cnt;
 
     n2n_transdeinit_f deinit;         /* destructor function */
     n2n_transform_f fwd;              /* encode a payload */
@@ -493,6 +491,8 @@ typedef struct n2n_edge_conf {
 } n2n_edge_conf_t;
 
 
+// Every member must be a uint32_t: n3n_stats_sum() adds the slots up word by
+// word, and the metrics renderer reads them by offset as uint32_t
 struct n2n_edge_stats {
     uint32_t tx_p2p;
     uint32_t rx_p2p;
@@ -509,7 +509,12 @@ struct n2n_edge_stats {
     uint32_t sn_fwd;            /* Number of messages forwarded. */
     uint32_t sn_broadcast;      /* Number of messages broadcast to a community. */
     uint32_t sn_drop;
+    uint32_t transop_tx;        /* Payloads encoded by the transform. */
+    uint32_t transop_rx;        /* Payloads decoded by the transform. */
 };
+
+// one slot of counters per thread, see stats.h
+#define N3N_STATS_SLOTS 1
 
 typedef struct n2n_tcp_connection {
     int socket_fd;                                        /* file descriptor for tcp socket */
@@ -578,7 +583,8 @@ struct n3n_runtime_data {
 
 
 
-    struct n2n_edge_stats stats;                                         /**< Statistics */
+    struct n2n_edge_stats stats_slot[N3N_STATS_SLOTS];                   /**< Statistics, one slot per thread - see stats.h */
+    struct n2n_edge_stats stats_sum;                                     /**< Sum of the slots, as last read by the metrics page */
 
     n3n_resolve_parameter_t          *resolve_parameter;                 /**< Pointer to name resolver's parameter block */
 

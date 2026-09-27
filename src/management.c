@@ -30,6 +30,7 @@
 #include "n2n.h"
 #include "n2n_typedefs.h"
 #include "peer_info.h"   // for peer_info
+#include "stats.h"       // for n3n_stats_sum
 #include "uthash.h"
 
 #ifdef _WIN32
@@ -818,6 +819,10 @@ static void jsonrpc_get_timestamps (char *id, struct n3n_runtime_data *eee, conn
 }
 
 static void jsonrpc_get_packetstats (char *id, struct n3n_runtime_data *eee, conn_t *conn, const char *params) {
+    struct n2n_edge_stats stats;
+
+    n3n_stats_sum(eee, &stats);
+
     jsonrpc_result_head(id, conn);
     sb_reprintf(&conn->request, "[");
 
@@ -826,66 +831,66 @@ static void jsonrpc_get_packetstats (char *id, struct n3n_runtime_data *eee, con
                 "\"type\":\"transop\","
                 "\"tx_pkt\":%u,"
                 "\"rx_pkt\":%u},",
-                (uint32_t)eee->transop.tx_cnt,
-                (uint32_t)eee->transop.rx_cnt);
+                stats.transop_tx,
+                stats.transop_rx);
 
     sb_reprintf(&conn->request,
                 "{"
                 "\"type\":\"p2p\","
                 "\"tx_pkt\":%u,"
                 "\"rx_pkt\":%u},",
-                eee->stats.tx_p2p,
-                eee->stats.rx_p2p);
+                stats.tx_p2p,
+                stats.rx_p2p);
 
     sb_reprintf(&conn->request,
                 "{"
                 "\"type\":\"super\","
                 "\"tx_pkt\":%u,"
                 "\"rx_pkt\":%u},",
-                eee->stats.tx_sup,
-                eee->stats.rx_sup);
+                stats.tx_sup,
+                stats.rx_sup);
 
     sb_reprintf(&conn->request,
                 "{"
                 "\"type\":\"super_broadcast\","
                 "\"tx_pkt\":%u,"
                 "\"rx_pkt\":%u},",
-                eee->stats.tx_sup_broadcast,
-                eee->stats.rx_sup_broadcast);
+                stats.tx_sup_broadcast,
+                stats.rx_sup_broadcast);
 
     sb_reprintf(&conn->request,
                 "{"
                 "\"type\":\"tuntap_error\","
                 "\"tx_pkt\":%u},",
-                eee->stats.tx_tuntap_error);
+                stats.tx_tuntap_error);
 
     sb_reprintf(&conn->request,
                 "{"
                 "\"type\":\"multicast_drop\","
                 "\"tx_pkt\":%u,"
                 "\"rx_pkt\":%u},",
-                eee->stats.tx_multicast_drop,
-                eee->stats.rx_multicast_drop);
+                stats.tx_multicast_drop,
+                stats.rx_multicast_drop);
 
     sb_reprintf(&conn->request,
                 "{"
                 "\"type\":\"sn_fwd\","
                 "\"tx_pkt\":%u},",
-                eee->stats.sn_fwd);
+                stats.sn_fwd);
 
     sb_reprintf(&conn->request,
                 "{"
                 "\"type\":\"sn_broadcast\","
                 "\"tx_pkt\":%u},",
-                eee->stats.sn_broadcast);
+                stats.sn_broadcast);
 
     sb_reprintf(&conn->request,
                 "{"
                 "\"type\":\"sn_reg\","
                 "\"tx_pkt\":%u,"
                 "\"nak\":%u},",
-                eee->stats.sn_reg,
-                eee->stats.sn_reg_nak);
+                stats.sn_reg,
+                stats.sn_reg_nak);
 
     /* Note: sn_reg_nak is not currently incremented anywhere */
 
@@ -894,7 +899,7 @@ static void jsonrpc_get_packetstats (char *id, struct n3n_runtime_data *eee, con
                 "{"
                 "\"type\":\"sn_errors\","
                 "\"tx_pkt\":%u},",
-                eee->stats.sn_errors);
+                stats.sn_errors);
 
     jsonrpc_listend_hack(conn, "]");
     jsonrpc_result_tail(conn, 200);
@@ -1072,6 +1077,9 @@ static void render_todo_page (struct n3n_runtime_data *eee, conn_t *conn) {
 }
 
 static void render_metrics_page (struct n3n_runtime_data *eee, conn_t *conn) {
+    // the metrics renderer reads the counters from here
+    n3n_stats_sum(eee, &eee->stats_sum);
+
     n3n_metrics_render(&conn->request);
 
     // Update the reply buffer after last potential realloc

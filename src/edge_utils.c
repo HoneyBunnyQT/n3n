@@ -59,6 +59,7 @@
 #include "resolve.h"                 // for resolve_create_thread, resolve_c...
 #include "sn_selection.h"            // for sn_selection_criterion_common_da...
 #include "speck.h"                   // for speck_128_decrypt, speck_128_enc...
+#include "stats.h"                   // for STATS_INC, n3n_stats_sum
 #include "uthash.h"                  // for UT_hash_handle, HASH_COUNT, HASH...
 #include "n2n_define.h"
 #include "n2n_typedefs.h"
@@ -1915,12 +1916,12 @@ static int handle_PACKET (struct n3n_runtime_data * eee,
 
     if(from_supernode) {
         if(is_multi_broadcast(pkt->dstMac))
-            ++(eee->stats.rx_sup_broadcast);
+            STATS_INC(eee, rx_sup_broadcast);
 
-        ++(eee->stats.rx_sup);
+        STATS_INC(eee, rx_sup);
         eee->last_sup = now;
     } else {
-        ++(eee->stats.rx_p2p);
+        STATS_INC(eee, rx_p2p);
         eee->last_p2p=now;
     }
 
@@ -1952,7 +1953,7 @@ static int handle_PACKET (struct n3n_runtime_data * eee,
     eth_size = eee->transop.rev(&eee->transop,
                                 eth_payload, N2N_PKT_BUF_SIZE,
                                 payload, psize, pkt->srcMac);
-    ++(eee->transop.rx_cnt); /* stats */
+    STATS_INC(eee, transop_rx);
 
     /* decompress if necessary */
     size_t deflate_len;
@@ -2001,7 +2002,7 @@ static int handle_PACKET (struct n3n_runtime_data * eee,
 
     if(!eee->conf.allow_multicast && is_multicast) {
         traceEvent(TRACE_INFO, "dropping RX multicast");
-        eee->stats.rx_multicast_drop++;
+        STATS_INC(eee, rx_multicast_drop);
         return(-1);
     }
 
@@ -2220,12 +2221,12 @@ static int send_packet (struct n3n_runtime_data * eee,
                sock_to_cstr(sockbuf, &destination));
 
     if(is_p2p)
-        ++(eee->stats.tx_p2p);
+        STATS_INC(eee, tx_p2p);
     else
-        ++(eee->stats.tx_sup);
+        STATS_INC(eee, tx_sup);
 
     if(is_multi_broadcast(dstMac)) {
-        ++(eee->stats.tx_sup_broadcast);
+        STATS_INC(eee, tx_sup_broadcast);
 
         // if no supernode around, foward the broadcast to all known peers
         if(eee->sn_wait) {
@@ -2410,7 +2411,7 @@ static size_t edge_encode_packet_tail (struct n3n_runtime_data *eee,
     }
 #endif
 
-    eee->transop.tx_cnt++; /* stats */
+    STATS_INC(eee, transop_tx);
 
     return idx;
 }
@@ -2498,7 +2499,7 @@ static int edge_tap_take (struct n3n_runtime_data * eee,
             strerror(errno)
         );
         traceEvent(TRACE_WARNING, "TAP I/O operation aborted, restart later.");
-        eee->stats.tx_tuntap_error++;
+        STATS_INC(eee, tx_tuntap_error);
 
         sleep(3);
 #ifndef _WIN32
@@ -2528,7 +2529,7 @@ static int edge_tap_take (struct n3n_runtime_data * eee,
        (is_ip6_discovery(eth_pkt, len) ||
         is_ethMulticast(eth_pkt, len))) {
         traceEvent(TRACE_INFO, "dropping Tx multicast");
-        eee->stats.tx_multicast_drop++;
+        STATS_INC(eee, tx_multicast_drop);
         return 1;
     }
 
@@ -3402,7 +3403,10 @@ void edge_read_proto3_tcp (struct n3n_runtime_data *eee,
 
 static void print_edge_stats (const struct n3n_runtime_data *eee) {
 
-    const struct n2n_edge_stats *s = &eee->stats;
+    struct n2n_edge_stats sum;
+    const struct n2n_edge_stats *s = &sum;
+
+    n3n_stats_sum(eee, &sum);
 
     traceEvent(TRACE_NORMAL, "**********************************");
     traceEvent(TRACE_NORMAL, "Packet stats:");
@@ -3464,8 +3468,8 @@ int run_edge_loop (struct n3n_runtime_data *eee) {
     *eee->keep_running = true;
     update_supernode_reg(eee, time(NULL));
 
-    edge_metrics_module1.data = &eee->stats;
-    edge_metrics_module2.data = &eee->stats;
+    edge_metrics_module1.data = &eee->stats_sum;
+    edge_metrics_module2.data = &eee->stats_sum;
     n3n_metrics_register(&edge_metrics_module1);
     n3n_metrics_register(&edge_metrics_module2);
 

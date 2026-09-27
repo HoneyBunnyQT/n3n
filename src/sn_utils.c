@@ -52,6 +52,7 @@
 #include "resolve.h"            // for resolve_create_thread, resolve_cancel...
 #include "sn_selection.h"       // for sn_selection_criterion_gather_data
 #include "speck.h"              // for speck_128_encrypt, speck_context_t
+#include "stats.h"              // for STATS_INC
 #include "uthash.h"             // for UT_hash_handle, HASH_ITER, HASH_DEL
 
 #ifdef _WIN32
@@ -709,14 +710,14 @@ static void try_broadcast (struct n3n_runtime_data * sss,
                 data_sent_len = sendto_peer(sss, scan, pktbuf, pktsize);
 
                 if(data_sent_len != pktsize) {
-                    ++(sss->stats.sn_errors);
+                    STATS_INC(sss, sn_errors);
                     traceEvent(TRACE_WARNING, "multicast %lu to supernode [%s] %s failed %s",
                                pktsize,
                                sock_to_cstr(sockbuf, &(scan->sock)),
                                macaddr_str(mac_buf, scan->mac_addr),
                                strerror(errno));
                 } else {
-                    ++(sss->stats.sn_broadcast);
+                    STATS_INC(sss, sn_broadcast);
                     traceEvent(TRACE_DEBUG, "multicast %lu to supernode [%s] %s",
                                pktsize,
                                sock_to_cstr(sockbuf, &(scan->sock)),
@@ -737,14 +738,14 @@ static void try_broadcast (struct n3n_runtime_data * sss,
                 data_sent_len = sendto_peer(sss, scan, pktbuf, pktsize);
 
                 if(data_sent_len != pktsize) {
-                    ++(sss->stats.sn_errors);
+                    STATS_INC(sss, sn_errors);
                     traceEvent(TRACE_WARNING, "multicast %lu to [%s] %s failed %s",
                                pktsize,
                                sock_to_cstr(sockbuf, &(scan->sock)),
                                macaddr_str(mac_buf, scan->mac_addr),
                                strerror(errno));
                 } else {
-                    ++(sss->stats.sn_broadcast);
+                    STATS_INC(sss, sn_broadcast);
                     traceEvent(TRACE_DEBUG, "multicast %lu to [%s] %s",
                                pktsize,
                                sock_to_cstr(sockbuf, &(scan->sock)),
@@ -781,14 +782,14 @@ static void try_forward (struct n3n_runtime_data * sss,
         data_sent_len = sendto_peer(sss, scan, pktbuf, pktsize);
 
         if(data_sent_len == pktsize) {
-            ++(sss->stats.sn_fwd);
+            STATS_INC(sss, sn_fwd);
             traceEvent(TRACE_DEBUG, "unicast %lu to [%s] %s",
                        pktsize,
                        sock_to_cstr(sockbuf, &(scan->sock)),
                        macaddr_str(mac_buf, scan->mac_addr));
             return;
         } else {
-            ++(sss->stats.sn_errors);
+            STATS_INC(sss, sn_errors);
             traceEvent(TRACE_ERROR, "unicast %lu to [%s] %s FAILED (%d: %s)",
                        pktsize,
                        sock_to_cstr(sockbuf, &(scan->sock)),
@@ -832,7 +833,7 @@ static void try_forward (struct n3n_runtime_data * sss,
     }
 
     // Must be from a supernode then
-    sss->stats.sn_drop++;
+    STATS_INC(sss, sn_drop);
     traceEvent(
         TRACE_DEBUG,
         "unknown mac address in packet from a supernode, dropping the packet"
@@ -2078,7 +2079,7 @@ static int process_pdu (struct n3n_runtime_data * sss,
 
             /* Edge/supernode requesting registration with us.    */
             sss->last_sn_reg=now;
-            ++(sss->stats.sn_reg);
+            STATS_INC(sss, sn_reg);
             decode_REGISTER_SUPER(&reg, &cmn, udp_buf, &rem, &idx);
 
             if(comm) {
