@@ -45,8 +45,9 @@ typedef struct cc20_context_t {
 #elif defined (__SSE2__)  // SSE2 ---------------------------------------------------------------------------------
 
 
+// only the key: the keystream is worked out on the stack of every call, so
+// that several threads can use one context at once
 typedef struct cc20_context {
-    uint32_t keystream32[16];
     uint8_t key[CC20_KEY_BYTES];
 } cc20_context_t;
 
@@ -54,9 +55,9 @@ typedef struct cc20_context {
 #else // plain C --------------------------------------------------------------------------------------------------
 
 
+// only the key: state and keystream are worked out on the stack of every
+// call, so that several threads can use one context at once
 typedef struct cc20_context {
-    uint32_t keystream32[16];
-    uint32_t state[16];
     uint8_t key[CC20_KEY_BYTES];
 } cc20_context_t;
 

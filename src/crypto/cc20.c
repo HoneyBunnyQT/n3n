@@ -555,7 +555,8 @@ int cc20_crypt (unsigned char *out, const unsigned char *in, size_t in_len,
 
     __m128i a, b, c, d, k0, k1, k2, k3, k4, k5, k6, k7;
 
-    uint8_t   *keystream8 = (uint8_t*)ctx->keystream32;
+    uint32_t keystream32[16];
+    uint8_t   *keystream8 = (uint8_t*)keystream32;
 
     const uint8_t *magic_constant = (uint8_t*)"expand 32-byte k";
 
@@ -634,10 +635,10 @@ int cc20_crypt (unsigned char *out, const unsigned char *in, size_t in_len,
 
         k0 = ADD(k0, a); k1 = ADD(k1, b); k2 = ADD(k2, c); k3 = ADD(k3, d);
 
-        _mm_storeu_si128((__m128i*)&(ctx->keystream32[ 0]), k0);
-        _mm_storeu_si128((__m128i*)&(ctx->keystream32[ 4]), k1);
-        _mm_storeu_si128((__m128i*)&(ctx->keystream32[ 8]), k2);
-        _mm_storeu_si128((__m128i*)&(ctx->keystream32[12]), k3);
+        _mm_storeu_si128((__m128i*)&(keystream32[ 0]), k0);
+        _mm_storeu_si128((__m128i*)&(keystream32[ 4]), k1);
+        _mm_storeu_si128((__m128i*)&(keystream32[ 8]), k2);
+        _mm_storeu_si128((__m128i*)&(keystream32[12]), k3);
 
         // keep in mind that out and in got increased inside the last loop
         // and point to current position now
@@ -657,13 +658,20 @@ int cc20_crypt (unsigned char *out, const unsigned char *in, size_t in_len,
 // taken (and modified) from https://github.com/Ginurx/chacha20-c (public domain)
 
 
-static void cc20_init_block (cc20_context_t *ctx, const uint8_t nonce[]) {
+// what one call works on - on its stack, not in the shared context
+typedef struct cc20_block {
+    uint32_t keystream32[16];
+    uint32_t state[16];
+} cc20_block_t;
+
+
+static void cc20_init_block (const cc20_context_t *ctx, cc20_block_t *blk, const uint8_t nonce[]) {
 
     const uint8_t *magic_constant = (uint8_t*)"expand 32-byte k";
 
-    memcpy(&(ctx->state[ 0]), magic_constant, 16);
-    memcpy(&(ctx->state[ 4]), ctx->key, CC20_KEY_BYTES);
-    memcpy(&(ctx->state[12]), nonce, CC20_IV_SIZE);
+    memcpy(&(blk->state[ 0]), magic_constant, 16);
+    memcpy(&(blk->state[ 4]), ctx->key, CC20_KEY_BYTES);
+    memcpy(&(blk->state[12]), nonce, CC20_IV_SIZE);
 }
 
 
@@ -688,102 +696,103 @@ static void cc20_init_block (cc20_context_t *ctx, const uint8_t nonce[]) {
     CC20_QUARTERROUND(s, 3, 4,  9, 14)
 
 
-static void cc20_block_next (cc20_context_t *ctx) {
+static void cc20_block_next (cc20_block_t *blk) {
 
-    uint32_t *counter = ctx->state + 12;
+    uint32_t *counter = blk->state + 12;
 
-    ctx->keystream32[ 0] = ctx->state[ 0];
-    ctx->keystream32[ 1] = ctx->state[ 1];
-    ctx->keystream32[ 2] = ctx->state[ 2];
-    ctx->keystream32[ 3] = ctx->state[ 3];
-    ctx->keystream32[ 4] = ctx->state[ 4];
-    ctx->keystream32[ 5] = ctx->state[ 5];
-    ctx->keystream32[ 6] = ctx->state[ 6];
-    ctx->keystream32[ 7] = ctx->state[ 7];
-    ctx->keystream32[ 8] = ctx->state[ 8];
-    ctx->keystream32[ 9] = ctx->state[ 9];
-    ctx->keystream32[10] = ctx->state[10];
-    ctx->keystream32[11] = ctx->state[11];
-    ctx->keystream32[12] = ctx->state[12];
-    ctx->keystream32[13] = ctx->state[13];
-    ctx->keystream32[14] = ctx->state[14];
-    ctx->keystream32[15] = ctx->state[15];
+    blk->keystream32[ 0] = blk->state[ 0];
+    blk->keystream32[ 1] = blk->state[ 1];
+    blk->keystream32[ 2] = blk->state[ 2];
+    blk->keystream32[ 3] = blk->state[ 3];
+    blk->keystream32[ 4] = blk->state[ 4];
+    blk->keystream32[ 5] = blk->state[ 5];
+    blk->keystream32[ 6] = blk->state[ 6];
+    blk->keystream32[ 7] = blk->state[ 7];
+    blk->keystream32[ 8] = blk->state[ 8];
+    blk->keystream32[ 9] = blk->state[ 9];
+    blk->keystream32[10] = blk->state[10];
+    blk->keystream32[11] = blk->state[11];
+    blk->keystream32[12] = blk->state[12];
+    blk->keystream32[13] = blk->state[13];
+    blk->keystream32[14] = blk->state[14];
+    blk->keystream32[15] = blk->state[15];
 
     // 10 double rounds
-    CC20_DOUBLE_ROUND(ctx->keystream32);
-    CC20_DOUBLE_ROUND(ctx->keystream32);
-    CC20_DOUBLE_ROUND(ctx->keystream32);
-    CC20_DOUBLE_ROUND(ctx->keystream32);
-    CC20_DOUBLE_ROUND(ctx->keystream32);
-    CC20_DOUBLE_ROUND(ctx->keystream32);
-    CC20_DOUBLE_ROUND(ctx->keystream32);
-    CC20_DOUBLE_ROUND(ctx->keystream32);
-    CC20_DOUBLE_ROUND(ctx->keystream32);
-    CC20_DOUBLE_ROUND(ctx->keystream32);
+    CC20_DOUBLE_ROUND(blk->keystream32);
+    CC20_DOUBLE_ROUND(blk->keystream32);
+    CC20_DOUBLE_ROUND(blk->keystream32);
+    CC20_DOUBLE_ROUND(blk->keystream32);
+    CC20_DOUBLE_ROUND(blk->keystream32);
+    CC20_DOUBLE_ROUND(blk->keystream32);
+    CC20_DOUBLE_ROUND(blk->keystream32);
+    CC20_DOUBLE_ROUND(blk->keystream32);
+    CC20_DOUBLE_ROUND(blk->keystream32);
+    CC20_DOUBLE_ROUND(blk->keystream32);
 
-    ctx->keystream32[ 0] += ctx->state[ 0];
-    ctx->keystream32[ 1] += ctx->state[ 1];
-    ctx->keystream32[ 2] += ctx->state[ 2];
-    ctx->keystream32[ 3] += ctx->state[ 3];
-    ctx->keystream32[ 4] += ctx->state[ 4];
-    ctx->keystream32[ 5] += ctx->state[ 5];
-    ctx->keystream32[ 6] += ctx->state[ 6];
-    ctx->keystream32[ 7] += ctx->state[ 7];
-    ctx->keystream32[ 8] += ctx->state[ 8];
-    ctx->keystream32[ 9] += ctx->state[ 9];
-    ctx->keystream32[10] += ctx->state[10];
-    ctx->keystream32[11] += ctx->state[11];
-    ctx->keystream32[12] += ctx->state[12];
-    ctx->keystream32[13] += ctx->state[13];
-    ctx->keystream32[14] += ctx->state[14];
-    ctx->keystream32[15] += ctx->state[15];
+    blk->keystream32[ 0] += blk->state[ 0];
+    blk->keystream32[ 1] += blk->state[ 1];
+    blk->keystream32[ 2] += blk->state[ 2];
+    blk->keystream32[ 3] += blk->state[ 3];
+    blk->keystream32[ 4] += blk->state[ 4];
+    blk->keystream32[ 5] += blk->state[ 5];
+    blk->keystream32[ 6] += blk->state[ 6];
+    blk->keystream32[ 7] += blk->state[ 7];
+    blk->keystream32[ 8] += blk->state[ 8];
+    blk->keystream32[ 9] += blk->state[ 9];
+    blk->keystream32[10] += blk->state[10];
+    blk->keystream32[11] += blk->state[11];
+    blk->keystream32[12] += blk->state[12];
+    blk->keystream32[13] += blk->state[13];
+    blk->keystream32[14] += blk->state[14];
+    blk->keystream32[15] += blk->state[15];
 
     // increment counter, make sure it is and stays little endian in memory
     *counter = htole32(le32toh(*counter)+1);
 }
 
 
-static void cc20_init_context (cc20_context_t *ctx, const uint8_t *nonce) {
+static void cc20_init_context (const cc20_context_t *ctx, cc20_block_t *blk, const uint8_t *nonce) {
 
-    cc20_init_block(ctx, nonce);
+    cc20_init_block(ctx, blk, nonce);
 }
 
 
 int cc20_crypt (unsigned char *out, const unsigned char *in, size_t in_len,
                 const unsigned char *iv, cc20_context_t *ctx) {
 
-    uint8_t   *keystream8 = (uint8_t*)ctx->keystream32;
+    cc20_block_t blk;
+    uint8_t   *keystream8 = (uint8_t*)blk.keystream32;
     uint32_t * in_p       = (uint32_t*)in;
     uint32_t * out_p      = (uint32_t*)out;
     size_t tmp_len      = in_len;
 
-    cc20_init_context(ctx, iv);
+    cc20_init_context(ctx, &blk, iv);
 
     while(in_len >= 64) {
-        cc20_block_next(ctx);
+        cc20_block_next(&blk);
 
-        *(uint32_t*)out_p = *(uint32_t*)in_p ^ ctx->keystream32[ 0]; in_p++; out_p++;
-        *(uint32_t*)out_p = *(uint32_t*)in_p ^ ctx->keystream32[ 1]; in_p++; out_p++;
-        *(uint32_t*)out_p = *(uint32_t*)in_p ^ ctx->keystream32[ 2]; in_p++; out_p++;
-        *(uint32_t*)out_p = *(uint32_t*)in_p ^ ctx->keystream32[ 3]; in_p++; out_p++;
-        *(uint32_t*)out_p = *(uint32_t*)in_p ^ ctx->keystream32[ 4]; in_p++; out_p++;
-        *(uint32_t*)out_p = *(uint32_t*)in_p ^ ctx->keystream32[ 5]; in_p++; out_p++;
-        *(uint32_t*)out_p = *(uint32_t*)in_p ^ ctx->keystream32[ 6]; in_p++; out_p++;
-        *(uint32_t*)out_p = *(uint32_t*)in_p ^ ctx->keystream32[ 7]; in_p++; out_p++;
-        *(uint32_t*)out_p = *(uint32_t*)in_p ^ ctx->keystream32[ 8]; in_p++; out_p++;
-        *(uint32_t*)out_p = *(uint32_t*)in_p ^ ctx->keystream32[ 9]; in_p++; out_p++;
-        *(uint32_t*)out_p = *(uint32_t*)in_p ^ ctx->keystream32[10]; in_p++; out_p++;
-        *(uint32_t*)out_p = *(uint32_t*)in_p ^ ctx->keystream32[11]; in_p++; out_p++;
-        *(uint32_t*)out_p = *(uint32_t*)in_p ^ ctx->keystream32[12]; in_p++; out_p++;
-        *(uint32_t*)out_p = *(uint32_t*)in_p ^ ctx->keystream32[13]; in_p++; out_p++;
-        *(uint32_t*)out_p = *(uint32_t*)in_p ^ ctx->keystream32[14]; in_p++; out_p++;
-        *(uint32_t*)out_p = *(uint32_t*)in_p ^ ctx->keystream32[15]; in_p++; out_p++;
+        *(uint32_t*)out_p = *(uint32_t*)in_p ^ blk.keystream32[ 0]; in_p++; out_p++;
+        *(uint32_t*)out_p = *(uint32_t*)in_p ^ blk.keystream32[ 1]; in_p++; out_p++;
+        *(uint32_t*)out_p = *(uint32_t*)in_p ^ blk.keystream32[ 2]; in_p++; out_p++;
+        *(uint32_t*)out_p = *(uint32_t*)in_p ^ blk.keystream32[ 3]; in_p++; out_p++;
+        *(uint32_t*)out_p = *(uint32_t*)in_p ^ blk.keystream32[ 4]; in_p++; out_p++;
+        *(uint32_t*)out_p = *(uint32_t*)in_p ^ blk.keystream32[ 5]; in_p++; out_p++;
+        *(uint32_t*)out_p = *(uint32_t*)in_p ^ blk.keystream32[ 6]; in_p++; out_p++;
+        *(uint32_t*)out_p = *(uint32_t*)in_p ^ blk.keystream32[ 7]; in_p++; out_p++;
+        *(uint32_t*)out_p = *(uint32_t*)in_p ^ blk.keystream32[ 8]; in_p++; out_p++;
+        *(uint32_t*)out_p = *(uint32_t*)in_p ^ blk.keystream32[ 9]; in_p++; out_p++;
+        *(uint32_t*)out_p = *(uint32_t*)in_p ^ blk.keystream32[10]; in_p++; out_p++;
+        *(uint32_t*)out_p = *(uint32_t*)in_p ^ blk.keystream32[11]; in_p++; out_p++;
+        *(uint32_t*)out_p = *(uint32_t*)in_p ^ blk.keystream32[12]; in_p++; out_p++;
+        *(uint32_t*)out_p = *(uint32_t*)in_p ^ blk.keystream32[13]; in_p++; out_p++;
+        *(uint32_t*)out_p = *(uint32_t*)in_p ^ blk.keystream32[14]; in_p++; out_p++;
+        *(uint32_t*)out_p = *(uint32_t*)in_p ^ blk.keystream32[15]; in_p++; out_p++;
 
         in_len -= 64;
     }
 
     if(in_len > 0) {
-        cc20_block_next(ctx);
+        cc20_block_next(&blk);
 
         tmp_len -= in_len;
         while(in_len > 0) {
