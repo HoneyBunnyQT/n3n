@@ -59,6 +59,7 @@
 #include "resolve.h"                 // for resolve_create_thread, resolve_c...
 #include "sn_selection.h"            // for sn_selection_criterion_common_da...
 #include "speck.h"                   // for speck_128_decrypt, speck_128_enc...
+#include "counter.h"                 // for SHARED_STORE, SHARED_LOAD
 #include "stats.h"                   // for STATS_INC, n3n_stats_sum
 #include "uthash.h"                  // for UT_hash_handle, HASH_COUNT, HASH...
 #include "n2n_define.h"
@@ -1894,6 +1895,132 @@ void update_supernode_reg (struct n3n_runtime_data * eee, time_t now) {
 
 /** A PACKET has arrived containing an encapsulated ethernet datagram - usually
  *    encrypted. */
+/* Changes to the peer tables that the PACKET path asks for.
+ *
+ * Handling a PACKET mostly reads the peer tables; now and then it has to
+ * change them - a pending peer turns out to be reachable, a peer shows up at
+ * a new socket, a bridged host moves to another edge. Such a change is
+ * described in an event, by value, and applied by edge_event_apply() with
+ * the same code as before. Once PACKETs are handled by several threads, the
+ * events go to the main thread, which is the only one changing the tables;
+ * while there is one thread, edge_event_post() applies them at once.
+ *
+ * Refreshing a time stamp on an entry that is already there and unchanged -
+ * what nearly every packet does - is not an event: the packet path does it
+ * itself with SHARED_STORE().
+ */
+enum edge_event_type {
+    EDGE_EVENT_PENDING_REMOVE,      /* the peer answered directly, stop registering */
+    EDGE_EVENT_PEER_SEEN,           /* check_peer_registration_needed() */
+    EDGE_EVENT_HOST_SEEN,           /* learn a bridged host behind an edge */
+};
+
+struct edge_event {
+    enum edge_event_type type;
+    n2n_mac_t mac;                  /* the peer edge */
+    n2n_mac_t host;                 /* HOST_SEEN: the bridged host behind it */
+    n3n_sock_t sock;                /* PEER_SEEN: where the packet came from */
+    n2n_cookie_t cookie;            /* PEER_SEEN */
+    uint8_t from_supernode;         /* PEER_SEEN */
+    uint8_t via_multicast;          /* PEER_SEEN */
+    time_t now;                     /* HOST_SEEN */
+};
+
+
+static void edge_event_apply (struct n3n_runtime_data *eee, const struct edge_event *ev) {
+
+    switch(ev->type) {
+        case EDGE_EVENT_PENDING_REMOVE:
+            find_and_remove_peer(&eee->pending_peers, ev->mac);
+            break;
+
+        case EDGE_EVENT_PEER_SEEN:
+            check_peer_registration_needed(eee, ev->from_supernode, ev->via_multicast,
+                                           ev->mac, ev->cookie, NULL, NULL, &ev->sock);
+            break;
+
+        case EDGE_EVENT_HOST_SEEN: {
+#ifdef HAVE_BRIDGING_SUPPORT
+            struct host_info *host = NULL;
+
+            HASH_FIND(hh, eee->known_hosts, ev->host, sizeof(n2n_mac_t), host);
+            if(host == NULL) {
+                host = calloc(1, sizeof(struct host_info));
+                // TODO: alloc() on the packet path can cause bad latency
+
+                memcpy(host->mac_addr, ev->host, sizeof(n2n_mac_t));
+                HASH_ADD(hh, eee->known_hosts, mac_addr, sizeof(n2n_mac_t), host);
+            }
+            memcpy(host->edge_addr, ev->mac, sizeof(n2n_mac_t));
+            host->last_seen = ev->now;
+#endif
+            break;
+        }
+    }
+}
+
+
+// hand a change to whoever changes the peer tables - with one thread, that
+// is the caller itself
+static void edge_event_post (struct n3n_runtime_data *eee, const struct edge_event *ev) {
+
+    edge_event_apply(eee, ev);
+}
+
+
+// is this peer in the list of those we are still trying to reach?
+static int peer_is_pending (struct n3n_runtime_data *eee, const n2n_mac_t mac) {
+
+    struct peer_info *scan;
+
+    if(!eee->pending_peers) {
+        return 0;
+    }
+    HASH_FIND_PEER(eee->pending_peers, mac, scan);
+
+    return scan != NULL;
+}
+
+
+/* The part of check_peer_registration_needed() that nearly every packet
+ * takes: the peer is known by its MAC and was already seen within this
+ * second, so only its time stamps are refreshed. Returns 0 if more is needed
+ * - anything that may change the peer tables - which then is an event. */
+static int peer_seen_fast (struct n3n_runtime_data *eee,
+                           uint8_t from_supernode,
+                           uint8_t via_multicast,
+                           const n2n_mac_t mac,
+                           const n2n_cookie_t cookie) {
+
+    struct peer_info *scan;
+    time_t now;
+
+    if(!eee->known_peers) {
+        // check_peer_registration_needed() does nothing either
+        return 1;
+    }
+
+    HASH_FIND_PEER(eee->known_peers, mac, scan);
+    if(!scan) {
+        return 0;
+    }
+
+    now = time(NULL);
+    if(((now - scan->last_seen) > 0 /* >= 1 sec */)
+       ||(cookie > scan->last_cookie)) {
+        return 0;
+    }
+
+    if(!from_supernode)
+        SHARED_STORE(scan->last_p2p, now);
+
+    if(via_multicast)
+        SHARED_STORE(scan->local, 1);
+
+    return 1;
+}
+
+
 static int handle_PACKET (struct n3n_runtime_data * eee,
                           const uint8_t from_supernode,
                           const n2n_PACKET_t * pkt,
@@ -1919,10 +2046,10 @@ static int handle_PACKET (struct n3n_runtime_data * eee,
             STATS_INC(eee, rx_sup_broadcast);
 
         STATS_INC(eee, rx_sup);
-        eee->last_sup = now;
+        SHARED_STORE(eee->last_sup, now);
     } else {
         STATS_INC(eee, rx_p2p);
-        eee->last_p2p=now;
+        SHARED_STORE(eee->last_p2p, now);
     }
 
     /* Handle transform. */
@@ -2035,15 +2162,16 @@ static int handle_PACKET (struct n3n_runtime_data * eee,
         struct host_info *host = NULL;
 
         HASH_FIND(hh, eee->known_hosts, eh->shost, sizeof(n2n_mac_t), host);
-        if(host == NULL) {
-            host = calloc(1, sizeof(struct host_info));
-            // TODO: alloc() on the packet path can cause bad latency
+        if(host && !memcmp(host->edge_addr, pkt->srcMac, sizeof(n2n_mac_t))) {
+            // known, and still behind the same edge
+            SHARED_STORE(host->last_seen, now);
+        } else {
+            struct edge_event ev = { .type = EDGE_EVENT_HOST_SEEN, .now = now };
 
-            memcpy(host->mac_addr, eh->shost, sizeof(n2n_mac_t));
-            HASH_ADD(hh, eee->known_hosts, mac_addr, sizeof(n2n_mac_t), host);
+            memcpy(ev.host, eh->shost, sizeof(n2n_mac_t));
+            memcpy(ev.mac, pkt->srcMac, sizeof(n2n_mac_t));
+            edge_event_post(eee, &ev);
         }
-        memcpy(host->edge_addr, pkt->srcMac, sizeof(n2n_mac_t));
-        host->last_seen = now;
     }
 #endif
 
@@ -2533,7 +2661,7 @@ static int edge_tap_take (struct n3n_runtime_data * eee,
         return 1;
     }
 
-    if(!eee->last_sup) {
+    if(!SHARED_LOAD(eee->last_sup)) {
         // drop packets before first registration with supernode
         traceEvent(TRACE_DEBUG, "DROP packet before first registration with supernode");
         return 1;
@@ -2948,13 +3076,13 @@ static void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_contro
             // update last_sup only on 'real' REGISTER_SUPER_ACKs, not on bootstrap ones (own MAC address
             // still null_mac) this allows reliable in/out PACKET drop if not really registered with a supernode yet
             if(!is_null_mac(eee->device.mac_addr)) {
-                if(!eee->last_sup) {
+                if(!SHARED_LOAD(eee->last_sup)) {
                     // indicates first successful connection between the edge and a supernode
                     traceEvent(TRACE_NORMAL, "[OK] edge <<< ================ >>> supernode");
                     // send gratuitous ARP only upon first registration with supernode
                     send_grat_arps(eee);
                 }
-                eee->last_sup = now;
+                SHARED_STORE(eee->last_sup, now);
             }
 
             // NOTE: the register_interval should be chosen by the edge node based on its NAT configuration.
@@ -3300,7 +3428,7 @@ void process_pdu (struct n3n_runtime_data *eee,
                 }
             }
 
-            if(!eee->last_sup) {
+            if(!SHARED_LOAD(eee->last_sup)) {
                 // drop packets received before first registration with supernode
                 traceEvent(TRACE_DEBUG, "dropped PACKET recevied before first registration with supernode");
                 return;
@@ -3314,7 +3442,12 @@ void process_pdu (struct n3n_runtime_data *eee,
                  */
                 traceEvent(TRACE_DEBUG, "[p2p] from %s",
                            macaddr_str(mac_buf1, pkt.srcMac));
-                find_and_remove_peer(&eee->pending_peers, pkt.srcMac);
+                if(peer_is_pending(eee, pkt.srcMac)) {
+                    struct edge_event ev = { .type = EDGE_EVENT_PENDING_REMOVE };
+
+                    memcpy(ev.mac, pkt.srcMac, sizeof(n2n_mac_t));
+                    edge_event_post(eee, &ev);
+                }
             } else {
                 /* [PsP] : edge Peer->Supernode->edge Peer */
 
@@ -3327,11 +3460,23 @@ void process_pdu (struct n3n_runtime_data *eee,
             }
 
             /* Update the sender in peer table entry */
-            check_peer_registration_needed(eee, from_supernode, via_multicast,
-                                           pkt.srcMac,
-                                           // REVISIT: also consider PORT_REG_COOKIEs when implemented
-                                           from_supernode ? N2N_FORWARDED_REG_COOKIE : N2N_REGULAR_REG_COOKIE,
-                                           NULL, NULL, orig_sender);
+            {
+                // REVISIT: also consider PORT_REG_COOKIEs when implemented
+                n2n_cookie_t cookie = from_supernode ? N2N_FORWARDED_REG_COOKIE : N2N_REGULAR_REG_COOKIE;
+
+                if(!peer_seen_fast(eee, from_supernode, via_multicast, pkt.srcMac, cookie)) {
+                    struct edge_event ev = {
+                        .type = EDGE_EVENT_PEER_SEEN,
+                        .sock = *orig_sender,
+                        .cookie = cookie,
+                        .from_supernode = from_supernode,
+                        .via_multicast = via_multicast,
+                    };
+
+                    memcpy(ev.mac, pkt.srcMac, sizeof(n2n_mac_t));
+                    edge_event_post(eee, &ev);
+                }
+            }
 
             handle_PACKET(eee, from_supernode, &pkt, orig_sender, udp_buf + idx, udp_size - idx);
             break;

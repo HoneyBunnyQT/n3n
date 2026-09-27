@@ -30,6 +30,7 @@
 #include "n2n.h"
 #include "n2n_typedefs.h"
 #include "peer_info.h"   // for peer_info
+#include "counter.h"     // for SHARED_LOAD
 #include "stats.h"       // for n3n_stats_sum
 #include "uthash.h"
 
@@ -807,8 +808,8 @@ static void jsonrpc_get_timestamps (char *id, struct n3n_runtime_data *eee, conn
                 "\"last_sn_reg\":%u,"
                 "\"start_time\":%u}",
                 (uint32_t)eee->last_register_req,
-                (uint32_t)eee->last_p2p,
-                (uint32_t)eee->last_sup,
+                (uint32_t)SHARED_LOAD(eee->last_p2p),
+                (uint32_t)SHARED_LOAD(eee->last_sup),
                 (uint32_t)eee->last_sweep,
                 (uint32_t)eee->last_sn_fwd,
                 (uint32_t)eee->last_sn_reg,

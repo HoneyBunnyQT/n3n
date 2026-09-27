@@ -25,4 +25,11 @@
 // read from any thread
 #define COUNTER_READ(c) __atomic_load_n(&(c), __ATOMIC_RELAXED)
 
+// A value that several threads may write, where the latest write wins - a
+// "last seen" time, for instance - and that any thread may read. Relaxed
+// atomic loads and stores keep that free of data races, at the cost of a
+// plain load or store.
+#define SHARED_STORE(v, x) __atomic_store_n(&(v), (x), __ATOMIC_RELAXED)
+#define SHARED_LOAD(v)     __atomic_load_n(&(v), __ATOMIC_RELAXED)
+
 #endif
