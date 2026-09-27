@@ -40,4 +40,16 @@ void edge_threads_post_control (struct n3n_runtime_data *eee, const struct pdu_c
 // On the main thread, holding the lock: apply everything the workers queued.
 void edge_threads_drain (struct n3n_runtime_data *eee);
 
+// Start threads-1 workers beside the main thread; returns how many threads
+// handle packets now, the main thread included - 1 if threads are not
+// possible here. Called by the main thread, which from then on holds the
+// lock while it is awake.
+int edge_threads_start (struct n3n_runtime_data *eee, int threads);
+
+// Stop the workers again, applying what they queued. Called by the main thread.
+void edge_threads_stop (struct n3n_runtime_data *eee);
+
+// The main socket was opened again: move the workers to the new one.
+void edge_threads_socket_changed (struct n3n_runtime_data *eee);
+
 #endif

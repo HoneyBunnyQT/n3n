@@ -442,6 +442,8 @@ void supernode_connect (struct n3n_runtime_data *eee) {
         mainloop_register_fd(eee->sock, fd_info_proto_v3tcp);
     } else {
         mainloop_register_fd(eee->sock, fd_info_proto_v3udp);
+        // packet threads, if any, need a share of the new socket's port
+        edge_threads_socket_changed(eee);
     }
 
     // REVISIT: TODO:
@@ -3651,6 +3653,10 @@ int run_edge_loop (struct n3n_runtime_data *eee) {
     *eee->keep_running = true;
     update_supernode_reg(eee, time(NULL));
 
+    // more threads for received PACKETs, if asked for; from here on the main
+    // thread holds their lock whenever it is awake
+    edge_threads_start(eee, eee->conf.threads);
+
     edge_metrics_module1.data = &eee->stats_sum;
     edge_metrics_module2.data = &eee->stats_sum;
     n3n_metrics_register(&edge_metrics_module1);
@@ -3757,6 +3763,8 @@ int run_edge_loop (struct n3n_runtime_data *eee) {
 
 
     } /* while */
+
+    edge_threads_stop(eee);
 
     send_unregister_super(eee);
 
@@ -4039,6 +4047,7 @@ void edge_init_conf_defaults (n2n_edge_conf_t *conf, char *sessionname) {
     conf->header_encryption = HEADER_ENCRYPTION_NONE;
     conf->compression = N2N_COMPRESSION_ID_NONE;
     conf->allow_p2p = true;
+    conf->threads = 1;
     conf->register_interval = REGISTER_SUPER_INTERVAL_DFL;
 
     // Ensure we can notice if the config has set a dev name

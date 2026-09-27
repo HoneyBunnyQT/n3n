@@ -210,6 +210,17 @@ static struct n3n_conf_option section_connection[] = {
 
 static struct n3n_conf_option section_daemon[] = {
     {
+        .name = "threads",
+        .type = n3n_conf_uint32,
+        .offset = offsetof(n2n_edge_conf_t, threads),
+        .desc = "Threads handling received packets",
+        .help = "Defaulting to 1, more threads let received packets from "
+                "different peers be decrypted on several cores at once.  "
+                "Traffic from one peer always stays on one thread.  Needs "
+                "Linux, a build with --enable-pthread and UDP to the "
+                "supernode; otherwise one thread is used.",
+    },
+    {
         .name = "userid",
         .type = n3n_conf_userid,
         .offset = offsetof(n2n_edge_conf_t, userid),

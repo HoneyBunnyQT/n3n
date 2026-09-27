@@ -486,6 +486,7 @@ typedef struct n2n_edge_conf {
     n2n_version_t version;                                  /* version string sent to edges along with PEER_INFO a.k.a. PONG */
     n2n_community_t sn_federation;
     struct peer_info *sn_edges;     // SN federation storage during configure
+    uint32_t threads;                                          /* threads handling received packets, see edge_threads.h */
     n2n_ip_subnet_t sn_min_auto_ip_net;                        /* Address range of auto_ip service. */
     n2n_ip_subnet_t sn_max_auto_ip_net;                        /* Address range of auto_ip service. */
 } n2n_edge_conf_t;
