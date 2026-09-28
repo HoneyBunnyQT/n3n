@@ -35,8 +35,15 @@ threads=4
 or on the command line: `-Odaemon.threads=4`.  The value counts the main
 thread too, so `threads=4` starts three more.  At most 16 are used.
 
-A good starting point is the number of physical cores, minus one for
-everything else the machine does.  More threads than cores do not help.
+`threads=0` picks the number itself: half the physical cores the process
+may run on, rounded up - so 4 on an 8 core machine, 2 on a Raspberry Pi 4
+and 1 on a VM with 2 vCPUs.  The other half is left for the kernel, which
+does much of the work of every packet.  Where threads do not work, it
+quietly uses one.
+
+To choose the number yourself, a good starting point is the number of
+physical cores, minus one for everything else the machine does.  More
+threads than cores do not help.
 
 ## How it works
 

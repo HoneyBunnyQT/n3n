@@ -3038,7 +3038,7 @@ int run_sn_loop (struct n3n_runtime_data *sss) {
 
     // more threads for PACKETs, if asked for; from here on the main thread
     // holds their lock whenever it is awake
-    edge_threads_start(sss, sss->conf.threads, &sn_thread_ops);
+    edge_threads_start(sss, edge_threads_wanted(&sss->conf), &sn_thread_ops);
 
     while(*sss->keep_running) {
         int rc;

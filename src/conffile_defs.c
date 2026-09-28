@@ -229,10 +229,11 @@ static struct n3n_conf_option section_daemon[] = {
         .desc = "Threads handling packets",
         .help = "Defaulting to 1, more threads let an edge encrypt and "
                 "decrypt, and a supernode relay, packets on several cores "
-                "at once.  Received traffic from one peer stays on one "
-                "thread, and so does each flow read from the tap device.  "
-                "Needs Linux, a build with --enable-pthread and, for an "
-                "edge, UDP to the supernode; otherwise one thread is used.",
+                "at once.  0 picks half the physical cores, rounded up.  "
+                "Received traffic from one peer stays on one thread, and "
+                "so does each flow read from the tap device.  Needs Linux, "
+                "a build with --enable-pthread and, for an edge, UDP to "
+                "the supernode; otherwise one thread is used.",
     },
     {
         .name = "userid",

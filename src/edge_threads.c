@@ -5,11 +5,20 @@
  * Handling PACKETs on several threads - see edge_threads.h
  */
 
+#ifdef __linux__
+#define _GNU_SOURCE          // for sched_getaffinity
+#endif
+
 #include "config.h"          // for HAVE_LIBPTHREAD
 
 #include <n3n/logging.h>     // for traceEvent
+#include <stdio.h>           // for snprintf, fopen, fscanf
 #include <stdlib.h>          // for calloc, free
 #include <string.h>          // for memcpy
+
+#ifdef __linux__
+#include <sched.h>           // for sched_getaffinity, cpu_set_t, CPU_ISSET
+#endif
 
 #include "counter.h"         // for COUNTER_INC, COUNTER_READ
 #include "edge_threads.h"
@@ -21,9 +30,84 @@
 #endif
 
 
+#ifdef __linux__
+// read one number from a file in /sys, -1 if there is none
+static int sys_read_int (const char *fmt, int cpu) {
+
+    char path[128];
+    FILE *f;
+    int value = -1;
+
+    snprintf(path, sizeof(path), fmt, cpu);
+    f = fopen(path, "r");
+    if(f) {
+        if(fscanf(f, "%d", &value) != 1) {
+            value = -1;
+        }
+        fclose(f);
+    }
+    return value;
+}
+
+
+// The physical cores the process may run on: the logical CPUs it is allowed
+// on, with the hyperthreads of one core counted once. The kernel tells which
+// core, in which package, a logical CPU belongs to.
+static int physical_cores (void) {
+
+    static int package[CPU_SETSIZE], core[CPU_SETSIZE];
+    cpu_set_t allowed;
+    int cpu, i, cores = 0;
+
+    if(sched_getaffinity(0, sizeof(allowed), &allowed)) {
+        return 1;
+    }
+    for(cpu = 0; cpu < CPU_SETSIZE; cpu++) {
+        int p, c;
+
+        if(!CPU_ISSET(cpu, &allowed)) {
+            continue;
+        }
+        p = sys_read_int("/sys/devices/system/cpu/cpu%d/topology/physical_package_id", cpu);
+        c = sys_read_int("/sys/devices/system/cpu/cpu%d/topology/core_id", cpu);
+        if((p < 0) || (c < 0)) {
+            // no topology: count every logical CPU as a core
+            p = -1;
+            c = cpu;
+        }
+        for(i = 0; i < cores; i++) {
+            if((package[i] == p) && (core[i] == c)) {
+                break;
+            }
+        }
+        if(i == cores) {
+            package[cores] = p;
+            core[cores] = c;
+            cores++;
+        }
+    }
+    return cores ? cores : 1;
+}
+#endif
+
+
+// threads=0: half the physical cores, rounded up - the other half is left
+// for the kernel, which does much of the work of every packet
+static int threads_auto (void) {
+
+#ifdef __linux__
+    return (physical_cores() + 1) / 2;
+#else
+    return 1;
+#endif
+}
+
+
 int edge_threads_possible (const n2n_edge_conf_t *conf) {
 
-    if(conf->threads <= 1) {
+    int threads = conf->threads ? (int)conf->threads : threads_auto();
+
+    if(threads <= 1) {
         return 1;
     }
 #if !defined(HAVE_LIBPTHREAD) || !defined(__linux__)
@@ -33,10 +117,29 @@ int edge_threads_possible (const n2n_edge_conf_t *conf) {
     if(conf->connect_tcp) {
         return 1;
     }
-    if(conf->threads > N3N_THREADS_MAX) {
+    if(threads > N3N_THREADS_MAX) {
         return N3N_THREADS_MAX;
     }
-    return conf->threads;
+    return threads;
+}
+
+
+int edge_threads_wanted (const n2n_edge_conf_t *conf) {
+
+    int threads;
+
+    if(conf->threads) {
+        // asked for a number: try that, and warn if it does not work here
+        return conf->threads;
+    }
+
+    // automatic: quietly as many as work here
+    threads = edge_threads_possible(conf);
+#ifdef __linux__
+    traceEvent(TRACE_NORMAL, "threads=0: %d physical cores, %d threads",
+               physical_cores(), threads);
+#endif
+    return threads;
 }
 
 

@@ -53,7 +53,12 @@ struct edge_thread_ops {
 
 // How many threads can handle packets with this configuration, the main
 // thread included: 1 unless it asks for more and they work here.
+// daemon.threads=0 asks for half the physical cores, rounded up.
 int edge_threads_possible (const n2n_edge_conf_t *conf);
+
+// How many threads to start with: what daemon.threads asks for, or with
+// daemon.threads=0 as many as edge_threads_possible() says
+int edge_threads_wanted (const n2n_edge_conf_t *conf);
 
 // Around the main thread's wait in select(). Both do nothing unless workers
 // are running.
