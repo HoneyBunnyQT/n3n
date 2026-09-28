@@ -2617,6 +2617,13 @@ void edge_send_packet2net (struct n3n_runtime_data * eee,
 
 /* ************************************** */
 
+// what the workers of an edge do
+static const struct edge_thread_ops edge_thread_ops = {
+    .read_udp = edge_read_proto3_udp,
+    .tap = 1,
+};
+
+
 /* Open the tap device - with a queue for each thread that is going to handle
  * packets, now that there still are the privileges for that.
  */
@@ -2659,7 +2666,7 @@ static void edge_tap_reopen (struct n3n_runtime_data *eee) {
     mainloop_register_fd(eee->device.fd, fd_info_proto_tuntap);
 #endif
 
-    edge_threads_start(eee, eee->conf.threads);
+    edge_threads_start(eee, eee->conf.threads, &edge_thread_ops);
 }
 
 
@@ -3765,7 +3772,7 @@ int run_edge_loop (struct n3n_runtime_data *eee) {
 
     // more threads for PACKETs, if asked for; from here on the main thread
     // holds their lock whenever it is awake
-    edge_threads_start(eee, eee->conf.threads);
+    edge_threads_start(eee, eee->conf.threads, &edge_thread_ops);
 
     edge_metrics_module1.data = &eee->stats_sum;
     edge_metrics_module2.data = &eee->stats_sum;

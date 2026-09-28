@@ -80,14 +80,18 @@ int edge_threads_possible (const n2n_edge_conf_t *conf) {
 enum queue_kind {
     QUEUE_EVENT = 1,
     QUEUE_CONTROL,
+    QUEUE_PDU,
 };
 
 struct queue_item {
     enum queue_kind kind;
     struct edge_event ev;
     struct pdu_control ctl;
+    struct sockaddr_storage sender;     // PDU
+    socklen_t sender_len;               // PDU
+    uint64_t note[EDGE_THREADS_NOTE_MAX / sizeof(uint64_t)];   // PDU, aligned for any struct
     size_t len;
-    uint8_t buf[N2N_PKT_BUF_SIZE];      // CONTROL: the copy of the PDU
+    uint8_t buf[N2N_PKT_BUF_SIZE];      // CONTROL, PDU: the copy of the PDU
 };
 
 struct overflow_item {
@@ -136,6 +140,7 @@ struct edge_threads {
     int stop;
     int tap_failed;                     // a worker's tap queue failed
     int requested;                      // threads asked for, the main thread included
+    const struct edge_thread_ops *ops;
     struct worker_queue *queue[N3N_THREADS_MAX];   // indexed by n3n_thread_slot
     struct worker worker[N3N_THREADS_MAX];         // indexed by n3n_thread_slot
 };
@@ -253,6 +258,32 @@ void edge_threads_post_control (struct n3n_runtime_data *eee, const struct pdu_c
 }
 
 
+void edge_threads_post_pdu (struct n3n_runtime_data *eee,
+                            const struct sockaddr *sender, socklen_t sender_len,
+                            const uint8_t *buf, size_t size,
+                            const void *note, size_t note_size) {
+
+    struct overflow_item *ov;
+    struct queue_item *it;
+
+    if((size > sizeof(it->buf)) || (note_size > sizeof(it->note))
+       || (sender_len > sizeof(it->sender))) {
+        return;
+    }
+    it = queue_reserve(eee->threads, &ov);
+    if(!it) {
+        return;
+    }
+    it->kind = QUEUE_PDU;
+    memcpy(&it->sender, sender, sender_len);
+    it->sender_len = sender_len;
+    memcpy(it->note, note, note_size);
+    it->len = size;
+    memcpy(it->buf, buf, size);
+    queue_commit(eee->threads, ov);
+}
+
+
 static void queue_item_apply (struct n3n_runtime_data *eee, struct queue_item *it) {
 
     switch(it->kind) {
@@ -263,6 +294,10 @@ static void queue_item_apply (struct n3n_runtime_data *eee, struct queue_item *i
             it->ctl.buf = it->buf;
             it->ctl.size = it->len;
             process_pdu_control(eee, &it->ctl);
+            break;
+        case QUEUE_PDU:
+            eee->threads->ops->process_pdu(eee, (struct sockaddr *)&it->sender, it->sender_len,
+                                           it->buf, it->len, it->note);
             break;
     }
 }
@@ -324,6 +359,7 @@ static void *worker_main (void *arg) {
     struct n3n_runtime_data *eee = w->eee;
     struct edge_threads *t = eee->threads;
     struct pollfd pfd[3];
+    struct n3n_pktbuf *pkt;
 
     n3n_thread_slot = w->slot;
     n3n_pktbuf_thread_init();
@@ -335,8 +371,16 @@ static void *worker_main (void *arg) {
     pfd[2].fd = w->tap;                 // poll() skips it if -1
     pfd[2].events = POLLIN;
 
+    // the one buffer this worker reads into
+    pkt = n3n_pktbuf_alloc(N2N_PKT_BUF_SIZE);
+    if(!pkt) {
+        traceEvent(TRACE_ERROR, "thread %d has no packet buffer, stopping", w->slot);
+        n3n_thread_cleanup();
+        return NULL;
+    }
+    pkt->owner = n3n_pktbuf_owner_rx_pdu;
+
     while(!__atomic_load_n(&t->stop, __ATOMIC_ACQUIRE)) {
-        struct n3n_pktbuf *pkt;
         int drain = WORKER_DRAIN_MAX;
         time_t now;
 
@@ -358,18 +402,12 @@ static void *worker_main (void *arg) {
             continue;
         }
 
-        pkt = n3n_pktbuf_alloc(N2N_PKT_BUF_SIZE);
-        if(!pkt) {
-            continue;
-        }
-        pkt->owner = n3n_pktbuf_owner_rx_pdu;
-
         // one batch: whatever is queued on the socket and on the tap queue,
         // up to the cap for each
         pthread_rwlock_rdlock(&t->lock);
         if(pfd[0].revents & POLLIN) {
             now = time(NULL);
-            while(drain && (edge_read_proto3_udp(eee, w->sock, pkt, now) > 0)) {
+            while(drain && (t->ops->read_udp(eee, w->sock, pkt, now) > 0)) {
                 drain--;
             }
         }
@@ -379,8 +417,6 @@ static void *worker_main (void *arg) {
         pthread_rwlock_unlock(&t->lock);
         w->packets += WORKER_DRAIN_MAX - drain;
 
-        n3n_pktbuf_free(pkt);
-
         // the main thread is going to open the device again, and start the
         // workers again with it
         if(__atomic_load_n(&t->tap_failed, __ATOMIC_ACQUIRE)) {
@@ -388,6 +424,7 @@ static void *worker_main (void *arg) {
         }
     }
 
+    n3n_pktbuf_free(pkt);
     n3n_thread_cleanup();
     return NULL;
 }
@@ -422,7 +459,8 @@ static void edge_threads_free (struct n3n_runtime_data *eee) {
 }
 
 
-static int threads_start (struct n3n_runtime_data *eee, int threads) {
+static int threads_start (struct n3n_runtime_data *eee, int threads,
+                          const struct edge_thread_ops *ops) {
 
     struct edge_threads *t;
     struct sockaddr_storage local;
@@ -455,6 +493,7 @@ static int threads_start (struct n3n_runtime_data *eee, int threads) {
         return 1;
     }
     t->requested = threads;
+    t->ops = ops;
     t->wake_pipe[0] = t->wake_pipe[1] = -1;
     t->stop_pipe[0] = t->stop_pipe[1] = -1;
     for(slot = 0; slot < N3N_THREADS_MAX; slot++) {
@@ -495,10 +534,11 @@ static int threads_start (struct n3n_runtime_data *eee, int threads) {
         pthread_mutex_init(&t->queue[slot]->overflow_lock, NULL);
         t->worker[slot].eee = eee;
         t->worker[slot].slot = slot;
-#ifdef __linux__
-        t->worker[slot].tap = eee->device.queue_fd[slot];
-#else
         t->worker[slot].tap = -1;
+#ifdef __linux__
+        if(ops->tap) {
+            t->worker[slot].tap = eee->device.queue_fd[slot];
+        }
 #endif
     }
 
@@ -531,12 +571,15 @@ static int threads_start (struct n3n_runtime_data *eee, int threads) {
 }
 
 
-int edge_threads_start (struct n3n_runtime_data *eee, int threads) {
+int edge_threads_start (struct n3n_runtime_data *eee, int threads,
+                        const struct edge_thread_ops *ops) {
 
-    int started = threads_start(eee, threads);
+    int started = threads_start(eee, threads, ops);
 
 #ifdef __linux__
-    tuntap_close_queues(&eee->device, started);
+    if(ops->tap) {
+        tuntap_close_queues(&eee->device, started);
+    }
 #endif
     return started;
 }
@@ -585,6 +628,7 @@ void edge_threads_stop (struct n3n_runtime_data *eee) {
 
 void edge_threads_socket_changed (struct n3n_runtime_data *eee) {
 
+    const struct edge_thread_ops *ops;
     int threads;
 
     if(!eee->threads) {
@@ -595,8 +639,9 @@ void edge_threads_socket_changed (struct n3n_runtime_data *eee) {
     // workers along by starting them again. This only happens after the
     // supernode has not answered for a while.
     threads = eee->threads->requested;
+    ops = eee->threads->ops;
     edge_threads_stop(eee);
-    edge_threads_start(eee, threads);
+    edge_threads_start(eee, threads, ops);
 }
 
 
@@ -624,6 +669,12 @@ int edge_threads_tap_failed (struct n3n_runtime_data *eee) {
 }
 
 
+int edge_threads_wake_fd (struct n3n_runtime_data *eee) {
+
+    return eee->threads ? eee->threads->wake_pipe[0] : -1;
+}
+
+
 #else // HAVE_LIBPTHREAD -------------------------------------------------------
 
 
@@ -639,10 +690,17 @@ void edge_threads_post_event (struct n3n_runtime_data *eee, const struct edge_ev
 void edge_threads_post_control (struct n3n_runtime_data *eee, const struct pdu_control *c) {
 }
 
+void edge_threads_post_pdu (struct n3n_runtime_data *eee,
+                            const struct sockaddr *sender, socklen_t sender_len,
+                            const uint8_t *buf, size_t size,
+                            const void *note, size_t note_size) {
+}
+
 void edge_threads_drain (struct n3n_runtime_data *eee) {
 }
 
-int edge_threads_start (struct n3n_runtime_data *eee, int threads) {
+int edge_threads_start (struct n3n_runtime_data *eee, int threads,
+                        const struct edge_thread_ops *ops) {
 
     if(threads > 1) {
         traceEvent(TRACE_WARNING, "built without pthreads (./configure --enable-pthread), using one thread");
@@ -667,6 +725,11 @@ void edge_threads_tap_error (struct n3n_runtime_data *eee) {
 int edge_threads_tap_failed (struct n3n_runtime_data *eee) {
 
     return 0;
+}
+
+int edge_threads_wake_fd (struct n3n_runtime_data *eee) {
+
+    return -1;
 }
 
 

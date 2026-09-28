@@ -19,6 +19,9 @@
  *
  * With one thread - the default - none of this is set up and nothing here
  * costs anything.
+ *
+ * The supernode uses the same threads, without the tap device: its workers
+ * relay PACKETs between edges, and hand every other PDU to the main thread.
  */
 
 #ifndef N3N_EDGE_THREADS_H
@@ -28,6 +31,25 @@
 #include "n2n_typedefs.h"    // for n2n_edge_conf_t, SOCKET
 
 struct n3n_runtime_data;
+struct n3n_pktbuf;
+struct sockaddr;
+
+// What the workers do, set by the edge or the supernode
+struct edge_thread_ops {
+    // take one PDU off sock and handle it; 1 if there was one, 0 if not
+    int (*read_udp)(struct n3n_runtime_data *eee, SOCKET sock,
+                    struct n3n_pktbuf *pkt, time_t now);
+    // on the main thread: a PDU that a worker handed over with
+    // edge_threads_post_pdu(), with the note the worker added
+    void (*process_pdu)(struct n3n_runtime_data *eee,
+                        const struct sockaddr *sender, socklen_t sender_len,
+                        uint8_t *buf, size_t size, const void *note);
+    // whether every worker also reads a queue of the tap device
+    int tap;
+};
+
+// the most a note to edge_threads_post_pdu() can hold
+#define EDGE_THREADS_NOTE_MAX 64
 
 // How many threads can handle packets with this configuration, the main
 // thread included: 1 unless it asks for more and they work here.
@@ -43,6 +65,10 @@ void edge_threads_main_acquire (struct n3n_runtime_data *eee);
 // Nothing is dropped - see QUEUE_SLOTS in edge_threads.c.
 void edge_threads_post_event (struct n3n_runtime_data *eee, const struct edge_event *ev);
 void edge_threads_post_control (struct n3n_runtime_data *eee, const struct pdu_control *c);
+void edge_threads_post_pdu (struct n3n_runtime_data *eee,
+                            const struct sockaddr *sender, socklen_t sender_len,
+                            const uint8_t *buf, size_t size,
+                            const void *note, size_t note_size);
 
 // On the main thread, holding the lock: apply everything the workers queued.
 void edge_threads_drain (struct n3n_runtime_data *eee);
@@ -51,7 +77,8 @@ void edge_threads_drain (struct n3n_runtime_data *eee);
 // handle packets now, the main thread included - 1 if threads are not
 // possible here. The tap queues beyond that are closed. Called by the main
 // thread, which from then on holds the lock while it is awake.
-int edge_threads_start (struct n3n_runtime_data *eee, int threads);
+int edge_threads_start (struct n3n_runtime_data *eee, int threads,
+                        const struct edge_thread_ops *ops);
 
 // Stop the workers again, applying what they queued. Called by the main thread.
 void edge_threads_stop (struct n3n_runtime_data *eee);
@@ -68,5 +95,9 @@ void edge_threads_tap_error (struct n3n_runtime_data *eee);
 
 // On the main thread: has the tap queue of a worker failed?
 int edge_threads_tap_failed (struct n3n_runtime_data *eee);
+
+// The fd a main thread with a select() loop of its own has to watch: a
+// worker writes to it when it has queued something. -1 without workers.
+int edge_threads_wake_fd (struct n3n_runtime_data *eee);
 
 #endif
