@@ -24,6 +24,7 @@
 #include <n3n/ethernet.h>       // for is_null_mac
 #include <n3n/initfuncs.h>      // for n3n_deinitfuncs
 #include <n3n/logging.h>        // for traceEvent
+#include <n3n/pktbuf.h>         // for n3n_pktbuf_zero, n3n_pktbuf_getbufptr, ...
 #include <n3n/random.h>         // for n3n_rand, n3n_rand_sqr, memrnd
 #include <n3n/resolve.h>        // for RESOLVE_LIST_*
 #include <n3n/strings.h>        // for ip_subnet_to_str, sock_to_cstr
@@ -39,6 +40,7 @@
 
 #include "auth.h"               // for ascii_to_bin, calculate_dynamic_key
 #include "counter.h"            // for COUNTER_INC, SHARED_LOAD, SHARED_STORE
+#include "crypto/speck.h"       // for speck_128_encrypt, speck_context_t
 #include "edge_threads.h"       // for edge_threads_post_pdu, edge_threads_sock, ...
 #include "header_encryption.h"  // for packet_header_encrypt, packet_header_...
 #include "management.h"         // for process_mgmt
@@ -50,11 +52,9 @@
 #include "n2n_wire.h"           // for encode_buf, encode_PEER_INFO, encode_...
 #include "pearson.h"            // for pearson_hash_128, pearson_hash_32
 #include "peer_info.h"          // for purge_peer_list, clear_peer_list
-#include "pktbuf.h"             // for n3n_pktbuf_zero, n3n_pktbuf_getbufptr, ...
 #include "portable_endian.h"    // for be16toh, htobe16
 #include "resolve.h"            // for resolve_create_thread, resolve_cancel...
 #include "sn_selection.h"       // for sn_selection_criterion_gather_data
-#include "speck.h"              // for speck_128_encrypt, speck_context_t
 #include "stats.h"              // for STATS_INC
 #include "thread_local.h"       // for n3n_thread_slot
 #include "uthash.h"             // for UT_hash_handle, HASH_ITER, HASH_DEL
@@ -3004,8 +3004,8 @@ static int sn_read_udp (struct n3n_runtime_data *sss,
     n3n_pktbuf_zero(pktbuf);
 
     bread = recvfrom(sock,
-                     n3n_pktbuf_getbufptr(pktbuf),
-                     n3n_pktbuf_getbufavail(pktbuf),
+                     n3n_pktbuf_getbufptr(*pktbuf),
+                     n3n_pktbuf_getbufavail(*pktbuf),
                      MSG_DONTWAIT,
                      (struct sockaddr *)&sas,
                      &ss_size);
@@ -3015,7 +3015,7 @@ static int sn_read_udp (struct n3n_runtime_data *sss,
     }
 
     process_pdu(sss, (struct sockaddr *)&sas, ss_size, sss->sock,
-                n3n_pktbuf_getbufptr(pktbuf), bread, now);
+                n3n_pktbuf_getbufptr(*pktbuf), bread, now);
     return 1;
 }
 

@@ -13,6 +13,7 @@
 #include <n3n/mainloop.h>       // for fd_info_proto
 #include <n3n/metrics.h>
 #include <n3n/logging.h>        // for traceEvent
+#include <n3n/pktbuf.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -31,7 +32,6 @@
 #include "edge_threads.h"    // for edge_threads_main_release, ...
 #include "management.h"         // for readFromMgmtSocket
 #include "minmax.h"             // for min, max
-#include "pktbuf.h"
 #include "portable_endian.h"    // for htobe16
 
 #ifndef _WIN32

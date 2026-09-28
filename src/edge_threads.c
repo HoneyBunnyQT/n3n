@@ -148,6 +148,7 @@ int edge_threads_wanted (const n2n_edge_conf_t *conf) {
 #include <errno.h>           // for errno, EAGAIN
 #include <fcntl.h>           // for fcntl, O_NONBLOCK
 #include <n3n/mainloop.h>    // for mainloop_register_fd, mainloop_unregister_fd
+#include <n3n/pktbuf.h>      // for n3n_pktbuf_alloc, n3n_pktbuf_thread_init
 #include <poll.h>            // for poll, pollfd, POLLIN
 #include <pthread.h>         // for pthread_rwlock_*, pthread_create, pthread_join
 #include <sys/socket.h>      // for getsockname, sockaddr_storage
@@ -155,7 +156,6 @@ int edge_threads_wanted (const n2n_edge_conf_t *conf) {
 #include <unistd.h>          // for pipe, read, write, close
 
 #include "edge_utils.h"      // for edge_read_proto3_udp
-#include "pktbuf.h"          // for n3n_pktbuf_alloc, n3n_pktbuf_thread_init
 
 
 #ifndef _WIN32

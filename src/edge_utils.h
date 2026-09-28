@@ -6,11 +6,11 @@
 #ifndef _EDGE_UTILS_H_
 #define _EDGE_UTILS_H_
 
+#include <n3n/pktbuf.h>     // for n3n_pktbuf
 #include <stdint.h>
 #include <time.h>       // for time_t
 
 #include "n2n_typedefs.h"  // for n2n_mac_t, n3n_sock_t, n2n_common_t
-#include "pktbuf.h"     // for n3n_pktbuf
 
 // Forward declare so that this header can stay small
 struct n3n_runtime_data;

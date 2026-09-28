@@ -35,6 +35,10 @@ contributions.
   and how it works - you must be prepared to answer questions about it and be
   able to adjust it to fit the project.  Essentially, since you are proposing
   it, you need to own it.
+- If your change is related to performance, please run the builtin
+  `test benchmark` command both before and after with access to a PMU to show
+  the instruction cycle counts and include this output in a commit message.
+  (See the [testing](develop/testing.md) doc)
 
 ## Other ways to Contribute
 

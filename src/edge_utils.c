@@ -33,6 +33,7 @@
 #include <n3n/mainloop.h>            // for mainloop_runonce, mainloop_regis...
 #include <n3n/metrics.h>
 #include <n3n/network_traffic_filter.h>  // for create_network_traffic_filte...
+#include <n3n/pktbuf.h>              // for n3n_pktbuf_initialise, n3n_pktbu...
 #include <n3n/random.h>              // for n3n_rand, n3n_rand_sqr, memrnd
 #include <n3n/strings.h>             // for sock_to_cstr
 #include <n3n/transform.h>           // for n3n_compression_id2str, n3n_tran...
@@ -47,6 +48,7 @@
 #include <stddef.h>
 
 #include "config.h"                  // for HAVE_LIBZSTD
+#include "crypto/speck.h"            // for speck_128_decrypt, speck_128_enc...
 #include "edge_utils.h"
 #include "header_encryption.h"       // for packet_header_encrypt, packet_he...
 #include "management.h"              // for mgmt_event_post
@@ -55,10 +57,8 @@
 #include "n2n_wire.h"                // for fill_sockaddr, decod...
 #include "pearson.h"                 // for pearson_hash_128, pearson_hash_64
 #include "peer_info.h"               // for peer_info, clear_peer_list, ...
-#include "pktbuf.h"                  // for n3n_pktbuf_initialise, n3n_pktbu...
 #include "resolve.h"                 // for resolve_create_thread, resolve_c...
 #include "sn_selection.h"            // for sn_selection_criterion_common_da...
-#include "speck.h"                   // for speck_128_decrypt, speck_128_enc...
 #include "counter.h"                 // for SHARED_STORE, SHARED_LOAD
 #include "edge_threads.h"            // for edge_threads_post_event, ...
 #include "stats.h"                   // for STATS_INC, n3n_stats_sum
@@ -3602,8 +3602,8 @@ int edge_read_proto3_udp (struct n3n_runtime_data *eee,
 
     ssize_t bread = recvfrom(
         sock,
-        n3n_pktbuf_getbufptr(pktbuf),
-        n3n_pktbuf_getbufavail(pktbuf),
+        n3n_pktbuf_getbufptr(*pktbuf),
+        n3n_pktbuf_getbufavail(*pktbuf),
         MSG_DONTWAIT,
         sender_sock,
         &ss_size
@@ -3652,8 +3652,8 @@ int edge_read_proto3_udp (struct n3n_runtime_data *eee,
         eee,
         sender_sock,
         sock,
-        n3n_pktbuf_getbufptr(pktbuf),
-        n3n_pktbuf_getbufsize(pktbuf),
+        n3n_pktbuf_getbufptr(*pktbuf),
+        n3n_pktbuf_getbufsize(*pktbuf),
         now
     );
     return 1;
