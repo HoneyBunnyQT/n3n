@@ -44,6 +44,24 @@ IPv6 addresses as well as notes on MTU and on how to draw IP addresses from
 DHCP servers.
 
 
+## Peers on the Same Network
+
+Edges that are on the same network find each other without the supernode:
+each edge sends its registration to a multicast group and listens there.
+The connection to such a peer then stays inside the local network.
+
+If that multicast leaves through the wrong interface - another VPN's device,
+for example, which then carries it to peers on the far side - it can be
+switched off with `connection.local_discovery=false`.  Edges then only find
+each other through the supernode.
+
+Where multicast does not work at all (it is often disabled on routers and on
+guest WiFi), an edge can tell the supernode its local address instead, which
+other edges then try: `connection.advertise_addr` takes an IPv4 or IPv6
+address, or `detect` for the address the edge sends from towards the
+supernode.  The default, `auto`, advertises nothing and relies on multicast.
+
+
 ## Bridging and Routing the Traffic
 
 Reaching a remote network or tunneling all the internet traffic via n3n are

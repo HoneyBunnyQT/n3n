@@ -114,7 +114,9 @@ packets to a certain multicast address. Also, edges listen to this address to ev
 fetch such packets.
 
 If these packets disturb network's peace or even get forwarded by (other) edges through the
-n3n network, this behavior can be disabled
+n3n network, this behavior can be switched off without rebuilding, with the
+`connection.local_discovery=false` config option.  It can also be removed at
+compile time:
 
 #### Makefile
 
