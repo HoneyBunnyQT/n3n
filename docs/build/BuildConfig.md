@@ -66,7 +66,8 @@ use of all the libraries concerned.
 
 ### `--enable-pthread`
 
-Enable threading using the pthread library
+Enable threading using the pthread library.  This is needed for an edge to
+handle packets on several threads - see [Threads](../advanced/Threads.md).
 
 ### `--enable-cap`
 
