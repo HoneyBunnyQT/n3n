@@ -62,6 +62,7 @@
 #include "counter.h"                 // for SHARED_STORE, SHARED_LOAD
 #include "edge_threads.h"            // for edge_threads_post_event, ...
 #include "stats.h"                   // for STATS_INC, n3n_stats_sum
+#include "thread_local.h"            // for N3N_THREAD_LOCAL, n3n_thread_on_cleanup
 #include "uthash.h"                  // for UT_hash_handle, HASH_COUNT, HASH...
 #include "n2n_define.h"
 #include "n2n_typedefs.h"
@@ -1896,6 +1897,33 @@ void update_supernode_reg (struct n3n_runtime_data * eee, time_t now) {
 
 /* ************************************** */
 
+static int check_query_peer_info (struct n3n_runtime_data *eee, time_t now, const n2n_mac_t mac) {
+
+    struct peer_info *scan;
+
+    HASH_FIND_PEER(eee->pending_peers, mac, scan);
+
+    if(!scan) {
+        scan = peer_info_malloc(mac);
+
+        scan->timeout = eee->conf.register_interval; /* TODO: should correspond to the peer supernode registration timeout */
+        scan->last_seen = now; /* Don't change this it marks the pending peer for removal. */
+
+        HASH_ADD_PEER(eee->pending_peers, scan);
+    }
+
+    if(now - scan->last_sent_query > eee->conf.register_interval) {
+        send_register(eee, &(eee->curr_sn->sock), mac, N2N_FORWARDED_REG_COOKIE);
+        send_query_peer(eee, scan->mac_addr);
+        scan->last_sent_query = now;
+        return(0);
+    }
+
+    return(1);
+}
+
+/* ************************************** */
+
 /** A PACKET has arrived containing an encapsulated ethernet datagram - usually
  *    encrypted. */
 void edge_event_apply (struct n3n_runtime_data *eee, const struct edge_event *ev) {
@@ -1927,6 +1955,25 @@ void edge_event_apply (struct n3n_runtime_data *eee, const struct edge_event *ev
 #endif
             break;
         }
+
+        case EDGE_EVENT_PEER_EXPIRE: {
+            struct peer_info *scan;
+
+            // a PACKET from the peer may have come in since the event was
+            // posted, so check again
+            HASH_FIND_PEER(eee->known_peers, ev->mac, scan);
+            if(scan && (scan->last_seen > 0)
+               && ((ev->now - scan->last_p2p) >= (scan->timeout / 2))) {
+                HASH_DEL(eee->known_peers, scan);
+                mgmt_event_post(N3N_EVENT_PEER,N3N_EVENT_PEER_P2P_EXPIRED,scan);
+                peer_info_free(scan);
+            }
+            break;
+        }
+
+        case EDGE_EVENT_QUERY_PEER:
+            check_query_peer_info(eee, ev->now, ev->mac);
+            break;
     }
 }
 
@@ -1993,6 +2040,20 @@ static int peer_seen_fast (struct n3n_runtime_data *eee,
         SHARED_STORE(scan->local, 1);
 
     return 1;
+}
+
+
+/* The part of check_query_peer_info() that nearly every frame to a peer not
+ * reached directly takes: the supernode was asked about the peer only a
+ * moment ago, so there is nothing to do. Returns 0 if more is needed, which
+ * then is an event. */
+static int query_peer_fast (struct n3n_runtime_data *eee, time_t now, const n2n_mac_t mac) {
+
+    struct peer_info *scan;
+
+    HASH_FIND_PEER(eee->pending_peers, mac, scan);
+
+    return scan && !(now - scan->last_sent_query > eee->conf.register_interval);
 }
 
 
@@ -2221,33 +2282,6 @@ static char *get_ip_from_arp (dec_ip_str_t buf, const n2n_mac_t req_mac) {
 
 /* ************************************** */
 
-static int check_query_peer_info (struct n3n_runtime_data *eee, time_t now, n2n_mac_t mac) {
-
-    struct peer_info *scan;
-
-    HASH_FIND_PEER(eee->pending_peers, mac, scan);
-
-    if(!scan) {
-        scan = peer_info_malloc(mac);
-
-        scan->timeout = eee->conf.register_interval; /* TODO: should correspond to the peer supernode registration timeout */
-        scan->last_seen = now; /* Don't change this it marks the pending peer for removal. */
-
-        HASH_ADD_PEER(eee->pending_peers, scan);
-    }
-
-    if(now - scan->last_sent_query > eee->conf.register_interval) {
-        send_register(eee, &(eee->curr_sn->sock), mac, N2N_FORWARDED_REG_COOKIE);
-        send_query_peer(eee, scan->mac_addr);
-        scan->last_sent_query = now;
-        return(0);
-    }
-
-    return(1);
-}
-
-/* ************************************** */
-
 /* @return 1 if destination is a peer, 0 if destination is supernode */
 static int find_peer_destination (struct n3n_runtime_data * eee,
                                   n2n_mac_t mac_address,
@@ -2271,13 +2305,14 @@ static int find_peer_destination (struct n3n_runtime_data * eee,
     HASH_FIND_PEER(eee->known_peers, mac_address, scan);
 
     if(scan && (scan->last_seen > 0)) {
-        if((now - scan->last_p2p) >= (scan->timeout / 2)) {
+        if((now - SHARED_LOAD(scan->last_p2p)) >= (scan->timeout / 2)) {
             /* Too much time passed since we saw the peer, need to register again
              * since the peer address may have changed. */
+            struct edge_event ev = { .type = EDGE_EVENT_PEER_EXPIRE, .now = now };
+
             traceEvent(TRACE_DEBUG, "refreshing idle known peer");
-            HASH_DEL(eee->known_peers, scan);
-            mgmt_event_post(N3N_EVENT_PEER,N3N_EVENT_PEER_P2P_EXPIRED,scan);
-            peer_info_free(scan);
+            memcpy(ev.mac, mac_address, sizeof(n2n_mac_t));
+            edge_event_post(eee, &ev);
             /* NOTE: registration will be performed upon the receival of the next response packet */
         } else {
             /* Valid known peer found */
@@ -2291,7 +2326,12 @@ static int find_peer_destination (struct n3n_runtime_data * eee,
         traceEvent(TRACE_DEBUG, "p2p peer %s not found, using supernode",
                    macaddr_str(mac_buf, mac_address));
 
-        check_query_peer_info(eee, now, mac_address);
+        if(!query_peer_fast(eee, now, mac_address)) {
+            struct edge_event ev = { .type = EDGE_EVENT_QUERY_PEER, .now = now };
+
+            memcpy(ev.mac, mac_address, sizeof(n2n_mac_t));
+            edge_event_post(eee, &ev);
+        }
     }
 
     traceEvent(TRACE_DEBUG, "found peer's socket %s [%s]",
@@ -2685,9 +2725,9 @@ int edge_read_from_tap (struct n3n_runtime_data * eee) {
 
 /* Scratch space for one batch of outgoing frames. It is always empty again by
  * the time edge_read_from_tap_batch() returns, so it carries no state from one
- * call to the next, and the mainloop that uses it is single threaded - which
- * is why it can be a static rather than part of the runtime data. */
-static struct edge_tx_batch {
+ * call to the next. Every thread that reads the tap gets its own on first
+ * use. */
+struct edge_tx_batch {
     int count;
     struct edge_tx_slot {
         uint8_t frame[N2N_PKT_BUF_SIZE];     /* as read from the tap device */
@@ -2698,7 +2738,16 @@ static struct edge_tx_batch {
         n2n_mac_t dest;
     } slot[EDGE_TX_BATCH];
     n2n_transform_job_t job[EDGE_TX_BATCH];
-} tx_batch;
+};
+
+static N3N_THREAD_LOCAL struct edge_tx_batch *tx_batch;
+
+
+static void tx_batch_free (void) {
+
+    free(tx_batch);
+    tx_batch = NULL;
+}
 
 
 /* Transform every payload in the batch - all at once if the transform has a
@@ -2749,8 +2798,17 @@ static void edge_tx_flush (struct n3n_runtime_data *eee, struct edge_tx_batch *b
  */
 int edge_read_from_tap_batch (struct n3n_runtime_data * eee, int max) {
 
-    struct edge_tx_batch *b = &tx_batch;
+    struct edge_tx_batch *b = tx_batch;
     int taken = 0;
+
+    if(!b) {
+        b = calloc(1, sizeof(struct edge_tx_batch));
+        if(!b) {
+            return 0;
+        }
+        tx_batch = b;
+        n3n_thread_on_cleanup(tx_batch_free);
+    }
 
     while(taken < max) {
         struct edge_tx_slot *s = &b->slot[b->count];

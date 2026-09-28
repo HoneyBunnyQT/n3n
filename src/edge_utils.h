@@ -34,6 +34,8 @@ enum edge_event_type {
     EDGE_EVENT_PENDING_REMOVE,      /* the peer answered directly, stop registering */
     EDGE_EVENT_PEER_SEEN,           /* check_peer_registration_needed() */
     EDGE_EVENT_HOST_SEEN,           /* learn a bridged host behind an edge */
+    EDGE_EVENT_PEER_EXPIRE,         /* no PACKET from the peer for too long */
+    EDGE_EVENT_QUERY_PEER,          /* check_query_peer_info() */
 };
 
 struct edge_event {
@@ -44,7 +46,7 @@ struct edge_event {
     n2n_cookie_t cookie;            /* PEER_SEEN */
     uint8_t from_supernode;         /* PEER_SEEN */
     uint8_t via_multicast;          /* PEER_SEEN */
-    time_t now;                     /* HOST_SEEN */
+    time_t now;                     /* HOST_SEEN, PEER_EXPIRE, QUERY_PEER */
 };
 
 // apply a change described in an event - on the thread that owns the tables
