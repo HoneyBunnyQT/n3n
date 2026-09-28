@@ -437,6 +437,7 @@ typedef struct n2n_edge_conf {
     bool allow_multicast;                            /**< Multicast ethernet addresses. */
     bool pmtu_discovery;                             /**< Enable the Path MTU discovery. */
     bool allow_p2p;                                  /**< Allow P2P connection */
+    bool local_discovery;                            /**< Look for peers on the local network by multicast */
     n2n_private_public_key_t *public_key;            /**< edge's public key (for user/password based authentication) */
     n2n_private_public_key_t *shared_secret;         /**< shared secret derived from federation public key, username and password */
     speck_context_t *shared_secret_ctx;              /**< context holding the roundkeys derived from shared secret */

@@ -148,6 +148,19 @@ static struct n3n_conf_option section_connection[] = {
                 "authentication is used",
     },
     {
+        .name = "local_discovery",
+        .type = n3n_conf_bool,
+        .offset = offsetof(n2n_edge_conf_t, local_discovery),
+        .desc = "Look for peers on the local network",
+        .help = "Defaulting to true, the edge sends its registration to a "
+                "multicast group and listens there, so that edges on the "
+                "same network find each other without the supernode.  "
+                "Setting this to false stops both.  Useful when the "
+                "multicast would reach peers through a path that is not "
+                "wanted, for example through another VPN whose interface "
+                "carries multicast.",
+    },
+    {
         .name = "pmtu_discovery",
         .type = n3n_conf_bool,
         .offset = offsetof(n2n_edge_conf_t, pmtu_discovery),

@@ -850,7 +850,7 @@ static int is_valid_peer_sock (const n3n_sock_t *sock) {
  */
 static void register_with_local_peers (struct n3n_runtime_data * eee) {
 #ifndef SKIP_MULTICAST_PEERS_DISCOVERY
-    if(eee->conf.allow_p2p) {
+    if(eee->conf.allow_p2p && eee->conf.local_discovery) {
         if(eee->multicast_joined_v4 && (eee->conf.preferred_sock.family == (uint8_t)AF_INVALID)) {
             /* send registration to the local multicast group */
             traceEvent(TRACE_DEBUG, "registering with IPv4 multicast group %s:%u",
@@ -1366,7 +1366,7 @@ static void sendto_sock (struct n3n_runtime_data *eee, const void * buf,
 static void check_join_multicast_group (struct n3n_runtime_data *eee) {
 
 #ifndef SKIP_MULTICAST_PEERS_DISCOVERY
-    if((eee->conf.allow_p2p)
+    if((eee->conf.allow_p2p) && (eee->conf.local_discovery)
        && (eee->conf.preferred_sock.family == (uint8_t)AF_INVALID)) {
         if(!eee->multicast_joined_v4) {
             struct ip_mreq mreq;
@@ -4074,6 +4074,18 @@ static int edge_init_sockets (struct n3n_runtime_data *eee) {
         mainloop_unregister_fd(eee->udp_multicast_sock_v4);
         eee->udp_multicast_sock_v4 = -1;
     }
+    if(eee->udp_multicast_sock_v6 >= 0) {
+        closesocket(eee->udp_multicast_sock_v6);
+        mainloop_unregister_fd(eee->udp_multicast_sock_v6);
+        eee->udp_multicast_sock_v6 = -1;
+    }
+
+    // Without the sockets, nothing sent to the multicast group reaches this
+    // edge either - not even what another n3n on this host has joined it for
+    if(!eee->conf.local_discovery) {
+        traceEvent(TRACE_NORMAL, "local peer discovery is switched off");
+        return 0;
+    }
 
     /* Populate the multicast group for local edge */
     eee->multicast_peer_v4.family     = AF_INET;
@@ -4104,11 +4116,6 @@ static int edge_init_sockets (struct n3n_runtime_data *eee) {
     }
 
     // IPv6
-    if(eee->udp_multicast_sock_v6 >= 0) {
-        closesocket(eee->udp_multicast_sock_v6);
-        mainloop_unregister_fd(eee->udp_multicast_sock_v6);
-        eee->udp_multicast_sock_v6 = -1;
-    }
     eee->multicast_peer_v6.family = AF_INET6;
     eee->multicast_peer_v6.port = N2N_MULTICAST_PORT;
     inet_pton(AF_INET6, N3N_MULTICAST_GROUP_V6, &eee->multicast_peer_v6.addr.v6);
@@ -4169,6 +4176,7 @@ void edge_init_conf_defaults (n2n_edge_conf_t *conf, char *sessionname) {
     conf->header_encryption = HEADER_ENCRYPTION_NONE;
     conf->compression = N2N_COMPRESSION_ID_NONE;
     conf->allow_p2p = true;
+    conf->local_discovery = true;
     conf->threads = 1;
     conf->register_interval = REGISTER_SUPER_INTERVAL_DFL;
 

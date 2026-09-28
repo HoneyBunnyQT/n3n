@@ -15,6 +15,7 @@ header_encryption=unknown
 advertise_addr=0.0.0.0
 allow_p2p=false
 connect_tcp=false
+local_discovery=false
 pmtu_discovery=false
 register_interval=0
 register_pkt_ttl=0
