@@ -569,6 +569,7 @@ struct n3n_runtime_data {
     /* supernode socket is in        eee->curr_sn->sock (of type n3n_sock_t) */
     slots_t *mgmt_slots;
     int sock;
+    n3n_sock_t advertised_sock;                                          /**< local socket told to the supernode, from advertise_addr (AF_INVALID: none) */
 
 #ifndef SKIP_MULTICAST_PEERS_DISCOVERY
     int udp_multicast_sock_v4;                                           /**< socket for local IPv4 multicast registrations. */

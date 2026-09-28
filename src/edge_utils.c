@@ -596,22 +596,27 @@ hack_retry:
     traceEvent(TRACE_INFO, "No platform support for setting pmtu_discovery");
 #endif
 
+    // What to tell the supernode about our local socket, from advertise_addr:
+    // - auto: nothing, local peers find each other by multicast
+    // - an address: that address, with the port of our socket
+    // - detect: the address we send from towards the supernode, and our port
+    eee->advertised_sock.family = AF_INVALID;
+
+    if(eee->conf.preferred_sock.family == AF_INVALID) {
+        return;
+    }
     if(detect_local_ip_address(&local_sock, eee) != 0) {
         return;
     }
 
-    // always overwrite local port even/especially if chosen by OS...
-    eee->conf.preferred_sock.port = local_sock.port;
-
-    // only if auto-detection mode, ...
-    if(eee->conf.preferred_sock.family == AF_INVALID) {
-        return;
+    if(is_empty_ip_address(&eee->conf.preferred_sock)) {
+        eee->advertised_sock = local_sock;
+    } else {
+        eee->advertised_sock = eee->conf.preferred_sock;
+        eee->advertised_sock.port = local_sock.port;
     }
-
-    // ... overwrite IP address, too (whole socket struct here)
-    memcpy(&eee->conf.preferred_sock, &local_sock, sizeof(n3n_sock_t));
-    traceEvent(TRACE_INFO, "determined local socket [%s]",
-               sock_to_cstr(sockbuf, &local_sock));
+    traceEvent(TRACE_INFO, "advertising local socket [%s]",
+               sock_to_cstr(sockbuf, &eee->advertised_sock));
 }
 
 
@@ -772,6 +777,7 @@ struct n3n_runtime_data* edge_init (const n2n_edge_conf_t *conf, int *rv) {
     // on trying to close them (open_sockets does so for also being able to RE-open the sockets
     // if called in-between, see "Supernode not responding" in update_supernode_reg(...)
     eee->sock = -1;
+    eee->advertised_sock.family = AF_INVALID;
 #ifndef SKIP_MULTICAST_PEERS_DISCOVERY
     eee->udp_multicast_sock_v4 = -1;
     eee->udp_multicast_sock_v6 = -1;
@@ -1500,11 +1506,11 @@ void send_register_super (struct n3n_runtime_data *eee) {
 
     cmn.ttl = N2N_DEFAULT_TTL;
     cmn.pc = MSG_TYPE_REGISTER_SUPER;
-    if(eee->conf.preferred_sock.family == (uint8_t)AF_INVALID) {
+    if(eee->advertised_sock.family == (uint8_t)AF_INVALID) {
         cmn.flags = 0;
     } else {
         cmn.flags = N2N_FLAGS_SOCKET;
-        memcpy(&(reg.sock), &(eee->conf.preferred_sock), sizeof(n3n_sock_t));
+        memcpy(&(reg.sock), &(eee->advertised_sock), sizeof(n3n_sock_t));
     }
     memcpy(cmn.community, eee->conf.community_name, N2N_COMMUNITY_SIZE);
 

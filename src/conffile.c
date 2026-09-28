@@ -325,20 +325,27 @@ try_uint32:
         }
         case n3n_conf_n2n_sock_addr: {
             struct n2n_sock *val = (struct n2n_sock *)valvoid;
+            memset(val, 0, sizeof(*val));
             if(!strcmp(value, "auto")) {
                 val->family = AF_INVALID;
                 return 0;
             }
-
-            in_addr_t address_tmp = inet_addr(value);
-            if(address_tmp == INADDR_NONE) {
-                val->family = AF_INVALID;
-                return -1;
+            if(!strcmp(value, "detect")) {
+                // an unspecified address stands for "detect"
+                val->family = AF_INET;
+                return 0;
+            }
+            if(inet_pton(AF_INET, value, &val->addr.v4) == 1) {
+                val->family = AF_INET;
+                return 0;
+            }
+            if(inet_pton(AF_INET6, value, &val->addr.v6) == 1) {
+                val->family = AF_INET6;
+                return 0;
             }
 
-            memcpy(&(val->addr.v4), &(address_tmp), IPV4_SIZE);
-            val->family = AF_INET;
-            return 0;
+            val->family = AF_INVALID;
+            return -1;
         }
         case n3n_conf_sn_selection: {
             uint8_t *val = (uint8_t *)valvoid;
@@ -626,6 +633,12 @@ static const char * stringify_option (void *conf, struct n3n_conf_option option,
             struct n2n_sock *val = (struct n2n_sock *)valvoid;
             if(val->family == AF_INVALID) {
                 return "auto";
+            }
+            if(val->family == AF_INET6) {
+                return (char *)inet_ntop(AF_INET6, &val->addr.v6, buf, buflen);
+            }
+            if((val->family == AF_INET) && is_empty_ip_address(val)) {
+                return "detect";
             }
 
             return (char *)inet_ntop(AF_INET, &val->addr.v4, buf, buflen);

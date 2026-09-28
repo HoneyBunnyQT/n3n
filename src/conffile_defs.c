@@ -97,13 +97,16 @@ static struct n3n_conf_option section_connection[] = {
         .type = n3n_conf_n2n_sock_addr,
         .offset = offsetof(n2n_edge_conf_t, preferred_sock),
         .desc = "Set local address to advertise",
-        .help = "The correct address will usually be autodetected.  However, "
-                "if multicast peer detection is not available (e.g: it is "
-                "disabled on the router) a local IP address to use for "
-                "attempted local peer connections can be specified here. "
-                "This can assist with forming a peer-to-peer connection with "
-                "hosts on the same internal network.  It does not help with "
-                "NAT piercing.",
+        .help = "Defaulting to auto, edges on the same network find each "
+                "other by multicast (see local_discovery) and no address is "
+                "advertised.  If multicast does not work there (e.g: it is "
+                "disabled on the router), a local IPv4 or IPv6 address can "
+                "be given here; the supernode then tells it to other edges, "
+                "which try to reach this edge there.  'detect' advertises "
+                "the address this edge sends from towards the supernode.  "
+                "This can assist with forming a peer-to-peer connection "
+                "with hosts on the same internal network.  It does not help "
+                "with NAT piercing.",
     },
     {
         .name = "allow_p2p",
