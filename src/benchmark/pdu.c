@@ -7,6 +7,7 @@
 #include <n2n.h>            // for edge_init
 #include <n2n_define.h>     // for N2N_PKT_BUF_SIZE
 #include <n2n_typedefs.h>   // for n2n_edge_conf
+#include <n2n_wire.h>       // for fill_n3nsock
 #include <n3n/benchmark.h>  // for bench_item
 #include <n3n/edge.h>       // for edge_init_conf_defaults, edge_verify_conf
 #include <n3n/resolve.h>    // for resolve_supernode_str_add
@@ -23,13 +24,18 @@
 
 struct bench_ctx {
     struct n3n_runtime_data eee;
+    struct sockaddr_in sender;
     int sv[2];
     uint8_t outbuf[N2N_PKT_BUF_SIZE];
     ssize_t outbuf_size;
 };
 
+// the source MAC in test_data_pdu_v3
+static const n2n_mac_t bench_peer_mac = {0x00, 0x00, 0x00, 0x00, 0x00, 0x01};
+
 static void *bench_setup (void *const _ctx) {
     struct bench_ctx *ctx = (struct bench_ctx *)_ctx;
+    struct peer_info *peer;
 
     edge_init_conf_defaults(&ctx->eee.conf,"edge");
     strcpy(ctx->eee.conf.community_name, "test");
@@ -40,6 +46,18 @@ static void *bench_setup (void *const _ctx) {
     ctx->eee.pending_peers = NULL;
     ctx->eee.known_peers = NULL;
     ctx->eee.network_traffic_filter = NULL;
+
+    ctx->sender.sin_family = AF_INET;
+    ctx->sender.sin_port = 1;
+    ctx->sender.sin_addr.s_addr = 0x0fee1bad;
+
+    // Nearly every PDU an edge receives comes from a peer it already knows,
+    // so the benchmark PDU does too
+    peer = peer_info_malloc(bench_peer_mac);
+    fill_n3nsock(&peer->sock, (struct sockaddr *)&ctx->sender);
+    peer->timeout = ctx->eee.conf.register_interval;
+    peer->last_seen = time(NULL);
+    HASH_ADD_PEER(ctx->eee.known_peers, peer);
 
     n2n_transop_null_init(&ctx->eee.conf, &ctx->eee.transop);
 
@@ -102,20 +120,14 @@ static const ssize_t bench_pdu2tun_run (
     ssize_t *in
 ) {
     struct bench_ctx *ctx = (struct bench_ctx *)_ctx;
-
-    struct sockaddr_in sa;
     time_t now = time(NULL);
-
-    sa.sin_family = AF_INET;
-    sa.sin_port = 1;
-    sa.sin_addr.s_addr = 0x0fee1bad;
 
     // Avoid attempt to send a reply to this PDU
     ctx->eee.sock = -1;
 
     process_pdu(
         &ctx->eee,
-        (struct sockaddr *)&sa,
+        (struct sockaddr *)&ctx->sender,
         -1,
         (uint8_t *)data_in,
         data_in_size,
