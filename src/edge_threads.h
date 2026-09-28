@@ -31,9 +31,8 @@ void edge_threads_main_release (struct n3n_runtime_data *eee);
 void edge_threads_main_acquire (struct n3n_runtime_data *eee);
 
 // From a worker: hand an event or a control message to the main thread. The
-// control message's PDU is copied, so the worker may reuse its buffer. If the
-// queue is full, the item is dropped and counted - the protocol repeats all
-// control messages, and a lost event is redone by the next packet.
+// control message's PDU is copied, so the worker may reuse its buffer.
+// Nothing is dropped - see QUEUE_SLOTS in edge_threads.c.
 void edge_threads_post_event (struct n3n_runtime_data *eee, const struct edge_event *ev);
 void edge_threads_post_control (struct n3n_runtime_data *eee, const struct pdu_control *c);
 

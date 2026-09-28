@@ -43,8 +43,14 @@
 
 // Items a worker hands to the main thread, per worker, oldest first. A power
 // of two. Control messages and peer table changes are rare - a worker queues
-// one when something about a peer changes, not for every packet - so this
-// only fills up if the main thread is stuck.
+// one when something about a peer changes, not for every packet.
+//
+// Nothing is ever dropped: control messages keep holes punched, so losing
+// one is not an option. If the ring is full, items go to an overflow list;
+// and before each batch a worker checks that the main thread has caught up
+// with it, and otherwise leaves the packets in its socket for a moment - where
+// they wait just as they do for a single busy thread. So the overflow list
+// never holds more than one batch's worth.
 #define QUEUE_SLOTS 64
 
 enum queue_kind {
@@ -60,14 +66,30 @@ struct queue_item {
     uint8_t buf[N2N_PKT_BUF_SIZE];      // CONTROL: the copy of the PDU
 };
 
-// One producer (the worker), one consumer (the main thread): each index is
-// only ever written by one side, so a release store and an acquire load on
-// it are all the synchronisation needed.
+struct overflow_item {
+    struct overflow_item *next;
+    struct queue_item item;
+};
+
+// One producer (the worker), one consumer (the main thread): each ring index
+// is only ever written by one side, so a release store and an acquire load on
+// it are all the synchronisation needed. The overflow list, rarely used, has
+// a mutex.
+//
+// Order: the worker uses the overflow list as long as it holds anything, and
+// the main thread empties the ring before the overflow list. So an item on
+// the ring is always older than anything on the list, and the main thread
+// sees everything in the order the worker queued it.
 struct worker_queue {
     uint32_t head;                      // next to take, written by the main thread
     uint32_t tail;                      // next to fill, written by the worker
-    uint32_t dropped;                   // queue was full
+    uint32_t overflow_count;            // items on the overflow list
+    pthread_mutex_t overflow_lock;
+    struct overflow_item *overflow_first;
+    struct overflow_item *overflow_last;
     uint32_t posted;                    // items queued so far, reported at the end
+    uint32_t overflowed;                // of those, via the overflow list
+    uint32_t lost;                      // no memory for an overflow item
     struct queue_item item[QUEUE_SLOTS];
 };
 
@@ -78,6 +100,7 @@ struct worker {
     pthread_t id;
     int started;
     uint32_t packets;                   // taken off its socket, reported at the end
+    uint32_t waited;                    // batches put off until the main thread caught up
 };
 
 struct edge_threads {
@@ -107,28 +130,58 @@ void edge_threads_main_acquire (struct n3n_runtime_data *eee) {
 }
 
 
-// the calling worker's next free slot, or NULL if its queue is full
-static struct queue_item *queue_reserve (struct edge_threads *t) {
+// how many items of this worker the main thread has not taken yet
+static uint32_t queue_backlog (struct worker_queue *q) {
+
+    return (q->tail - __atomic_load_n(&q->head, __ATOMIC_ACQUIRE))
+           + __atomic_load_n(&q->overflow_count, __ATOMIC_ACQUIRE);
+}
+
+
+// Where the calling worker's next item goes: the next ring slot - unless the
+// ring is full or the overflow list still holds items, then a new overflow
+// item, returned in *ov. NULL only if there is no memory for that.
+static struct queue_item *queue_reserve (struct edge_threads *t, struct overflow_item **ov) {
 
     struct worker_queue *q = t->queue[n3n_thread_slot];
     uint32_t head = __atomic_load_n(&q->head, __ATOMIC_ACQUIRE);
 
-    if(q->tail - head >= QUEUE_SLOTS) {
-        COUNTER_INC(q->dropped);
-        return NULL;
+    *ov = NULL;
+    if(!__atomic_load_n(&q->overflow_count, __ATOMIC_ACQUIRE)
+       && (q->tail - head < QUEUE_SLOTS)) {
+        return &q->item[q->tail & (QUEUE_SLOTS - 1)];
     }
 
-    return &q->item[q->tail & (QUEUE_SLOTS - 1)];
+    *ov = malloc(sizeof(**ov));
+    if(!*ov) {
+        COUNTER_INC(q->lost);
+        return NULL;
+    }
+    return &(*ov)->item;
 }
 
 
-// publish the slot queue_reserve() returned, and wake the main thread
-static void queue_commit (struct edge_threads *t) {
+// publish the item queue_reserve() returned, and wake the main thread
+static void queue_commit (struct edge_threads *t, struct overflow_item *ov) {
 
     struct worker_queue *q = t->queue[n3n_thread_slot];
     uint8_t one = 1;
 
-    __atomic_store_n(&q->tail, q->tail + 1, __ATOMIC_RELEASE);
+    if(!ov) {
+        __atomic_store_n(&q->tail, q->tail + 1, __ATOMIC_RELEASE);
+    } else {
+        ov->next = NULL;
+        pthread_mutex_lock(&q->overflow_lock);
+        if(q->overflow_last) {
+            q->overflow_last->next = ov;
+        } else {
+            q->overflow_first = ov;
+        }
+        q->overflow_last = ov;
+        __atomic_store_n(&q->overflow_count, q->overflow_count + 1, __ATOMIC_RELEASE);
+        pthread_mutex_unlock(&q->overflow_lock);
+        q->overflowed++;
+    }
     q->posted++;
 
     // One byte per item is fine: items are rare. If the pipe is full, the
@@ -141,25 +194,27 @@ static void queue_commit (struct edge_threads *t) {
 
 void edge_threads_post_event (struct n3n_runtime_data *eee, const struct edge_event *ev) {
 
-    struct queue_item *it = queue_reserve(eee->threads);
+    struct overflow_item *ov;
+    struct queue_item *it = queue_reserve(eee->threads, &ov);
 
     if(!it) {
         return;
     }
     it->kind = QUEUE_EVENT;
     it->ev = *ev;
-    queue_commit(eee->threads);
+    queue_commit(eee->threads, ov);
 }
 
 
 void edge_threads_post_control (struct n3n_runtime_data *eee, const struct pdu_control *c) {
 
+    struct overflow_item *ov;
     struct queue_item *it;
 
     if(c->size > sizeof(it->buf)) {
         return;
     }
-    it = queue_reserve(eee->threads);
+    it = queue_reserve(eee->threads, &ov);
     if(!it) {
         return;
     }
@@ -167,7 +222,22 @@ void edge_threads_post_control (struct n3n_runtime_data *eee, const struct pdu_c
     it->ctl = *c;
     it->len = c->size;
     memcpy(it->buf, c->buf, c->size);
-    queue_commit(eee->threads);
+    queue_commit(eee->threads, ov);
+}
+
+
+static void queue_item_apply (struct n3n_runtime_data *eee, struct queue_item *it) {
+
+    switch(it->kind) {
+        case QUEUE_EVENT:
+            edge_event_apply(eee, &it->ev);
+            break;
+        case QUEUE_CONTROL:
+            it->ctl.buf = it->buf;
+            it->ctl.size = it->len;
+            process_pdu_control(eee, &it->ctl);
+            break;
+    }
 }
 
 
@@ -194,22 +264,29 @@ void edge_threads_drain (struct n3n_runtime_data *eee) {
             continue;
         }
 
+        // the ring first: anything on it is older than the overflow list
         tail = __atomic_load_n(&q->tail, __ATOMIC_ACQUIRE);
         for(head = q->head; head != tail; head++) {
-            struct queue_item *it = &q->item[head & (QUEUE_SLOTS - 1)];
-
-            switch(it->kind) {
-                case QUEUE_EVENT:
-                    edge_event_apply(eee, &it->ev);
-                    break;
-                case QUEUE_CONTROL:
-                    it->ctl.buf = it->buf;
-                    it->ctl.size = it->len;
-                    process_pdu_control(eee, &it->ctl);
-                    break;
-            }
+            queue_item_apply(eee, &q->item[head & (QUEUE_SLOTS - 1)]);
         }
         __atomic_store_n(&q->head, head, __ATOMIC_RELEASE);
+
+        if(__atomic_load_n(&q->overflow_count, __ATOMIC_ACQUIRE)) {
+            struct overflow_item *ov, *next;
+
+            pthread_mutex_lock(&q->overflow_lock);
+            ov = q->overflow_first;
+            q->overflow_first = NULL;
+            q->overflow_last = NULL;
+            __atomic_store_n(&q->overflow_count, 0, __ATOMIC_RELEASE);
+            pthread_mutex_unlock(&q->overflow_lock);
+
+            for(; ov; ov = next) {
+                next = ov->next;
+                queue_item_apply(eee, &ov->item);
+                free(ov);
+            }
+        }
     }
 }
 
@@ -241,6 +318,14 @@ static void *worker_main (void *arg) {
             break;
         }
         if(!(pfd[0].revents & POLLIN)) {
+            continue;
+        }
+
+        // The main thread has not caught up with this worker yet: leave the
+        // packets in the socket for a moment instead of queueing more.
+        if(queue_backlog(t->queue[w->slot]) >= QUEUE_SLOTS) {
+            w->waited++;
+            poll(&pfd[1], 1, 5);
             continue;
         }
 
@@ -276,7 +361,10 @@ static void edge_threads_free (struct n3n_runtime_data *eee) {
         if(t->worker[slot].sock >= 0) {
             closesocket(t->worker[slot].sock);
         }
-        free(t->queue[slot]);
+        if(t->queue[slot]) {
+            pthread_mutex_destroy(&t->queue[slot]->overflow_lock);
+            free(t->queue[slot]);
+        }
     }
     if(t->wake_pipe[0] >= 0) {
         mainloop_unregister_fd(t->wake_pipe[0]);
@@ -364,6 +452,7 @@ int edge_threads_start (struct n3n_runtime_data *eee, int threads) {
         if(!t->queue[slot]) {
             break;
         }
+        pthread_mutex_init(&t->queue[slot]->overflow_lock, NULL);
         t->worker[slot].eee = eee;
         t->worker[slot].slot = slot;
     }
@@ -407,9 +496,6 @@ void edge_threads_stop (struct n3n_runtime_data *eee) {
         return;
     }
 
-    // whatever the workers queued so far still counts
-    edge_threads_drain(eee);
-
     __atomic_store_n(&t->stop, 1, __ATOMIC_RELEASE);
     if(write(t->stop_pipe[1], &one, 1) < 0) {
         // the flag is checked at least once a second anyway
@@ -423,11 +509,19 @@ void edge_threads_stop (struct n3n_runtime_data *eee) {
         if(t->worker[slot].started) {
             pthread_join(t->worker[slot].id, NULL);
             traceEvent(TRACE_NORMAL, "thread %d handled %u received packets, "
-                       "passed %u to the main thread, dropped %u",
-                       slot, t->worker[slot].packets,
-                       t->queue[slot]->posted, COUNTER_READ(t->queue[slot]->dropped));
+                       "passed %u to the main thread (%u via overflow), waited %u times",
+                       slot, t->worker[slot].packets, t->queue[slot]->posted,
+                       t->queue[slot]->overflowed, t->worker[slot].waited);
+            if(COUNTER_READ(t->queue[slot]->lost)) {
+                traceEvent(TRACE_WARNING, "thread %d lost %u items for lack of memory",
+                           slot, COUNTER_READ(t->queue[slot]->lost));
+            }
         }
     }
+
+    // The workers are gone now; whatever they queued, up to their last
+    // batch, still counts - also when they are only being restarted.
+    edge_threads_drain(eee);
 
     edge_threads_free(eee);
 }
