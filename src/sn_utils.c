@@ -38,6 +38,8 @@
 #include <unistd.h>
 
 #include "auth.h"               // for ascii_to_bin, calculate_dynamic_key
+#include "counter.h"            // for COUNTER_INC, SHARED_LOAD, SHARED_STORE
+#include "edge_threads.h"       // for edge_threads_post_pdu, edge_threads_sock, ...
 #include "header_encryption.h"  // for packet_header_encrypt, packet_header_...
 #include "management.h"         // for process_mgmt
 #include "minmax.h"                  // for MIN, MAX
@@ -48,11 +50,13 @@
 #include "n2n_wire.h"           // for encode_buf, encode_PEER_INFO, encode_...
 #include "pearson.h"            // for pearson_hash_128, pearson_hash_32
 #include "peer_info.h"          // for purge_peer_list, clear_peer_list
+#include "pktbuf.h"             // for n3n_pktbuf_zero, n3n_pktbuf_getbufptr, ...
 #include "portable_endian.h"    // for be16toh, htobe16
 #include "resolve.h"            // for resolve_create_thread, resolve_cancel...
 #include "sn_selection.h"       // for sn_selection_criterion_gather_data
 #include "speck.h"              // for speck_128_encrypt, speck_context_t
 #include "stats.h"              // for STATS_INC
+#include "thread_local.h"       // for n3n_thread_slot
 #include "uthash.h"             // for UT_hash_handle, HASH_ITER, HASH_DEL
 
 #ifdef _WIN32
@@ -536,6 +540,21 @@ int load_allowed_sn_community (struct n3n_runtime_data *sss) {
  *
  *    @return -1 on error otherwise number of bytes sent
  */
+/* The UDP socket the calling thread sends from: a packet thread has its own,
+ * bound to the same address and port as the main one. */
+static SOCKET udp_sock (struct n3n_runtime_data *sss) {
+
+    return n3n_thread_slot ? edge_threads_sock(sss) : sss->sock;
+}
+
+
+// is this one of the TCP connections, rather than a UDP socket?
+static bool is_tcp (struct n3n_runtime_data *sss, SOCKET socket_fd) {
+
+    return (socket_fd >= 0) && (socket_fd != sss->sock) && (socket_fd != udp_sock(sss));
+}
+
+
 static ssize_t sendto_fd (struct n3n_runtime_data *sss,
                           SOCKET socket_fd,
                           const struct sockaddr *socket, socklen_t socket_len,
@@ -555,7 +574,7 @@ static ssize_t sendto_fd (struct n3n_runtime_data *sss,
         traceEvent(TRACE_ERROR, "WSAGetLastError(): %u", WSAGetLastError());
 #endif
         // if the erroneous connection is tcp, i.e. not the regular sock...
-        if((socket_fd >= 0) && (socket_fd != sss->sock)) {
+        if(is_tcp(sss, socket_fd)) {
             // ...forget about the corresponding peer and the connection
             HASH_FIND_INT(sss->tcp_connections, &socket_fd, conn);
             close_tcp_connection(sss, conn);
@@ -601,7 +620,7 @@ static ssize_t sendto_sock (struct n3n_runtime_data *sss,
     }
 
     // if the connection is tcp, i.e. not the regular sock...
-    if((socket_fd >= 0) && (socket_fd != sss->sock)) {
+    if(is_tcp(sss, socket_fd)) {
 
         setsockopt(socket_fd, IPPROTO_TCP, TCP_NODELAY, &value, sizeof(value));
         value = 1;
@@ -621,7 +640,7 @@ static ssize_t sendto_sock (struct n3n_runtime_data *sss,
     sent = sendto_fd(sss, socket_fd, (const struct sockaddr *)&dest_addr, socket_len, pktbuf, pktsize);
 
     // if the connection is tcp, i.e. not the regular sock...
-    if((socket_fd >= 0) && (socket_fd != sss->sock)) {
+    if(is_tcp(sss, socket_fd)) {
         value = 1; /* value should still be set to 1 */
         setsockopt(socket_fd, IPPROTO_TCP, TCP_NODELAY, (void *)&value, sizeof(value));
 #ifdef __linux__
@@ -668,7 +687,7 @@ static ssize_t sendto_peer (struct n3n_runtime_data *sss,
                sock_to_cstr(sockbuf, &(peer->sock)));
 
     return sendto_sock(sss,
-                       (peer->socket_fd >= 0) ? peer->socket_fd : sss->sock,
+                       is_tcp(sss, peer->socket_fd) ? peer->socket_fd : udp_sock(sss),
                        (const struct sockaddr*)&socket_storage, pktbuf, pktsize);
 }
 
@@ -808,7 +827,7 @@ static void try_forward (struct n3n_runtime_data * sss,
                 TRACE_DEBUG,
                 "found mac address associated with a known supernode, forwarding packet to that supernode"
             );
-            sendto_sock(sss, sss->sock,
+            sendto_sock(sss, udp_sock(sss),
                         &(assoc->sock),
                         pktbuf, pktsize);
             return;
@@ -923,6 +942,8 @@ void sn_init_conf_defaults (struct n3n_runtime_data *sss, char *sessionname) {
 
 
     /* Random MAC address */
+    sss->conf.threads = 1;
+
     memrnd(sss->conf.sn_mac_addr, N2N_MAC_SIZE);
     sss->conf.sn_mac_addr[0] &= ~0x01; /* Clear multicast bit */
     sss->conf.sn_mac_addr[0] |= 0x02;    /* Set locally-assigned bit */
@@ -958,6 +979,10 @@ void sn_init_conf_defaults (struct n3n_runtime_data *sss, char *sessionname) {
 
 /** Initialise the supernode */
 void sn_init (struct n3n_runtime_data *sss) {
+    // The packet threads, if there are any, each read into a buffer of their
+    // own pool of this shape
+    n3n_pktbuf_initialise(N2N_SN_PKTBUF_SIZE, 4);
+
     // Show the user what has been configured
     resolve_log_hostnames(RESOLVE_LIST_SUPERNODE);
     resolve_log_hostnames(RESOLVE_LIST_PEER);
@@ -1674,11 +1699,24 @@ static int purge_expired_communities (struct n3n_runtime_data *sss,
 }
 
 
+// what the packet threads of the supernode counted for this community
+static int64_t number_enc_packets (const struct sn_community *comm) {
+
+    int64_t sum = 0;
+    int slot;
+
+    for(slot = 0; slot < N3N_STATS_SLOTS; slot++) {
+        sum += comm->number_enc_packets[slot];
+    }
+    return sum;
+}
+
+
 static int number_enc_packets_sort (struct sn_community *a, struct sn_community *b) {
 
     // comparison function for sorting communities in descending order of their
     // number_enc_packets-fields
-    return (b->number_enc_packets - a->number_enc_packets);
+    return (number_enc_packets(b) - number_enc_packets(a));
 }
 
 
@@ -1699,7 +1737,7 @@ static int sort_communities (struct n3n_runtime_data *sss,
     // ... and afterward resets the number_enc__packets-fields to zero
     // (other models could reset it to half of their value to respect history)
     HASH_ITER(hh, sss->communities, comm, tmp) {
-        comm->number_enc_packets = 0;
+        memset(comm->number_enc_packets, 0, sizeof(comm->number_enc_packets));
     }
 
     (*p_last_sort) = now;
@@ -1711,38 +1749,31 @@ static int sort_communities (struct n3n_runtime_data *sss,
 /** Examine a datagram and determine what to do with it.
  *
  */
-static int process_pdu (struct n3n_runtime_data * sss,
-                        const struct sockaddr *sender_sock, socklen_t sock_size,
-                        const SOCKET socket_fd,
-                        uint8_t * udp_buf,
-                        size_t udp_size,
-                        time_t now
-) {
+/* What the header of a PDU says, once it is decrypted. Finding it changes
+ * nothing, so a packet thread can do that too, and it is all by value, so it
+ * can travel to the main thread together with the decrypted PDU. */
+struct pdu_head {
+    char community[N2N_COMMUNITY_SIZE];     /* of the community found, empty if none */
+    uint32_t header_enc;                    /* 1 == encrypted by static key, 2 == encrypted by dynamic key */
+    uint64_t stamp;
+    uint8_t hash_buf[16];                   /* always size of 16 (max) despite the actual value of N2N_REG_SUP_HASH_CHECK_LEN (<= 16) */
+};
 
-    n2n_common_t cmn;        /* common fields in the packet header */
-    size_t rem;
-    size_t idx;
-    size_t msg_type;
-    bool from_supernode;
-    struct peer_info *sn = NULL;
-    n3n_sock_t sender;
-    n3n_sock_t          *orig_sender;
-    macstr_t mac_buf;
-    macstr_t mac_buf2;
-    n3n_sock_str_t sockbuf;
-    uint8_t hash_buf[16] = {0};             /* always size of 16 (max) despite the actual value of N2N_REG_SUP_HASH_CHECK_LEN (<= 16) */
+_Static_assert(sizeof(struct pdu_head) <= EDGE_THREADS_NOTE_MAX, "a pdu_head has to fit into a note");
+
+
+/* Find the community a PDU belongs to and decrypt its header, if encrypted.
+ * Returns -1 if the PDU is to be dropped. */
+static int pdu_head_find (struct n3n_runtime_data *sss,
+                          uint8_t *udp_buf,
+                          size_t udp_size,
+                          struct pdu_head *h,
+                          struct sn_community **found) {
 
     struct sn_community *comm, *tmp;
-    uint32_t header_enc = 0;            /* 1 == encrypted by static key, 2 == encrypted by dynamic key */
-    uint64_t stamp;
-    int skip_add;
-    time_t any_time = 0;
 
-    fill_n3nsock(&sender, sender_sock);
-    orig_sender = &sender;
-
-    traceEvent(TRACE_DEBUG, "processing incoming UDP packet [len: %lu][sender: %s]",
-               udp_size, sock_to_cstr(sockbuf, &sender));
+    memset(h, 0, sizeof(*h));
+    *found = NULL;
 
     /* check if header is unencrypted. the following check is around 99.99962 percent reliable.
      * it heavily relies on the structure of packet's common part
@@ -1769,16 +1800,6 @@ static int process_pdu (struct n3n_runtime_data * sss,
                            comm->community);
                 return -1;
             }
-            if(comm->header_encryption == HEADER_ENCRYPTION_UNKNOWN) {
-                traceEvent(TRACE_INFO, "locked community '%s' to "
-                           "unencrypted headers", comm->community);
-                /* set 'no encryption' in case it is not set yet */
-                comm->header_encryption = HEADER_ENCRYPTION_NONE;
-                free(comm->header_encryption_ctx_static);
-                comm->header_encryption_ctx_static = NULL;
-                free(comm->header_encryption_ctx_dynamic);
-                comm->header_encryption_ctx_dynamic = NULL;
-            }
         }
     } else {
         /* most probably encrypted */
@@ -1794,39 +1815,145 @@ static int process_pdu (struct n3n_runtime_data * sss,
             if(packet_header_decrypt(udp_buf, udp_size,
                                      comm->community,
                                      comm->header_encryption_ctx_dynamic, comm->header_iv_ctx_dynamic,
-                                     &stamp)) {
-                header_enc = 2;
+                                     &h->stamp)) {
+                h->header_enc = 2;
             }
-            if(!header_enc) {
-                pearson_hash_128(hash_buf, udp_buf, MAX(0, (int)udp_size - (int)N2N_REG_SUP_HASH_CHECK_LEN));
-                header_enc = packet_header_decrypt(udp_buf, MAX(0, (int)udp_size - (int)N2N_REG_SUP_HASH_CHECK_LEN), comm->community,
-                                                   comm->header_encryption_ctx_static, comm->header_iv_ctx_static, &stamp);
+            if(!h->header_enc) {
+                pearson_hash_128(h->hash_buf, udp_buf, MAX(0, (int)udp_size - (int)N2N_REG_SUP_HASH_CHECK_LEN));
+                h->header_enc = packet_header_decrypt(udp_buf, MAX(0, (int)udp_size - (int)N2N_REG_SUP_HASH_CHECK_LEN), comm->community,
+                                                      comm->header_encryption_ctx_static, comm->header_iv_ctx_static, &h->stamp);
             }
 
-            if(header_enc) {
+            if(h->header_enc) {
                 // time stamp verification follows in the packet specific section as it requires to determine the
                 // sender from the hash list by its MAC, this all depends on packet type and packet structure
                 // (MAC is not always in the same place)
 
-                if(comm->header_encryption == HEADER_ENCRYPTION_UNKNOWN) {
-                    traceEvent(TRACE_INFO, "locked community '%s' to "
-                               "encrypted headers", comm->community);
-                    /* set 'encrypted' in case it is not set yet */
-                    comm->header_encryption = HEADER_ENCRYPTION_ENABLED;
-                }
                 // count the number of encrypted packets for sorting the communities from time to time
                 // for the HASH_ITER a few lines above gets faster for the more busy communities
-                (comm->number_enc_packets)++;
+                COUNTER_INC(comm->number_enc_packets[n3n_thread_slot]);
                 // no need to test further communities
                 break;
             }
         }
-        if(!header_enc) {
+        if(!h->header_enc) {
             // no matching key/community
             traceEvent(TRACE_DEBUG, "dropped a packet with seemingly encrypted header "
                        "for which no matching community which uses encrypted headers was found");
             return -1;
         }
+    }
+
+    if(comm) {
+        memcpy(h->community, comm->community, sizeof(h->community));
+    }
+    *found = comm;
+    return 0;
+}
+
+
+/* The first PDU of a community decides whether its headers are encrypted:
+ * from then on, only PDUs that match are accepted. */
+static void lock_header_encryption (struct sn_community *comm, uint32_t header_enc) {
+
+    if(!comm || (comm->header_encryption != HEADER_ENCRYPTION_UNKNOWN)) {
+        return;
+    }
+
+    if(header_enc) {
+        traceEvent(TRACE_INFO, "locked community '%s' to "
+                   "encrypted headers", comm->community);
+        /* set 'encrypted' in case it is not set yet */
+        comm->header_encryption = HEADER_ENCRYPTION_ENABLED;
+    } else {
+        traceEvent(TRACE_INFO, "locked community '%s' to "
+                   "unencrypted headers", comm->community);
+        /* set 'no encryption' in case it is not set yet */
+        comm->header_encryption = HEADER_ENCRYPTION_NONE;
+        free(comm->header_encryption_ctx_static);
+        comm->header_encryption_ctx_static = NULL;
+        free(comm->header_encryption_ctx_dynamic);
+        comm->header_encryption_ctx_dynamic = NULL;
+    }
+}
+
+
+/* Whether a packet thread can handle this PDU itself: a unicast PACKET to an
+ * edge it reaches over UDP, or to the supernode that edge is registered at.
+ * Everything else may change the tables, or goes out on a TCP connection,
+ * which only the main thread writes to. */
+static bool relay_here (struct n3n_runtime_data *sss,
+                        struct sn_community *comm,
+                        n2n_common_t *cmn,
+                        bool from_supernode,
+                        const uint8_t *udp_buf,
+                        size_t rem,
+                        size_t idx) {
+
+    n2n_PACKET_t pkt;
+    struct peer_info *scan;
+    node_supernode_association_t *assoc;
+
+    if((cmn->pc != MSG_TYPE_PACKET) || !comm
+       || (comm->header_encryption == HEADER_ENCRYPTION_UNKNOWN)) {
+        return false;
+    }
+    if(decode_PACKET(&pkt, cmn, udp_buf, &rem, &idx) < 0) {
+        return false;
+    }
+    if(is_multi_broadcast(pkt.dstMac)) {
+        return false;
+    }
+
+    HASH_FIND_PEER(comm->edges, pkt.dstMac, scan);
+    if(scan) {
+        return (scan->socket_fd < 0) || (scan->socket_fd == sss->sock);
+    }
+    if(from_supernode) {
+        // dropped
+        return true;
+    }
+    HASH_FIND(hh, comm->assoc, pkt.dstMac, sizeof(n2n_mac_t), assoc);
+
+    return assoc != NULL;
+}
+
+
+static int process_pdu_body (struct n3n_runtime_data * sss,
+                             const struct sockaddr *sender_sock, socklen_t sock_size,
+                             const SOCKET socket_fd,
+                             uint8_t * udp_buf,
+                             size_t udp_size,
+                             struct sn_community *comm,
+                             struct pdu_head *h,
+                             time_t now
+) {
+
+    n2n_common_t cmn;        /* common fields in the packet header */
+    size_t rem;
+    size_t idx;
+    size_t msg_type;
+    bool from_supernode;
+    struct peer_info *sn = NULL;
+    n3n_sock_t sender;
+    n3n_sock_t          *orig_sender;
+    macstr_t mac_buf;
+    macstr_t mac_buf2;
+    n3n_sock_str_t sockbuf;
+    uint8_t *hash_buf = h->hash_buf;
+    uint32_t header_enc = h->header_enc;
+    uint64_t stamp = h->stamp;
+    int skip_add;
+    time_t any_time = 0;
+
+    fill_n3nsock(&sender, sender_sock);
+    orig_sender = &sender;
+
+    traceEvent(TRACE_DEBUG, "processing incoming UDP packet [len: %lu][sender: %s]",
+               udp_size, sock_to_cstr(sockbuf, &sender));
+
+    if(!n3n_thread_slot) {
+        lock_header_encryption(comm, header_enc);
     }
 
     /* Use decode_common() to determine the kind of packet then process it:
@@ -1880,6 +2007,11 @@ static int process_pdu (struct n3n_runtime_data * sss,
 
     --(cmn.ttl); /* The value copied into all forwarded packets. */
 
+    if(n3n_thread_slot && !relay_here(sss, comm, &cmn, from_supernode, udp_buf, rem, idx)) {
+        edge_threads_post_pdu(sss, sender_sock, sock_size, udp_buf, udp_size, h, sizeof(*h));
+        return 0;
+    }
+
     switch(msg_type) {
         case MSG_TYPE_PACKET: {
             /* PACKET from one edge to another edge via supernode. */
@@ -1898,7 +2030,10 @@ static int process_pdu (struct n3n_runtime_data * sss,
                 return -1;
             }
 
-            sss->last_sn_fwd = now;
+            // every packet thread stores this, so only if it changed
+            if(SHARED_LOAD(sss->last_sn_fwd) != now) {
+                SHARED_STORE(sss->last_sn_fwd, now);
+            }
             decode_PACKET(&pkt, &cmn, udp_buf, &rem, &idx);
 
             // already checked for valid comm
@@ -2135,7 +2270,7 @@ static int process_pdu (struct n3n_runtime_data * sss,
                     comm->header_encryption_ctx_dynamic = NULL;
                     /* ... and also are purgeable during periodic purge */
                     comm->purgeable = true;
-                    comm->number_enc_packets = 0;
+                    memset(comm->number_enc_packets, 0, sizeof(comm->number_enc_packets));
                     HASH_ADD_STR(sss->communities, community, comm);
 
                     traceEvent(TRACE_INFO, "new community: %s", comm->community);
@@ -2817,6 +2952,81 @@ static int process_pdu (struct n3n_runtime_data * sss,
 
 /** Long lived processing entry point. Split out from main to simply
  *  daemonisation on some platforms. */
+static int process_pdu (struct n3n_runtime_data * sss,
+                        const struct sockaddr *sender_sock, socklen_t sock_size,
+                        const SOCKET socket_fd,
+                        uint8_t * udp_buf,
+                        size_t udp_size,
+                        time_t now) {
+
+    struct pdu_head h;
+    struct sn_community *comm;
+
+    if(pdu_head_find(sss, udp_buf, udp_size, &h, &comm) < 0) {
+        return -1;
+    }
+    return process_pdu_body(sss, sender_sock, sock_size, socket_fd, udp_buf, udp_size, comm, &h, now);
+}
+
+
+/* A PDU a packet thread handed over, with its header already decrypted. It
+ * came in over UDP. */
+static void process_pdu_handed_over (struct n3n_runtime_data *sss,
+                                     const struct sockaddr *sender, socklen_t sender_len,
+                                     uint8_t *buf, size_t size, const void *note) {
+
+    struct pdu_head *h = (struct pdu_head *)note;
+    struct sn_community *comm = NULL;
+
+    if(h->community[0]) {
+        // the community may have gone meanwhile
+        HASH_FIND_COMMUNITY(sss->communities, h->community, comm);
+        if(!comm) {
+            traceEvent(TRACE_DEBUG, "dropped a PDU for community '%s' which is gone", h->community);
+            return;
+        }
+    }
+    process_pdu_body(sss, sender, sender_len, sss->sock, buf, size, comm, h, time(NULL));
+}
+
+
+// a packet thread of the supernode: take one PDU off sock
+static int sn_read_udp (struct n3n_runtime_data *sss,
+                        SOCKET sock,
+                        struct n3n_pktbuf *pktbuf,
+                        time_t now) {
+
+    struct sockaddr_storage sas;
+    socklen_t ss_size = sizeof(sas);
+    ssize_t bread;
+
+    // The caller hands us the same buffer several times while draining
+    n3n_pktbuf_zero(pktbuf);
+
+    bread = recvfrom(sock,
+                     n3n_pktbuf_getbufptr(pktbuf),
+                     n3n_pktbuf_getbufavail(pktbuf),
+                     MSG_DONTWAIT,
+                     (struct sockaddr *)&sas,
+                     &ss_size);
+    if(bread <= 0) {
+        // nothing (more) queued, or an error the main thread sees as well
+        return 0;
+    }
+
+    process_pdu(sss, (struct sockaddr *)&sas, ss_size, sss->sock,
+                n3n_pktbuf_getbufptr(pktbuf), bread, now);
+    return 1;
+}
+
+
+// what the workers of a supernode do
+static const struct edge_thread_ops sn_thread_ops = {
+    .read_udp = sn_read_udp,
+    .process_pdu = process_pdu_handed_over,
+};
+
+
 int run_sn_loop (struct n3n_runtime_data *sss) {
 
     uint8_t pktbuf[N2N_SN_PKTBUF_SIZE];
@@ -2825,6 +3035,10 @@ int run_sn_loop (struct n3n_runtime_data *sss) {
     time_t last_re_reg_and_purge = 0;
 
     sss->start_time = time(NULL);
+
+    // more threads for PACKETs, if asked for; from here on the main thread
+    // holds their lock whenever it is awake
+    edge_threads_start(sss, sss->conf.threads, &sn_thread_ops);
 
     while(*sss->keep_running) {
         int rc;
@@ -2868,14 +3082,25 @@ int run_sn_loop (struct n3n_runtime_data *sss) {
             )
         );
 
+        int wake_fd = edge_threads_wake_fd(sss);
+        if(wake_fd >= 0) {
+            FD_SET(wake_fd, &readers);
+            max_sock = MAX(max_sock, wake_fd);
+        }
+
         wait_time.tv_sec = 10;
         wait_time.tv_usec = 0;
 
         before = time(NULL);
 
+        edge_threads_main_release(sss);
         rc = select(max_sock + 1, &readers, &writers, NULL, &wait_time);
+        edge_threads_main_acquire(sss);
 
         now = time(NULL);
+
+        // what the packet threads handed over, if there are any
+        edge_threads_drain(sss);
 
         if(rc == 0) {
             if(((now - before) < wait_time.tv_sec) && (*sss->keep_running)) {
@@ -3132,6 +3357,8 @@ int run_sn_loop (struct n3n_runtime_data *sss) {
             now
         );
     } /* while */
+
+    edge_threads_stop(sss);
 
     sn_term(sss);
 

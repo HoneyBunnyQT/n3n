@@ -648,7 +648,7 @@ struct sn_community {
     struct                        peer_info *edges;       /* Link list of registered edges. */
     node_supernode_association_t  *assoc;                 /* list of other edges from this community and their supernodes */
     sn_user_t                     *allowed_users;         /* list of allowed users */
-    int64_t number_enc_packets;                           /* Number of encrypted packets handled so far, required for sorting from time to time */
+    int64_t number_enc_packets[N3N_STATS_SLOTS];          /* Number of encrypted packets handled so far, per thread, required for sorting from time to time */
     n2n_ip_subnet_t auto_ip_net;                          /* Address range of auto ip address service. */
 
     UT_hash_handle hh;                                    /* makes this structure hashable */
