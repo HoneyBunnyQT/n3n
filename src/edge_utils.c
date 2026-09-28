@@ -311,16 +311,17 @@ void reset_sup_attempts (struct n3n_runtime_data *eee) {
 }
 
 
-// detect local IP address by probing a connection to the supernode
-// TODO: should try to refactor this function to be more accurate and handle
-// error cases better
+// Detect the local address by probing a connection to the supernode: the
+// address the kernel would send from towards the supernode, of whichever
+// family the supernode's address is, and the port of the main socket.
 static int detect_local_ip_address (n3n_sock_t* out_sock, const struct n3n_runtime_data* eee) {
 
-    struct sockaddr_in local_sock;
-    struct sockaddr_in sn_sock;
+    struct sockaddr_storage local_sock;
+    struct sockaddr_storage sn_sock;
     socklen_t sock_len;
+    socklen_t sn_len;
+    n3n_sock_t main_sock;
     SOCKET probe_sock;
-    int ret = 0;
 
     memset(out_sock, 0, sizeof(*out_sock));
     out_sock->family = AF_INVALID;
@@ -330,24 +331,8 @@ static int detect_local_ip_address (n3n_sock_t* out_sock, const struct n3n_runti
     if(getsockname(eee->sock, (struct sockaddr *)&local_sock, &sock_len) != 0) {
         return -1;
     }
-
-    // TODO this whole function doesnt work with IPv6
-    if(local_sock.sin_family != AF_INET) {
-        traceEvent(TRACE_ERROR, "This function does only supports IPv4");
+    if(fill_n3nsock(&main_sock, (struct sockaddr *)&local_sock) != 0) {
         return -1;
-    }
-
-    if(sock_len != sizeof(local_sock)) {
-        return -1;
-    }
-
-    // remember the port number
-    out_sock->port = ntohs(local_sock.sin_port);
-
-    // probe for local IP address
-    probe_sock = socket(PF_INET, SOCK_DGRAM, 0);
-    if(probe_sock < 0) {
-        return -2;
     }
 
     if(!eee->curr_sn) {
@@ -357,6 +342,13 @@ static int detect_local_ip_address (n3n_sock_t* out_sock, const struct n3n_runti
         return -5;
     }
 
+    memset(&sn_sock, 0, sizeof(sn_sock));
+    sn_len = fill_sockaddr((struct sockaddr *)&sn_sock, sizeof(sn_sock), &eee->curr_sn->sock);
+    if(sn_len == 0) {
+        // supernode not resolved yet
+        return -3;
+    }
+
     // connecting the UDP socket makes getsockname read the local address it
     // uses to connect (to the sn in this case);  we cannot do it with the
     // real (eee->sock) socket because socket does not accept any conenction
@@ -364,8 +356,12 @@ static int detect_local_ip_address (n3n_sock_t* out_sock, const struct n3n_runti
     // as re-connecting to AF_UNSPEC might not work to release the socket
     // on non-UNIXoids, we use a temporary socket
 
-    fill_sockaddr((struct sockaddr*)&sn_sock, sizeof(sn_sock), &eee->curr_sn->sock);
-    if(connect(probe_sock, (struct sockaddr *)&sn_sock, sizeof(sn_sock)) != 0) {
+    probe_sock = socket(sn_sock.ss_family, SOCK_DGRAM, 0);
+    if(probe_sock < 0) {
+        return -2;
+    }
+
+    if(connect(probe_sock, (struct sockaddr *)&sn_sock, sn_len) != 0) {
         closesocket(probe_sock);
         return -3;
     }
@@ -375,24 +371,14 @@ static int detect_local_ip_address (n3n_sock_t* out_sock, const struct n3n_runti
         closesocket(probe_sock);
         return -4;
     }
-
-    if(local_sock.sin_family != AF_INET) {
-        closesocket(probe_sock);
-        return -4;
-    }
-
-    if(sock_len != sizeof(local_sock)) {
-        closesocket(probe_sock);
-        return -4;
-    }
-
-    memcpy(&(out_sock->addr.v4), &(local_sock.sin_addr.s_addr), IPV4_SIZE);
-
     closesocket(probe_sock);
 
-    out_sock->family = AF_INET;
+    if(fill_n3nsock(out_sock, (struct sockaddr *)&local_sock) != 0) {
+        return -4;
+    }
+    out_sock->port = main_sock.port;
 
-    return ret;
+    return 0;
 }
 
 
