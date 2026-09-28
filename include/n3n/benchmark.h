@@ -65,7 +65,9 @@ struct bench_item {
 
 void n3n_benchmark_register (struct bench_item *);
 
-void benchmark_run_bench (const int level, const int seconds, int filterc, char **filterv);
+// with threads > 1, every benchmark runs in that many threads at once, each
+// with its own context, and the results are added up
+void benchmark_run_bench (const int level, const int seconds, int threads, int filterc, char **filterv);
 void benchmark_run_ptrace (const int seconds, int filterc, char **filterv);
 int benchmark_run_check (int level, int filterc, char **filterv);
 

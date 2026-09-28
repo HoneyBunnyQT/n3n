@@ -4,6 +4,8 @@
  *
  */
 
+#include "config.h"             // for HAVE_LIBPTHREAD
+
 #include <inttypes.h>
 #include <n3n/benchmark.h>
 #include <n3n/hexdump.h>  // for fhexdump
@@ -17,6 +19,11 @@
 
 #include "staticdata.h"
 #include "../pktbuf.h"
+#include "../thread_local.h"    // for n3n_thread_cleanup
+
+#ifdef HAVE_LIBPTHREAD
+#include <pthread.h>            // for pthread_create, pthread_barrier_*
+#endif
 
 #ifndef _WIN32
 #include <sys/mman.h>           // for mmap, MAP_SHARED, MAP_ANONYMOUS
@@ -282,7 +289,8 @@ static bool alarm_fired;
 
 #ifndef _WIN32
 static void handler (int nr) {
-    alarm_fired = true;
+    // read by every benchmark thread
+    __atomic_store_n(&alarm_fired, true, __ATOMIC_RELAXED);
 }
 #endif
 
@@ -463,11 +471,82 @@ void benchmark_run_ptrace (const int seconds, int filterc, char **filterv) {
 }
 #endif
 
-static void run_one_item (const int seconds, struct bench_item *item) {
+#ifdef HAVE_LIBPTHREAD
+// One of the extra threads running the same benchmark at the same time,
+// each with its own context, as packet threads each work on their own packet
+struct bench_thread {
+    struct bench_item *item;
+    pthread_t id;
+    ssize_t bytes_in;
+    ssize_t bytes_out;
+    uint64_t loops;
+};
+
+// lets all threads start their loops together
+static pthread_barrier_t bench_barrier;
+
+// Setting up and tearing down a context is not what is measured, and the
+// setup code was not written to run in parallel - the pdu benchmarks set up
+// a whole edge configuration, with its global metrics - so the threads take
+// turns for that and only run their loops at the same time.
+static pthread_mutex_t bench_setup_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static void *bench_thread_main (void *arg) {
+    struct bench_thread *bt = (struct bench_thread *)arg;
+    struct bench_item *item = bt->item;
+
+    pthread_mutex_lock(&bench_setup_lock);
+    void *ctx = item_setup(item);
+    pthread_mutex_unlock(&bench_setup_lock);
+    const int input_size = n3n_pktbuf_getbufsize(
+        &benchmark_test_data[item->data_in]
+    );
+    const void *input_data = n3n_pktbuf_getbufptr(
+        &benchmark_test_data[item->data_in]
+    );
+
+    pthread_barrier_wait(&bench_barrier);
+
+    do {
+        ssize_t count_in;
+
+        ssize_t count_out = item->run(
+            ctx,
+            input_data,
+            input_size,
+            &count_in
+        );
+        bt->loops++;
+        bt->bytes_in += count_in;
+        bt->bytes_out += count_out;
+    } while(!__atomic_load_n(&alarm_fired, __ATOMIC_RELAXED));
+
+    pthread_mutex_lock(&bench_setup_lock);
+    item_teardown(item, ctx);
+    pthread_mutex_unlock(&bench_setup_lock);
+
+    // what the code under test kept for this thread
+    n3n_thread_cleanup();
+    return NULL;
+}
+#endif
+
+static void run_one_item (const int seconds, const int threads, struct bench_item *item) {
     struct timeval tv1;
     struct timeval tv2;
 
-    perf_setup(item);
+    item->bytes_in = 0;
+    item->bytes_out = 0;
+    item->cycles = 0;
+    item->instr = 0;
+
+    // The perf counters only see the thread that opened them, so with more
+    // threads there would be only a part of the cycles to show
+    if(threads == 1) {
+        perf_setup(item);
+    } else {
+        item->fd[0] = -1;
+    }
 
     void *ctx = item_setup(item);
     const int input_size = n3n_pktbuf_getbufsize(
@@ -477,8 +556,28 @@ static void run_one_item (const int seconds, struct bench_item *item) {
         &benchmark_test_data[item->data_in]
     );
 
-    int loops = 0;
+    uint64_t loops = 0;
     alarm_fired = false;
+
+#ifdef HAVE_LIBPTHREAD
+    struct bench_thread bt[threads];
+    int started = 0;
+
+    if(threads > 1) {
+        pthread_barrier_init(&bench_barrier, NULL, threads);
+        for(int i = 1; i < threads; i++) {
+            memset(&bt[i], 0, sizeof(bt[i]));
+            bt[i].item = item;
+            if(pthread_create(&bt[i].id, NULL, bench_thread_main, &bt[i])) {
+                fprintf(stderr, "cannot start benchmark thread %i\n", i);
+                exit(1);
+            }
+            started++;
+        }
+        // this thread runs as the first of them
+        pthread_barrier_wait(&bench_barrier);
+    }
+#endif
 
 #ifndef _WIN32
     struct sigaction sa = {
@@ -515,12 +614,25 @@ static void run_one_item (const int seconds, struct bench_item *item) {
             alarm_fired = true;
         }
 #endif
-    } while(!alarm_fired);
+    } while(!__atomic_load_n(&alarm_fired, __ATOMIC_RELAXED));
 
     // TODO: per loop min/max/sumofsquares?
 
     perf_measure_collect(item);
     gettimeofday(&tv2, NULL);
+
+#ifdef HAVE_LIBPTHREAD
+    // the other threads stop at the same alarm; add up what they did
+    for(int i = 1; i <= started; i++) {
+        pthread_join(bt[i].id, NULL);
+        loops += bt[i].loops;
+        item->bytes_in += bt[i].bytes_in;
+        item->bytes_out += bt[i].bytes_out;
+    }
+    if(threads > 1) {
+        pthread_barrier_destroy(&bench_barrier);
+    }
+#endif
 
     item_teardown(item, ctx);
 
@@ -538,13 +650,27 @@ static void run_one_item (const int seconds, struct bench_item *item) {
     item->usec = tv1.tv_usec;
 }
 
-void benchmark_run_bench (const int level, const int seconds, int filterc, char **filterv) {
+void benchmark_run_bench (const int level, const int seconds, int threads, int filterc, char **filterv) {
     struct bench_item *p;
 
+    if(threads < 1) {
+        threads = 1;
+    }
+#ifndef HAVE_LIBPTHREAD
+    if(threads > 1) {
+        fprintf(stderr, "built without pthreads (./configure --enable-pthread), using one thread\n");
+        threads = 1;
+    }
+#endif
+
     if(level==0) {
-        printf("Each benchmark test runs for %i seconds\n\n", seconds);
+        printf("Each benchmark test runs for %i seconds", seconds);
+        if(threads > 1) {
+            printf(", in %i threads at once, each with its own context", threads);
+        }
+        printf("\n\n");
     } else if(level==1) {
-        printf("name,variant,seconds,bytes_in,bytes_out,loops,cycles,instr\n");
+        printf("name,variant,seconds,bytes_in,bytes_out,loops,cycles,instr,threads\n");
     }
 
     float seconds_total = 0;
@@ -565,7 +691,7 @@ void benchmark_run_bench (const int level, const int seconds, int filterc, char 
         }
         fflush(stdout);
 
-        run_one_item(seconds, p);
+        run_one_item(seconds, threads, p);
 
         if(level==0) {
             float seconds = ((float)p->usec / 1000000) + p->sec;
@@ -577,6 +703,14 @@ void benchmark_run_bench (const int level, const int seconds, int filterc, char 
                 (float)p->bytes_in / p->loops,
                 (float)p->bytes_out / p->loops
             );
+
+            if(threads > 1) {
+                printf(
+                    " = %i x %0.1fMB/s",
+                    threads,
+                    (float)p->bytes_in / seconds / 1000000 / threads
+                );
+            }
 
             if(p->cycles) {
                 cycles_total += p->cycles;
@@ -591,15 +725,17 @@ void benchmark_run_bench (const int level, const int seconds, int filterc, char 
             printf("%i.%06i,", p->sec, p->usec);
             printf("%zd,%zd,", p->bytes_in, p->bytes_out);
             printf(
-                "%" PRIu64 ",%" PRIu64 ",%" PRIu64 "\n",
+                "%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%i\n",
                 p->loops,
                 p->cycles,
-                p->instr
+                p->instr,
+                threads
             );
         }
     }
 
-    if(level==0) {
+    // with more threads there are no cycle counts, see run_one_item()
+    if(level==0 && threads == 1) {
         printf("\n");
         printf("Bogo CPU speed %0.0fMhz\n", cycles_total/seconds_total/1000000);
     }

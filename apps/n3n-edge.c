@@ -347,6 +347,7 @@ static void cmd_test_benchmark (int argc, char **argv, void *_conf) {
     benchmark_run_bench(
         conf->test_output_format,
         conf->test_benchmark_seconds,
+        conf->test_benchmark_threads,
         argc-1,
         ++argv
     );

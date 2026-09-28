@@ -435,6 +435,18 @@ static struct n3n_conf_option section_test[] = {
                 "A value of zero causes one loop to run",
     },
     {
+        .name = "benchmark_threads",
+        .type = n3n_conf_uint32,
+        .offset = offsetof(n2n_edge_conf_t, test_benchmark_threads),
+        .desc = "Threads running each benchmark test at once",
+        .help = "Defaulting to 1.  With more, every benchmark test runs in "
+                "that many threads at the same time, each with its own "
+                "context, and the result is their total: how well that work "
+                "spreads over several cores.  Needs a build with "
+                "--enable-pthread.  The cycle counts are only shown with one "
+                "thread.",
+    },
+    {
         .name = "output_format",
         .type = n3n_conf_str2id,
         .str2id_data = test_output_format_data,

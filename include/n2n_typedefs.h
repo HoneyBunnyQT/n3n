@@ -477,6 +477,7 @@ typedef struct n2n_edge_conf {
     uint8_t tuntap_ip_mode;                          /**< Interface IP address allocated mode, eg. DHCP. */
 
     uint32_t test_benchmark_seconds;
+    uint32_t test_benchmark_threads;
     int test_output_format;
 
     // Supernode specific config
