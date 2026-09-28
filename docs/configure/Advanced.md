@@ -65,6 +65,6 @@ Restrictions](../advanced/TrafficRestrictions.md).
 
 ## Threads
 
-An edge with a lot of traffic can handle its packets on several threads at
-once with the `daemon.threads` option.  Details can be found in the [Threads
-document](../advanced/Threads.md).
+An edge or a supernode with a lot of traffic can handle its packets on
+several threads at once with the `daemon.threads` option.  Details can be
+found in the [Threads document](../advanced/Threads.md).
