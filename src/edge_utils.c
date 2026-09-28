@@ -1253,8 +1253,10 @@ static void sendto_fd (struct n3n_runtime_data *eee, const void *buf,
                        size_t len, struct sockaddr *dest, socklen_t dest_len) {
 
     ssize_t sent = 0;
+    // a packet thread sends from its own socket
+    SOCKET sock = n3n_thread_slot ? edge_threads_sock(eee) : eee->sock;
 
-    sent = sendto(eee->sock, buf, len, 0 /*flags*/,
+    sent = sendto(sock, buf, len, 0 /*flags*/,
                   dest, dest_len);
 
     if(sent != -1) {
@@ -2043,6 +2045,30 @@ static int peer_seen_fast (struct n3n_runtime_data *eee,
 }
 
 
+/* The tap device, as the calling thread sees it: every packet thread reads and
+ * writes a queue of its own, the main thread the first one. */
+static int tap_read (struct n3n_runtime_data *eee, uint8_t *buf, int len) {
+
+#ifdef __linux__
+    if(n3n_thread_slot) {
+        return tuntap_read_queue(&eee->device, n3n_thread_slot, buf, len);
+    }
+#endif
+    return tuntap_read(&eee->device, buf, len);
+}
+
+
+static int tap_write (struct n3n_runtime_data *eee, uint8_t *buf, int len) {
+
+#ifdef __linux__
+    if(n3n_thread_slot) {
+        return tuntap_write_queue(&eee->device, n3n_thread_slot, buf, len);
+    }
+#endif
+    return tuntap_write(&eee->device, buf, len);
+}
+
+
 /* The part of check_query_peer_info() that nearly every frame to a peer not
  * reached directly takes: the supernode was asked about the peer only a
  * moment ago, so there is nothing to do. Returns 0 if more is needed, which
@@ -2229,7 +2255,7 @@ static int handle_PACKET (struct n3n_runtime_data * eee,
 
     /* Write ethernet packet to tap device. */
     traceEvent(TRACE_DEBUG, "sending data of size %u to TAP", (unsigned int)eth_size);
-    data_sent_len = tuntap_write(&(eee->device), eth_payload, eth_size);
+    data_sent_len = tap_write(eee, eth_payload, eth_size);
 
     if(data_sent_len == eth_size) {
         return 0;
@@ -2600,6 +2626,52 @@ void edge_send_packet2net (struct n3n_runtime_data * eee,
 
 /* ************************************** */
 
+/* Open the tap device - with a queue for each thread that is going to handle
+ * packets, now that there still are the privileges for that.
+ */
+int edge_tap_open (struct n3n_runtime_data *eee) {
+
+#ifdef __linux__
+    return tuntap_open_queues(&eee->device, edge_threads_possible(&eee->conf),
+                              eee->conf.tuntap_dev_name,
+                              eee->conf.tuntap_ip_mode,
+                              eee->conf.tuntap_v4,
+                              eee->conf.device_mac,
+                              eee->conf.mtu,
+                              eee->conf.metric);
+#else
+    return tuntap_open(&eee->device,
+                       eee->conf.tuntap_dev_name,
+                       eee->conf.tuntap_ip_mode,
+                       eee->conf.tuntap_v4,
+                       eee->conf.device_mac,
+                       eee->conf.mtu,
+                       eee->conf.metric);
+#endif
+}
+
+
+/* The tap device failed: open it again, after a pause. The packet threads
+ * read its queues, so they stop meanwhile. On the main thread.
+ */
+static void edge_tap_reopen (struct n3n_runtime_data *eee) {
+
+    edge_threads_stop(eee);
+
+    sleep(3);
+#ifndef _WIN32
+    mainloop_unregister_fd(eee->device.fd);
+#endif
+    tuntap_close(&(eee->device));
+    edge_tap_open(eee);
+#ifndef _WIN32
+    mainloop_register_fd(eee->device.fd, fd_info_proto_tuntap);
+#endif
+
+    edge_threads_start(eee, eee->conf.threads);
+}
+
+
 /* Take one frame off the TAP interface into eth_pkt and decide whether it is
  * to be sent at all (multicast, not yet registered, traffic filter).
  *
@@ -2621,7 +2693,7 @@ static int edge_tap_take (struct n3n_runtime_data * eee,
      * do not test a stale errno below */
     errno = 0;
 
-    len = tuntap_read( &(eee->device), eth_pkt, N2N_PKT_BUF_SIZE );
+    len = tap_read(eee, eth_pkt, N2N_PKT_BUF_SIZE);
 
     if((len < 0) && ((errno == EAGAIN) || (errno == EWOULDBLOCK))) {
         /* The tap device is opened non blocking, so this just means that
@@ -2644,22 +2716,11 @@ static int edge_tap_take (struct n3n_runtime_data * eee,
         traceEvent(TRACE_WARNING, "TAP I/O operation aborted, restart later.");
         STATS_INC(eee, tx_tuntap_error);
 
-        sleep(3);
-#ifndef _WIN32
-        mainloop_unregister_fd(eee->device.fd);
-#endif
-        tuntap_close(&(eee->device));
-        tuntap_open(&(eee->device),
-                    eee->conf.tuntap_dev_name,
-                    eee->conf.tuntap_ip_mode,
-                    eee->conf.tuntap_v4,
-                    eee->conf.device_mac,
-                    eee->conf.mtu,
-                    eee->conf.metric
-        );
-#ifndef _WIN32
-        mainloop_register_fd(eee->device.fd, fd_info_proto_tuntap);
-#endif
+        if(n3n_thread_slot) {
+            edge_threads_tap_error(eee);
+        } else {
+            edge_tap_reopen(eee);
+        }
         return -1;
 
     }
@@ -3711,8 +3772,8 @@ int run_edge_loop (struct n3n_runtime_data *eee) {
     *eee->keep_running = true;
     update_supernode_reg(eee, time(NULL));
 
-    // more threads for received PACKETs, if asked for; from here on the main
-    // thread holds their lock whenever it is awake
+    // more threads for PACKETs, if asked for; from here on the main thread
+    // holds their lock whenever it is awake
     edge_threads_start(eee, eee->conf.threads);
 
     edge_metrics_module1.data = &eee->stats_sum;
@@ -3732,6 +3793,9 @@ int run_edge_loop (struct n3n_runtime_data *eee) {
 
         // what the packet threads queued, if there are any
         edge_threads_drain(eee);
+        if(edge_threads_tap_failed(eee)) {
+            edge_tap_reopen(eee);
+        }
 
         // TODO:
         // - migrate all the following regular actions into the

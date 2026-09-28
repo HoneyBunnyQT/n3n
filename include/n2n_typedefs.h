@@ -133,6 +133,10 @@ typedef struct tuntap_dev {
     int fd;
     devstr_t dev_name;
 #endif
+#ifdef __linux__
+    int queues;                             /* how many are open */
+    int queue_fd[N2N_TUNTAP_QUEUES_MAX];    /* [0] is fd, -1 if not open */
+#endif
     in_addr_t ip_addr;
     n2n_mac_t mac_addr;
     uint16_t mtu;

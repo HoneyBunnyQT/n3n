@@ -108,12 +108,41 @@ static int setup_ifname (int fd, const char *ifname,
 }
 
 
+/* Attach more queues to the device the first queue created, as far as that
+ * works - the rest simply is not there. The device hands every flow to one of
+ * the queues, and replies to what was written into a queue go back to the
+ * same queue. */
+static void open_more_queues (tuntap_dev *device, struct ifreq *ifr, int queues) {
+
+    while(device->queues < queues) {
+        int fd = open("/dev/net/tun", O_RDWR | O_NONBLOCK);
+
+        if(fd < 0) {
+            break;
+        }
+        if(ioctl(fd, TUNSETIFF, (void *)ifr) < 0) {
+            close(fd);
+            break;
+        }
+        device->queue_fd[device->queues++] = fd;
+    }
+
+    if(device->queues < queues) {
+        traceEvent(TRACE_WARNING, "tuntap opened only %d of %d queues: %s[%d]",
+                   device->queues, queues, strerror(errno), errno);
+    }
+}
+
+
 /** @brief  Open and configure the TAP device for packet read/write.
  *
  *  This routine creates the interface via the tuntap driver and then
  *  configures it.
  *
  *  @param device      - [inout] a device info holder object
+ *  @param queues      - how many queues to open, so that several threads can
+ *                       each read and write their own. device->queues says
+ *                       how many it got.
  *  @param dev         - user-defined name for the new iface,
  *                       if NULL system will assign a name
  *  @param v4subnet    - address and netmask of iface
@@ -122,13 +151,14 @@ static int setup_ifname (int fd, const char *ifname,
  *  @return - negative value on error
  *          - non-negative file-descriptor on success
  */
-int tuntap_open (tuntap_dev *device,
-                 char *dev, /* user-definable interface name, eg. edge0 */
-                 uint8_t address_mode, /* unused! */
-                 struct n2n_ip_subnet v4subnet,
-                 const char * device_mac,
-                 int mtu,
-                 int ignored) {
+int tuntap_open_queues (tuntap_dev *device,
+                        int queues,
+                        char *dev, /* user-definable interface name, eg. edge0 */
+                        uint8_t address_mode, /* unused! */
+                        struct n2n_ip_subnet v4subnet,
+                        const char * device_mac,
+                        int mtu,
+                        int ignored) {
 
     char *tuntap_device = "/dev/net/tun";
     int ioctl_fd;
@@ -140,6 +170,15 @@ int tuntap_open (tuntap_dev *device,
     struct sockaddr_nl sa;
     int up_and_running = 0;
     struct msghdr msg;
+    int q;
+
+    device->queues = 0;
+    for(q = 0; q < N2N_TUNTAP_QUEUES_MAX; q++) {
+        device->queue_fd[q] = -1;
+    }
+    if(queues > N2N_TUNTAP_QUEUES_MAX) {
+        queues = N2N_TUNTAP_QUEUES_MAX;
+    }
 
     device->fd = open(tuntap_device, O_RDWR | O_NONBLOCK);
     if(device->fd < 0) {
@@ -151,16 +190,32 @@ int tuntap_open (tuntap_dev *device,
 
     // want a TAP device for layer 2 frames
     ifr.ifr_flags = IFF_TAP|IFF_NO_PI;
+    if(queues > 1) {
+        ifr.ifr_flags |= IFF_MULTI_QUEUE;
+    }
 
     strncpy(ifr.ifr_name, dev, IFNAMSIZ-1);
     ifr.ifr_name[IFNAMSIZ-1] = '\0';
     rc = ioctl(device->fd, TUNSETIFF, (void *)&ifr);
+
+    if((rc < 0) && (queues > 1)) {
+        // a kernel older than 3.8, or a device created beforehand with one
+        // queue
+        traceEvent(TRACE_WARNING, "tuntap cannot open several queues: %s[%d], using one", strerror(errno), errno);
+        queues = 1;
+        ifr.ifr_flags = IFF_TAP|IFF_NO_PI;
+        rc = ioctl(device->fd, TUNSETIFF, (void *)&ifr);
+    }
 
     if(rc < 0) {
         traceEvent(TRACE_ERROR, "tuntap ioctl(TUNSETIFF, IFF_TAP) error: %s[%d]\n", strerror(errno), rc);
         close(device->fd);
         return -1;
     }
+
+    device->queue_fd[0] = device->fd;
+    device->queues = 1;
+    open_more_queues(device, &ifr, queues);
 
     // store the device name for later reuse
     strncpy(device->dev_name, ifr.ifr_name, MIN(IFNAMSIZ, sizeof(devstr_t)));
@@ -216,7 +271,7 @@ int tuntap_open (tuntap_dev *device,
     if(setup_ifname(ioctl_fd, device->dev_name, v4subnet, device->mac_addr, mtu) < 0) {
         close(nl_fd);
         close(ioctl_fd);
-        close(device->fd);
+        tuntap_close(device);
         return -1;
     }
 
@@ -259,6 +314,18 @@ int tuntap_open (tuntap_dev *device,
 }
 
 
+int tuntap_open (tuntap_dev *device,
+                 char *dev,
+                 uint8_t address_mode,
+                 struct n2n_ip_subnet v4subnet,
+                 const char * device_mac,
+                 int mtu,
+                 int metric) {
+
+    return tuntap_open_queues(device, 1, dev, address_mode, v4subnet, device_mac, mtu, metric);
+}
+
+
 int tuntap_read (struct tuntap_dev *tuntap, unsigned char *buf, int len) {
 
     return read(tuntap->fd, buf, len);
@@ -271,8 +338,37 @@ int tuntap_write (struct tuntap_dev *tuntap, unsigned char *buf, int len) {
 }
 
 
+// only for a queue that is open
+int tuntap_read_queue (struct tuntap_dev *tuntap, int queue, unsigned char *buf, int len) {
+
+    return read(tuntap->queue_fd[queue], buf, len);
+}
+
+
+// Any queue will do for writing: if this one is not open, the first.
+int tuntap_write_queue (struct tuntap_dev *tuntap, int queue, unsigned char *buf, int len) {
+
+    int fd = tuntap->queue_fd[queue];
+
+    return write((fd >= 0) ? fd : tuntap->fd, buf, len);
+}
+
+
+// Close all but the first keep queues. Whatever the device hands to a queue
+// that nobody reads is lost, so the queues without a reader have to go.
+void tuntap_close_queues (struct tuntap_dev *tuntap, int keep) {
+
+    while(tuntap->queues > keep) {
+        tuntap->queues--;
+        close(tuntap->queue_fd[tuntap->queues]);
+        tuntap->queue_fd[tuntap->queues] = -1;
+    }
+}
+
+
 void tuntap_close (struct tuntap_dev *tuntap) {
 
+    tuntap_close_queues(tuntap, 1);
     close(tuntap->fd);
 }
 

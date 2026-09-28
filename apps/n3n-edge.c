@@ -1132,13 +1132,7 @@ int main (int argc, char* argv[]) {
         }
 
         if(runlevel == 4) { /* configure the TUNTAP device, including routes */
-            if(tuntap_open(&eee->device,
-                           eee->conf.tuntap_dev_name,
-                           eee->conf.tuntap_ip_mode,
-                           eee->conf.tuntap_v4,
-                           eee->conf.device_mac,
-                           eee->conf.mtu,
-                           eee->conf.metric) < 0)
+            if(edge_tap_open(eee) < 0)
                 exit(1);
 #ifndef _WIN32
             // TODO: this internal fn should not be called publicly

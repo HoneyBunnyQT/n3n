@@ -101,6 +101,14 @@ int tuntap_open (struct tuntap_dev *device, char *dev, uint8_t address_mode,
 int tuntap_read (struct tuntap_dev *tuntap, unsigned char *buf, int len);
 int tuntap_write (struct tuntap_dev *tuntap, unsigned char *buf, int len);
 void tuntap_close (struct tuntap_dev *tuntap);
+#ifdef __linux__
+int tuntap_open_queues (struct tuntap_dev *device, int queues, char *dev,
+                        uint8_t address_mode, struct n2n_ip_subnet v4subnet,
+                        const char * device_mac, int mtu, int metric);
+int tuntap_read_queue (struct tuntap_dev *tuntap, int queue, unsigned char *buf, int len);
+int tuntap_write_queue (struct tuntap_dev *tuntap, int queue, unsigned char *buf, int len);
+void tuntap_close_queues (struct tuntap_dev *tuntap, int keep);
+#endif
 void tuntap_get_address (struct tuntap_dev *tuntap);
 
 /* Utils */
@@ -129,6 +137,7 @@ void edge_term (struct n3n_runtime_data *eee);
 size_t edge_encode_packet (struct n3n_runtime_data *eee, uint8_t *tap_pkt, size_t len, uint8_t *pktbuf, size_t pktbuf_size, n2n_mac_t out_destMac);
 void edge_send_packet2net (struct n3n_runtime_data *eee, uint8_t *tap_pkt, size_t len);
 int run_edge_loop (struct n3n_runtime_data *eee);
+int edge_tap_open (struct n3n_runtime_data *eee);
 int quick_edge_init (char *device_name, char *community_name,
                      char *encrypt_key, char *device_mac,
                      in_addr_t local_ip_address,

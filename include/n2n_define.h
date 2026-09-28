@@ -168,6 +168,9 @@ enum n3n_event_topic {
 #define N2N_IFNAMSIZ               16 /* 15 chars * NULL */
 #endif
 
+/* the most queues a tap device is opened with, one per thread handling packets */
+#define N2N_TUNTAP_QUEUES_MAX      16
+
 #define N2N_TRANSFORM_ID_USER_START         64
 #define N2N_TRANSFORM_ID_MAX                65535
 

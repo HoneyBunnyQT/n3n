@@ -2,7 +2,7 @@
  * Copyright (C) Honey Bunny QT
  * SPDX-License-Identifier: GPL-3.0-only
  *
- * Handling received PACKETs on several threads - see edge_threads.h
+ * Handling PACKETs on several threads - see edge_threads.h
  */
 
 #include "config.h"          // for HAVE_LIBPTHREAD
@@ -15,6 +15,30 @@
 #include "edge_threads.h"
 #include "n2n.h"             // for n3n_runtime_data
 #include "thread_local.h"    // for n3n_thread_slot, N3N_THREADS_MAX
+
+#if N3N_THREADS_MAX > N2N_TUNTAP_QUEUES_MAX
+#error "every thread needs a tap queue of its own"
+#endif
+
+
+int edge_threads_possible (const n2n_edge_conf_t *conf) {
+
+    if(conf->threads <= 1) {
+        return 1;
+    }
+#if !defined(HAVE_LIBPTHREAD) || !defined(__linux__)
+    // other systems do not spread one port's traffic over several sockets
+    return 1;
+#endif
+    if(conf->connect_tcp) {
+        return 1;
+    }
+    if(conf->threads > N3N_THREADS_MAX) {
+        return N3N_THREADS_MAX;
+    }
+    return conf->threads;
+}
+
 
 #ifdef HAVE_LIBPTHREAD
 
@@ -36,8 +60,8 @@
 #define closesocket(a) close(a)
 #endif
 
-// how many packets a worker takes from its socket per batch - the same cap as
-// the main loop's drain
+// how many packets a worker takes from its socket, and how many frames from
+// its tap queue, per batch - the same cap as the main loop's drain
 #define WORKER_DRAIN_MAX 32
 
 
@@ -97,9 +121,11 @@ struct worker {
     struct n3n_runtime_data *eee;
     int slot;                           // its n3n_thread_slot
     SOCKET sock;                        // its own socket, bound to the main socket's address
+    int tap;                            // its own tap queue, -1 if it has none
     pthread_t id;
     int started;
     uint32_t packets;                   // taken off its socket, reported at the end
+    uint32_t frames;                    // taken off its tap queue, reported at the end
     uint32_t waited;                    // batches put off until the main thread caught up
 };
 
@@ -108,6 +134,7 @@ struct edge_threads {
     int wake_pipe[2];                   // a worker writes a byte to wake the main thread
     int stop_pipe[2];                   // the main thread writes a byte to stop the workers
     int stop;
+    int tap_failed;                     // a worker's tap queue failed
     int requested;                      // threads asked for, the main thread included
     struct worker_queue *queue[N3N_THREADS_MAX];   // indexed by n3n_thread_slot
     struct worker worker[N3N_THREADS_MAX];         // indexed by n3n_thread_slot
@@ -296,7 +323,7 @@ static void *worker_main (void *arg) {
     struct worker *w = (struct worker *)arg;
     struct n3n_runtime_data *eee = w->eee;
     struct edge_threads *t = eee->threads;
-    struct pollfd pfd[2];
+    struct pollfd pfd[3];
 
     n3n_thread_slot = w->slot;
     n3n_pktbuf_thread_init();
@@ -305,19 +332,21 @@ static void *worker_main (void *arg) {
     pfd[0].events = POLLIN;
     pfd[1].fd = t->stop_pipe[0];
     pfd[1].events = POLLIN;
+    pfd[2].fd = w->tap;                 // poll() skips it if -1
+    pfd[2].events = POLLIN;
 
     while(!__atomic_load_n(&t->stop, __ATOMIC_ACQUIRE)) {
         struct n3n_pktbuf *pkt;
         int drain = WORKER_DRAIN_MAX;
         time_t now;
 
-        if(poll(pfd, 2, 1000) <= 0) {
+        if(poll(pfd, 3, 1000) <= 0) {
             continue;
         }
         if(pfd[1].revents) {
             break;
         }
-        if(!(pfd[0].revents & POLLIN)) {
+        if(!(pfd[0].revents & POLLIN) && !pfd[2].revents) {
             continue;
         }
 
@@ -335,16 +364,28 @@ static void *worker_main (void *arg) {
         }
         pkt->owner = n3n_pktbuf_owner_rx_pdu;
 
-        // one batch: whatever is queued on the socket, up to the cap
+        // one batch: whatever is queued on the socket and on the tap queue,
+        // up to the cap for each
         pthread_rwlock_rdlock(&t->lock);
-        now = time(NULL);
-        while(drain && (edge_read_proto3_udp(eee, w->sock, pkt, now) > 0)) {
-            drain--;
+        if(pfd[0].revents & POLLIN) {
+            now = time(NULL);
+            while(drain && (edge_read_proto3_udp(eee, w->sock, pkt, now) > 0)) {
+                drain--;
+            }
+        }
+        if(pfd[2].revents) {
+            w->frames += edge_read_from_tap_batch(eee, WORKER_DRAIN_MAX);
         }
         pthread_rwlock_unlock(&t->lock);
         w->packets += WORKER_DRAIN_MAX - drain;
 
         n3n_pktbuf_free(pkt);
+
+        // the main thread is going to open the device again, and start the
+        // workers again with it
+        if(__atomic_load_n(&t->tap_failed, __ATOMIC_ACQUIRE)) {
+            pfd[2].fd = -1;
+        }
     }
 
     n3n_thread_cleanup();
@@ -381,7 +422,7 @@ static void edge_threads_free (struct n3n_runtime_data *eee) {
 }
 
 
-int edge_threads_start (struct n3n_runtime_data *eee, int threads) {
+static int threads_start (struct n3n_runtime_data *eee, int threads) {
 
     struct edge_threads *t;
     struct sockaddr_storage local;
@@ -397,7 +438,6 @@ int edge_threads_start (struct n3n_runtime_data *eee, int threads) {
         threads = N3N_THREADS_MAX;
     }
 #ifndef __linux__
-    // other systems do not spread one port's traffic over several sockets
     traceEvent(TRACE_WARNING, "threads are only supported on Linux, using one");
     return 1;
 #endif
@@ -455,6 +495,11 @@ int edge_threads_start (struct n3n_runtime_data *eee, int threads) {
         pthread_mutex_init(&t->queue[slot]->overflow_lock, NULL);
         t->worker[slot].eee = eee;
         t->worker[slot].slot = slot;
+#ifdef __linux__
+        t->worker[slot].tap = eee->device.queue_fd[slot];
+#else
+        t->worker[slot].tap = -1;
+#endif
     }
 
     mainloop_register_fd(t->wake_pipe[0], fd_info_proto_wakeup);
@@ -480,9 +525,20 @@ int edge_threads_start (struct n3n_runtime_data *eee, int threads) {
         return 1;
     }
 
-    traceEvent(TRACE_NORMAL, "handling received packets with %d threads", started + 1);
+    traceEvent(TRACE_NORMAL, "handling packets with %d threads", started + 1);
 
     return started + 1;
+}
+
+
+int edge_threads_start (struct n3n_runtime_data *eee, int threads) {
+
+    int started = threads_start(eee, threads);
+
+#ifdef __linux__
+    tuntap_close_queues(&eee->device, started);
+#endif
+    return started;
 }
 
 
@@ -508,9 +564,9 @@ void edge_threads_stop (struct n3n_runtime_data *eee) {
     for(slot = 1; slot < N3N_THREADS_MAX; slot++) {
         if(t->worker[slot].started) {
             pthread_join(t->worker[slot].id, NULL);
-            traceEvent(TRACE_NORMAL, "thread %d handled %u received packets, "
+            traceEvent(TRACE_NORMAL, "thread %d handled %u received packets and %u frames, "
                        "passed %u to the main thread (%u via overflow), waited %u times",
-                       slot, t->worker[slot].packets, t->queue[slot]->posted,
+                       slot, t->worker[slot].packets, t->worker[slot].frames, t->queue[slot]->posted,
                        t->queue[slot]->overflowed, t->worker[slot].waited);
             if(COUNTER_READ(t->queue[slot]->lost)) {
                 traceEvent(TRACE_WARNING, "thread %d lost %u items for lack of memory",
@@ -544,6 +600,30 @@ void edge_threads_socket_changed (struct n3n_runtime_data *eee) {
 }
 
 
+SOCKET edge_threads_sock (struct n3n_runtime_data *eee) {
+
+    return eee->threads->worker[n3n_thread_slot].sock;
+}
+
+
+void edge_threads_tap_error (struct n3n_runtime_data *eee) {
+
+    struct edge_threads *t = eee->threads;
+    uint8_t one = 1;
+
+    __atomic_store_n(&t->tap_failed, 1, __ATOMIC_RELEASE);
+    if(write(t->wake_pipe[1], &one, 1) < 0) {
+        // the main thread wakes up at least once a second anyway
+    }
+}
+
+
+int edge_threads_tap_failed (struct n3n_runtime_data *eee) {
+
+    return eee->threads && __atomic_load_n(&eee->threads->tap_failed, __ATOMIC_ACQUIRE);
+}
+
+
 #else // HAVE_LIBPTHREAD -------------------------------------------------------
 
 
@@ -574,6 +654,19 @@ void edge_threads_stop (struct n3n_runtime_data *eee) {
 }
 
 void edge_threads_socket_changed (struct n3n_runtime_data *eee) {
+}
+
+SOCKET edge_threads_sock (struct n3n_runtime_data *eee) {
+
+    return eee->sock;
+}
+
+void edge_threads_tap_error (struct n3n_runtime_data *eee) {
+}
+
+int edge_threads_tap_failed (struct n3n_runtime_data *eee) {
+
+    return 0;
 }
 
 

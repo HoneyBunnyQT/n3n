@@ -2,12 +2,15 @@
  * Copyright (C) Honey Bunny QT
  * SPDX-License-Identifier: GPL-3.0-only
  *
- * Handling received PACKETs on several threads
+ * Handling PACKETs on several threads
  *
  * The main thread owns everything: the peer tables, the registration state,
  * the timers. Worker threads only handle PACKETs, each on a socket of its own
- * bound to the same port. What a worker cannot do itself - a control message,
- * or a change to the peer tables - it copies into a queue for the main thread.
+ * bound to the same port, and each on a queue of its own of the tap device -
+ * the frames it reads there it sends from its socket, the PACKETs it
+ * receives it writes into its queue. What a worker cannot do itself - a
+ * control message, or a change to the peer tables - it copies into a queue
+ * for the main thread.
  *
  * The two sides are kept apart by one read-write lock. The main thread holds
  * the write side whenever it is awake and lets go of it only while it waits in
@@ -22,8 +25,13 @@
 #define N3N_EDGE_THREADS_H
 
 #include "edge_utils.h"      // for edge_event, pdu_control
+#include "n2n_typedefs.h"    // for n2n_edge_conf_t, SOCKET
 
 struct n3n_runtime_data;
+
+// How many threads can handle packets with this configuration, the main
+// thread included: 1 unless it asks for more and they work here.
+int edge_threads_possible (const n2n_edge_conf_t *conf);
 
 // Around the main thread's wait in select(). Both do nothing unless workers
 // are running.
@@ -41,8 +49,8 @@ void edge_threads_drain (struct n3n_runtime_data *eee);
 
 // Start threads-1 workers beside the main thread; returns how many threads
 // handle packets now, the main thread included - 1 if threads are not
-// possible here. Called by the main thread, which from then on holds the
-// lock while it is awake.
+// possible here. The tap queues beyond that are closed. Called by the main
+// thread, which from then on holds the lock while it is awake.
 int edge_threads_start (struct n3n_runtime_data *eee, int threads);
 
 // Stop the workers again, applying what they queued. Called by the main thread.
@@ -50,5 +58,15 @@ void edge_threads_stop (struct n3n_runtime_data *eee);
 
 // The main socket was opened again: move the workers to the new one.
 void edge_threads_socket_changed (struct n3n_runtime_data *eee);
+
+// From a worker: the socket it receives on and sends from.
+SOCKET edge_threads_sock (struct n3n_runtime_data *eee);
+
+// From a worker: its tap queue failed. Only the main thread can open the
+// device again; it finds out with edge_threads_tap_failed().
+void edge_threads_tap_error (struct n3n_runtime_data *eee);
+
+// On the main thread: has the tap queue of a worker failed?
+int edge_threads_tap_failed (struct n3n_runtime_data *eee);
 
 #endif
