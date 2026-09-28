@@ -21,6 +21,7 @@ register_pkt_ttl=0
 tos=0
 
 [daemon]
+threads=0
 userid=0
 groupid=0
 background=false
@@ -47,6 +48,7 @@ spoofing_protection=false
 
 [test]
 benchmark_seconds=0
+benchmark_threads=0
 output_format=pretty
 
 [tuntap]
