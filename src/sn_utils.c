@@ -174,6 +174,17 @@ close_conn:
     conn->inactive = 1;
 }
 
+#ifdef N2N_HAVE_TCP
+// The addresses of TCP connections are kept as struct sockaddr, which
+// sock_to_cstr() cannot read directly
+static char *tcp_addr_to_cstr (n3n_sock_str_t out, const struct sockaddr *sa) {
+    n3n_sock_t sock;
+
+    fill_n3nsock(&sock, sa);
+    return sock_to_cstr(out, &sock);
+}
+#endif
+
 
 /* *************************************************** */
 
@@ -3236,7 +3247,7 @@ int run_sn_loop (struct n3n_runtime_data *sss) {
                     );
 
                     if(bread <= 0) {
-                        traceEvent(TRACE_INFO, "closing tcp connection to [%s]", sock_to_cstr(sockbuf, (n3n_sock_t*)sender_sock));
+                        traceEvent(TRACE_INFO, "closing tcp connection to [%s]", tcp_addr_to_cstr(sockbuf, &(conn->sock)));
                         traceEvent(TRACE_DEBUG, "recvfrom() returns %d and sees errno %d (%s)", bread, errno, strerror(errno));
 #ifdef _WIN32
                         traceEvent(TRACE_DEBUG, "WSAGetLastError(): %u", WSAGetLastError());
@@ -3251,7 +3262,7 @@ int run_sn_loop (struct n3n_runtime_data *sss) {
                             // the prepended length has been read, preparing for the packet
                             conn->expected += be16toh(*(uint16_t*)(conn->buffer));
                             if(conn->expected > N2N_SN_PKTBUF_SIZE) {
-                                traceEvent(TRACE_INFO, "closing tcp connection to [%s]", sock_to_cstr(sockbuf, (n3n_sock_t*)sender_sock));
+                                traceEvent(TRACE_INFO, "closing tcp connection to [%s]", tcp_addr_to_cstr(sockbuf, &(conn->sock)));
                                 traceEvent(TRACE_DEBUG, "too many bytes in tcp packet expected");
                                 close_tcp_connection(sss, conn);
                                 continue;
@@ -3309,7 +3320,7 @@ int run_sn_loop (struct n3n_runtime_data *sss) {
                             traceEvent(
                                 TRACE_INFO,
                                 "accepted incoming TCP connection from [%s]",
-                                sock_to_cstr(sockbuf, (n3n_sock_t*)sender_sock)
+                                tcp_addr_to_cstr(sockbuf, sender_sock)
                             );
                         }
                     }
@@ -3318,7 +3329,7 @@ int run_sn_loop (struct n3n_runtime_data *sss) {
                     traceEvent(
                         TRACE_DEBUG,
                         "denied incoming TCP connection from [%s] due to max connections limit hit",
-                        sock_to_cstr(sockbuf, (n3n_sock_t*)sender_sock)
+                        tcp_addr_to_cstr(sockbuf, sender_sock)
                     );
                 }
             }
