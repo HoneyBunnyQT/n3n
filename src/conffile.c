@@ -339,6 +339,13 @@ try_uint32:
                 val->family = AF_INET;
                 return 0;
             }
+            // an IPv6 address may come in brackets, as in bind and in the
+            // supernode addresses
+            size_t len = strlen(value);
+            if((len > 2) && (value[0] == '[') && (value[len - 1] == ']')) {
+                value[len - 1] = 0;
+                value++;
+            }
             if(inet_pton(AF_INET6, value, &val->addr.v6) == 1) {
                 val->family = AF_INET6;
                 return 0;

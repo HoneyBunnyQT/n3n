@@ -100,13 +100,13 @@ static struct n3n_conf_option section_connection[] = {
         .help = "Defaulting to auto, edges on the same network find each "
                 "other by multicast (see local_discovery) and no address is "
                 "advertised.  If multicast does not work there (e.g: it is "
-                "disabled on the router), a local IPv4 or IPv6 address can "
-                "be given here; the supernode then tells it to other edges, "
-                "which try to reach this edge there.  'detect' advertises "
-                "the address this edge sends from towards the supernode.  "
-                "This can assist with forming a peer-to-peer connection "
-                "with hosts on the same internal network.  It does not help "
-                "with NAT piercing.",
+                "disabled on the router), a local IPv4 or IPv6 address "
+                "(e.g: 192.168.1.5 or [fd00::5]) can be given here; the "
+                "supernode then tells it to other edges, which try to reach "
+                "this edge there.  'detect' advertises the address this edge "
+                "sends from towards the supernode.  This can assist with "
+                "forming a peer-to-peer connection with hosts on the same "
+                "internal network.  It does not help with NAT piercing.",
     },
     {
         .name = "allow_p2p",
