@@ -611,8 +611,11 @@ static ssize_t sendto_sock (struct n3n_runtime_data *sss,
     socklen_t socket_len;
     struct sockaddr_storage dest_addr = {0};
 
-    // this assumes we operate on a IPv6 dual stock socket
-    socket_len = prepare_sockaddr_for_send(&dest_addr, AF_INET6, socket);
+    // the socket was opened for the bind address: by default an IPv6 one,
+    // which takes IPv4 destinations as mapped addresses - but an IPv4 socket
+    // takes only IPv4 ones
+    int family = sss->conf.bind_address ? sss->conf.bind_address->sa_family : AF_INET6;
+    socket_len = prepare_sockaddr_for_send(&dest_addr, family, socket);
     if(socket_len == 0) {
         // unknown or unsupported family we cannot send
         traceEvent(TRACE_ERROR, "found unknown address family %d", socket->sa_family);
