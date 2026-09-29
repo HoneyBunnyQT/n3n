@@ -175,6 +175,25 @@ close_conn:
     conn->inactive = 1;
 }
 
+
+// Forget an edge. One connected over TCP loses its connection too, which
+// close_tcp_connection() takes care of, the edge included; what tells TCP
+// from UDP is whether its descriptor is among the TCP connections.
+static void remove_edge (struct n3n_runtime_data *sss, struct sn_community *comm, struct peer_info *edge) {
+
+    n2n_tcp_connection_t *conn = NULL;
+
+    if(edge->socket_fd >= 0) {
+        HASH_FIND_INT(sss->tcp_connections, &(edge->socket_fd), conn);
+    }
+    if(conn) {
+        close_tcp_connection(sss, conn);
+        return;
+    }
+    HASH_DEL(comm->edges, edge);
+    peer_info_free(edge);
+}
+
 #ifdef N2N_HAVE_TCP
 // The addresses of TCP connections are kept as struct sockaddr, which
 // sock_to_cstr() cannot read directly
@@ -307,7 +326,6 @@ int load_allowed_sn_community (struct n3n_runtime_data *sss) {
     struct sn_community *comm, *tmp_comm, *last_added_comm = NULL;
     struct peer_info *edge, *tmp_edge;
     node_supernode_association_t *assoc, *tmp_assoc;
-    n2n_tcp_connection_t *conn;
     time_t any_time = 0;
 
     uint32_t num_communities = 0;
@@ -343,13 +361,7 @@ int load_allowed_sn_community (struct n3n_runtime_data *sss) {
 
             // close TCP connections, if any (also causes reconnect)
             // and delete edge from list
-            if((edge->socket_fd != sss->sock) && (edge->socket_fd >= 0)) {
-                HASH_FIND_INT(sss->tcp_connections, &(edge->socket_fd), conn);
-                close_tcp_connection(sss, conn); /* also deletes the edge */
-            } else {
-                HASH_DEL(comm->edges, edge);
-                peer_info_free(edge);
-            }
+            remove_edge(sss, comm, edge);
         }
 
         // remove allowed users from community
@@ -2504,14 +2516,7 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
                 // 2- ... we can delete it from regular list if present (can happen)
                 HASH_FIND_PEER(comm->edges, reg.edgeMac, peer);
                 if(peer != NULL) {
-                    if((peer->socket_fd != sss->sock) && (peer->socket_fd >= 0)) {
-                        n2n_tcp_connection_t *conn;
-                        HASH_FIND_INT(sss->tcp_connections, &(peer->socket_fd), conn);
-                        close_tcp_connection(sss, conn); /* also deletes the peer */
-                    } else {
-                        HASH_DEL(comm->edges, peer);
-                        free(peer);
-                    }
+                    remove_edge(sss, comm, peer);
                 }
             }
 
@@ -2555,14 +2560,7 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
             HASH_FIND_PEER(comm->edges, unreg.srcMac, peer);
             if(peer != NULL) {
                 if((auth = auth_edge(&(peer->auth), &unreg.auth, NULL, comm)) == 0) {
-                    if((peer->socket_fd != sss->sock) && (peer->socket_fd >= 0)) {
-                        n2n_tcp_connection_t *conn;
-                        HASH_FIND_INT(sss->tcp_connections, &(peer->socket_fd), conn);
-                        close_tcp_connection(sss, conn); /* also deletes the peer */
-                    } else {
-                        HASH_DEL(comm->edges, peer);
-                        peer_info_free(peer);
-                    }
+                    remove_edge(sss, comm, peer);
                 }
             }
             return 0;
@@ -2726,14 +2724,7 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
 
                     sendto_peer(sss, peer, nakbuf, encx);
 
-                    if((peer->socket_fd != sss->sock) && (peer->socket_fd >= 0)) {
-                        n2n_tcp_connection_t *conn;
-                        HASH_FIND_INT(sss->tcp_connections, &(peer->socket_fd), conn);
-                        close_tcp_connection(sss, conn); /* also deletes the peer */
-                    } else {
-                        HASH_DEL(comm->edges, peer);
-                        peer_info_free(peer);
-                    }
+                    remove_edge(sss, comm, peer);
                 }
             }
             return 0;
