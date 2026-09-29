@@ -68,6 +68,7 @@
 #include <netinet/in.h>         // for ntohl, in_addr_t, sockaddr_in, INADDR...
 #include <netinet/tcp.h>        // for TCP_NODELAY
 #include <pwd.h>
+#include <sys/resource.h>       // for getrlimit, RLIMIT_NOFILE
 #include <sys/select.h>         // for FD_ISSET, FD_SET, select, FD_SETSIZE
 #include <sys/socket.h>         // for recvfrom, shutdown, sockaddr_storage
 #endif
@@ -3062,6 +3063,21 @@ int run_sn_loop (struct n3n_runtime_data *sss) {
     time_t last_purge_edges = 0;
     time_t last_sort_communities = 0;
     time_t last_re_reg_and_purge = 0;
+#ifdef N2N_HAVE_TCP
+    time_t tcp_accept_pause_until = 0;
+#ifndef _WIN32
+    // TCP connections stop 16 descriptors short of what FD_SET() and the
+    // process's limit allow, leaving room for everything else that goes into
+    // the fd sets: the UDP and listening sockets and up to five management
+    // connections
+    int tcp_fd_limit = FD_SETSIZE;
+    struct rlimit nofile;
+    if((getrlimit(RLIMIT_NOFILE, &nofile) == 0) && (nofile.rlim_cur < (rlim_t)FD_SETSIZE)) {
+        tcp_fd_limit = nofile.rlim_cur;
+    }
+    tcp_fd_limit -= 16;
+#endif
+#endif
 
     sss->start_time = time(NULL);
 
@@ -3089,7 +3105,9 @@ int run_sn_loop (struct n3n_runtime_data *sss) {
 
 #ifdef N2N_HAVE_TCP
         n3n_sock_str_t sockbuf;
-        FD_SET(sss->tcp_sock, &readers);
+        if(time(NULL) >= tcp_accept_pause_until) {
+            FD_SET(sss->tcp_sock, &readers);
+        }
 
         // Connections can also be closed outside the handling of select()'s
         // result, e.g. by a reload of the communities or when the timeout
@@ -3296,41 +3314,62 @@ int run_sn_loop (struct n3n_runtime_data *sss) {
                 struct sockaddr *sender_sock = (struct sockaddr*)&sas;
                 socklen_t ss_size = sizeof(sas);
 
-                if((HASH_COUNT(sss->tcp_connections) + 4) < FD_SETSIZE) {
-                    SOCKET tmp_sock = accept(
-                        sss->tcp_sock,
-                        sender_sock,
-                        &ss_size
-                    );
-                    // REVISIT: should we error out if ss_size returns bigger
-                    // than before? can this ever happen?
-                    if(tmp_sock >= 0) {
-                        conn = (n2n_tcp_connection_t*)calloc(
-                            1,
-                            sizeof(n2n_tcp_connection_t)
-                        );
-                        if(conn) {
-                            conn->socket_fd = tmp_sock;
-                            memcpy(&(conn->sock), sender_sock, ss_size);
-                            conn->sock_len = ss_size;
-                            conn->inactive = 0;
-                            conn->expected = sizeof(uint16_t);
-                            conn->position = 0;
-                            HASH_ADD_INT(sss->tcp_connections, socket_fd, conn);
-                            traceEvent(
-                                TRACE_INFO,
-                                "accepted incoming TCP connection from [%s]",
-                                tcp_addr_to_cstr(sockbuf, sender_sock)
-                            );
-                        }
-                    }
-                } else {
-                    // no space to store the socket for a new connection, close immediately
+                // A connection left pending keeps tcp_sock readable, so
+                // select() returns at once for as long as it waits. Every
+                // readable tcp_sock therefore gets an accept(), and one over
+                // the limit is closed again.
+                SOCKET tmp_sock = accept(
+                    sss->tcp_sock,
+                    sender_sock,
+                    &ss_size
+                );
+                // REVISIT: should we error out if ss_size returns bigger
+                // than before? can this ever happen?
+#ifdef _WIN32
+                bool failed = (tmp_sock == INVALID_SOCKET);
+                // a Windows fd_set holds up to FD_SETSIZE sockets, of any
+                // value; 16 are left for the others as below
+                bool too_many = ((HASH_COUNT(sss->tcp_connections) + 16) >= FD_SETSIZE);
+#else
+                bool failed = (tmp_sock < 0);
+                // FD_SET() only takes descriptors below FD_SETSIZE; a higher
+                // one writes beyond the end of the fd_set
+                bool too_many = (tmp_sock >= tcp_fd_limit);
+#endif
+                if(failed) {
+                    // Most likely out of file descriptors. The connection
+                    // stays pending, so do not ask select() about tcp_sock
+                    // for a second instead of spinning on it.
+                    traceEvent(TRACE_WARNING, "accept() failed: %s", strerror(errno));
+                    tcp_accept_pause_until = now + 1;
+                } else if(too_many) {
                     traceEvent(
-                        TRACE_DEBUG,
+                        TRACE_WARNING,
                         "denied incoming TCP connection from [%s] due to max connections limit hit",
                         tcp_addr_to_cstr(sockbuf, sender_sock)
                     );
+                    closesocket(tmp_sock);
+                } else {
+                    conn = (n2n_tcp_connection_t*)calloc(
+                        1,
+                        sizeof(n2n_tcp_connection_t)
+                    );
+                    if(conn) {
+                        conn->socket_fd = tmp_sock;
+                        memcpy(&(conn->sock), sender_sock, ss_size);
+                        conn->sock_len = ss_size;
+                        conn->inactive = 0;
+                        conn->expected = sizeof(uint16_t);
+                        conn->position = 0;
+                        HASH_ADD_INT(sss->tcp_connections, socket_fd, conn);
+                        traceEvent(
+                            TRACE_INFO,
+                            "accepted incoming TCP connection from [%s]",
+                            tcp_addr_to_cstr(sockbuf, sender_sock)
+                        );
+                    } else {
+                        closesocket(tmp_sock);
+                    }
                 }
             }
 #endif /* N2N_HAVE_TCP */
