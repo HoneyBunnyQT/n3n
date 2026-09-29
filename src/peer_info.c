@@ -163,15 +163,19 @@ size_t purge_peer_list (struct peer_info **peer_list,
         // TODO: untangle the tcp_connections usage and use
         // peer_info_validate() as the core of this loop
         if(scan->purgeable && scan->last_seen < purge_before) {
+            // Only a descriptor that is one of the TCP connections is the
+            // peer's own to close; any other is a UDP socket that other
+            // peers use too, or a number that may belong to something else
+            // by now.
             if((scan->socket_fd >=0) && (scan->socket_fd != socket_not_to_close)) {
                 if(tcp_connections) {
                     HASH_FIND_INT(*tcp_connections, &scan->socket_fd, conn);
                     if(conn) {
                         HASH_DEL(*tcp_connections, conn);
                         free(conn);
+                        shutdown(scan->socket_fd, SHUT_RDWR);
+                        closesocket(scan->socket_fd);
                     }
-                    shutdown(scan->socket_fd, SHUT_RDWR);
-                    closesocket(scan->socket_fd);
                 }
             }
             HASH_DEL(*peer_list, scan);
