@@ -94,6 +94,9 @@ void edge_threads_socket_changed (struct n3n_runtime_data *eee);
 // From a worker: the socket it receives on and sends from.
 SOCKET edge_threads_sock (struct n3n_runtime_data *eee);
 
+// From a worker of the supernode: its socket for address i of connection.bind.
+SOCKET edge_threads_bind_sock (struct n3n_runtime_data *eee, int i);
+
 // From a worker: its tap queue failed. Only the main thread can open the
 // device again; it finds out with edge_threads_tap_failed().
 void edge_threads_tap_error (struct n3n_runtime_data *eee);

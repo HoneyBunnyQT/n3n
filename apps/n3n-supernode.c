@@ -27,6 +27,7 @@
 #include <n3n/conffile.h>      // for n3n_config_set_option
 #include <n3n/initfuncs.h>     // for n3n_initfuncs()
 #include <n3n/logging.h>       // for traceEvent
+#include <n3n/strings.h>       // for sock_to_cstr
 #include <n3n/supernode.h>     // for load_allowed_sn_community, calculate_s...
 #include <signal.h>            // for signal, SIGHUP, SIGINT, SIGPIPE, SIGTERM
 #include <stdbool.h>
@@ -38,6 +39,7 @@
 #include <time.h>              // for time
 #include <unistd.h>            // for _exit, daemon, getgid, getuid, setgid
 #include "n2n.h"               // for n2n_edge, sn_community
+#include "n2n_wire.h"          // for fill_n3nsock
 #include "uthash.h"            // for UT_hash_handle, HASH_ITER, HASH_ADD_STR
 
 // FIXME, including private headers
@@ -408,6 +410,153 @@ BOOL WINAPI ConsoleCtrlHandler (DWORD sig) {
 /* *************************************************** */
 
 /** Main program entry point from kernel. */
+// the port of an IPv4 or IPv6 address, host order
+static uint16_t sockaddr_port (const struct sockaddr *sa) {
+
+    if(sa->sa_family == AF_INET) {
+        return ntohs(((const struct sockaddr_in *)sa)->sin_port);
+    }
+    return ntohs(((const struct sockaddr_in6 *)sa)->sin6_port);
+}
+
+
+// is there an IPv4 address with this port in the list?
+static bool v4_on_port (const struct sockaddr_storage *list, int count, uint16_t port) {
+
+    for(int i = 0; i < count; i++) {
+        if((list[i].ss_family == AF_INET) && (sockaddr_port((const struct sockaddr *)&list[i]) == port)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+
+// A UDP or TCP socket for one address of connection.bind, with SO_REUSEPORT
+// for the threads to share its port
+static SOCKET open_bind_socket (const struct sockaddr *sa, int type, int v6only) {
+
+    socklen_t len = (sa->sa_family == AF_INET) ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6);
+    int one = 1;
+    SOCKET fd = socket(sa->sa_family, type, 0);
+#ifdef _WIN32
+    if(fd == INVALID_SOCKET) {
+        return -1;
+    }
+#else
+    if(fd < 0) {
+        return -1;
+    }
+#endif
+
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (char *)&one, sizeof(one));
+#ifdef SO_REUSEPORT
+    setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, (char *)&one, sizeof(one));
+#endif
+    if(sa->sa_family == AF_INET6) {
+        setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, (char *)&v6only, sizeof(v6only));
+    }
+    if(bind(fd, sa, len) != 0) {
+#ifdef _WIN32
+        closesocket(fd);
+#else
+        close(fd);
+#endif
+        return -1;
+    }
+    return fd;
+}
+
+
+// A UDP and a TCP socket for each address of connection.bind, alike: the
+// first ones are also sock and tcp_sock. An IPv6 address is IPv6 only when
+// an IPv4 one has the same port - the IPv4 edges on that port belong to that
+// one. Without IPv6 on the system its addresses are left out, but a [::]
+// whose port no IPv4 address has listens on 0.0.0.0 instead, as the default
+// [::] always did. Anything else that stops a socket from opening stops the
+// supernode.
+static void open_bind_sockets (struct n3n_runtime_data *sss) {
+
+    struct sockaddr_storage *list = (struct sockaddr_storage *)sss->conf.bind_address;
+    int count = 0;
+    n3n_sock_str_t sockbuf;
+    n3n_sock_t sock;
+
+    while((count < N3N_BIND_MAX) && list[count].ss_family) {
+        count++;
+    }
+
+    SOCKET probe = socket(AF_INET6, SOCK_DGRAM, 0);
+    if((probe == -1) && (errno == EAFNOSUPPORT)) {
+        for(int i = 0; i < count;) {
+            struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)&list[i];
+            uint16_t port;
+
+            if(sa6->sin6_family != AF_INET6) {
+                i++;
+                continue;
+            }
+            port = ntohs(sa6->sin6_port);
+            if(IN6_IS_ADDR_UNSPECIFIED(&sa6->sin6_addr) && !v4_on_port(list, count, port)) {
+                struct sockaddr_in *sa4 = (struct sockaddr_in *)&list[i];
+
+                memset(&list[i], 0, sizeof(list[i]));
+                sa4->sin_family = AF_INET;
+                sa4->sin_port = htons(port);
+                sa4->sin_addr.s_addr = htonl(INADDR_ANY);
+                traceEvent(TRACE_WARNING, "no IPv6 on this system, listening on 0.0.0.0:%u instead of [::]", port);
+                i++;
+                continue;
+            }
+            fill_n3nsock(&sock, (struct sockaddr *)&list[i]);
+            traceEvent(TRACE_WARNING, "no IPv6 on this system, leaving out %s", sock_to_cstr(sockbuf, &sock));
+            memmove(&list[i], &list[i + 1], (count - i) * sizeof(list[i]));   // with the end of the list
+            count--;
+        }
+    } else if(probe != -1) {
+#ifdef _WIN32
+        closesocket(probe);
+#else
+        close(probe);
+#endif
+    }
+    if(!count) {
+        traceEvent(TRACE_ERROR, "no address of connection.bind can be used");
+        exit(-2);
+    }
+
+    for(int i = 0; i < count; i++) {
+        struct sockaddr *sa = (struct sockaddr *)&list[i];
+        int v6only = (sa->sa_family == AF_INET6) && v4_on_port(list, count, sockaddr_port(sa));
+
+        fill_n3nsock(&sock, sa);
+        sock_to_cstr(sockbuf, &sock);
+
+        sss->bind_sock[i] = open_bind_socket(sa, SOCK_DGRAM, v6only);
+        if(sss->bind_sock[i] < 0) {
+            // e.g. a port another program has
+            traceEvent(TRACE_ERROR, "cannot listen on UDP %s: %s", sockbuf, strerror(errno));
+            exit(-2);
+        }
+#ifdef N2N_HAVE_TCP
+        sss->bind_tcp[i] = open_bind_socket(sa, SOCK_STREAM, v6only);
+        if((sss->bind_tcp[i] < 0) || (listen(sss->bind_tcp[i], N2N_TCP_BACKLOG_QUEUE_SIZE) != 0)) {
+            traceEvent(TRACE_ERROR, "cannot listen on TCP %s: %s", sockbuf, strerror(errno));
+            exit(-2);
+        }
+#else
+        sss->bind_tcp[i] = -1;
+#endif
+        sss->bind_family[i] = sa->sa_family;
+        sss->bind_v6only[i] = v6only;
+        sss->bind_count++;
+        traceEvent(TRACE_NORMAL, "supernode is listening on UDP and TCP %s%s", sockbuf, v6only ? " (IPv6 only)" : "");
+    }
+    sss->sock = sss->bind_sock[0];
+    sss->tcp_sock = sss->bind_tcp[0];
+}
+
+
 int main (int argc, char * argv[]) {
     static struct n3n_runtime_data sss_node;
 
@@ -538,76 +687,7 @@ int main (int argc, char * argv[]) {
 
     traceEvent(TRACE_DEBUG, "traceLevel is %d", getTraceLevel());
 
-    struct sockaddr_in *sa = (struct sockaddr_in *)sss_node.conf.bind_address;
-
-    socklen_t bind_addr_len = 0;
-    // also valid for the TCP part lateron
-    if(sss_node.conf.bind_address) {
-        if(sss_node.conf.bind_address->sa_family == AF_INET) {
-            bind_addr_len = sizeof(struct sockaddr_in);
-        } else if(sss_node.conf.bind_address->sa_family == AF_INET6) {
-            bind_addr_len = sizeof(struct sockaddr_in6);
-        }
-    }
-
-    // The default [::] needs IPv6 in the kernel, which some systems boot
-    // without; any address of IPv4 is the nearest there is
-    struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)sss_node.conf.bind_address;
-    if(sa6 && (sa6->sin6_family == AF_INET6) && IN6_IS_ADDR_UNSPECIFIED(&sa6->sin6_addr)) {
-        SOCKET probe = socket(AF_INET6, SOCK_DGRAM, 0);
-        if((probe == -1) && (errno == EAFNOSUPPORT)) {
-            uint16_t port = sa6->sin6_port;
-            struct sockaddr_in *sa4 = (struct sockaddr_in *)sss_node.conf.bind_address;
-
-            memset(sa6, 0, sizeof(*sa6));
-            sa4->sin_family = AF_INET;
-            sa4->sin_port = port;
-            sa4->sin_addr.s_addr = htonl(INADDR_ANY);
-            bind_addr_len = sizeof(struct sockaddr_in);
-
-            traceEvent(TRACE_WARNING, "no IPv6 on this system, listening on 0.0.0.0:%u instead of [::]", ntohs(port));
-        } else if(probe != -1) {
-#ifdef _WIN32
-            closesocket(probe);
-#else
-            close(probe);
-#endif
-        }
-    }
-
-    sss_node.sock = open_socket(
-        sss_node.conf.bind_address,
-        bind_addr_len,
-        0 /* UDP */
-    );
-
-    if(-1 == sss_node.sock) {
-        traceEvent(TRACE_ERROR, "failed to open main socket. %s", strerror(errno));
-        exit(-2);
-    } else {
-        traceEvent(TRACE_NORMAL, "supernode is listening on UDP %u (main)", ntohs(sa->sin_port));
-    }
-
-#ifdef N2N_HAVE_TCP
-    sss_node.tcp_sock = open_socket(
-        sss_node.conf.bind_address,
-        bind_addr_len,
-        1 /* TCP */
-    );
-    if(-1 == sss_node.tcp_sock) {
-        traceEvent(TRACE_ERROR, "failed to open auxiliary TCP socket, %s", strerror(errno));
-        exit(-2);
-    } else {
-        traceEvent(TRACE_INFO, "supernode opened TCP %u (aux)", ntohs(sa->sin_port));
-    }
-
-    if(-1 == listen(sss_node.tcp_sock, N2N_TCP_BACKLOG_QUEUE_SIZE)) {
-        traceEvent(TRACE_ERROR, "failed to listen on auxiliary TCP socket, %s", strerror(errno));
-        exit(-2);
-    } else {
-        traceEvent(TRACE_NORMAL, "supernode is listening on TCP %u (aux)", ntohs(sa->sin_port));
-    }
-#endif
+    open_bind_sockets(&sss_node);
 
     sss_node.mgmt_slots = slots_malloc(5, 5000, 500);
     if(!sss_node.mgmt_slots) {
@@ -651,12 +731,14 @@ int main (int argc, char * argv[]) {
     }
 #endif
 
-    // Add our freshly opened socket to any edges added by federation
+    // The supernodes of the federation from the configuration have not come
+    // in on any of our sockets yet: they are reached from the first address
+    // fit for their family
     // TODO: this uses internal peer_info struct, move it to sn_utils?
     // (It is the last user in this file, so yes, move it)
     struct peer_info *scan, *tmp;
     HASH_ITER(hh, sss_node.federation->edges, scan, tmp) {
-        scan->socket_fd = sss_node.sock;
+        scan->socket_fd = -1;
     }
 
     traceEvent(

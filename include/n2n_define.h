@@ -122,6 +122,7 @@ enum n3n_event_topic {
 #define N2N_EDGE_DEFAULT_V4MASKLEN   24               /* default netmask for edge ip address... */
 
 #define N2N_SN_LPORT_DEFAULT 7654
+#define N3N_BIND_MAX         8      /* addresses in connection.bind */
 #define N2N_SN_PKTBUF_SIZE   2048
 
 

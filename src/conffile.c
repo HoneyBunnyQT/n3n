@@ -124,6 +124,71 @@ static struct n3n_conf_option *lookup_option (char *section, char *option) {
     return NULL;
 }
 
+// [address]:[port] as for connection.bind: a numeric address, "::" or none
+// (the IPv6 wildcard); a missing port is 0. No names are looked up.
+int n3n_config_parse_sockaddr (struct sockaddr_storage *out, const char *value) {
+
+    memset(out, 0, sizeof(*out));
+
+    n3n_parsed_address_t parsed_addr;
+
+    if(parse_address_spec(&parsed_addr, value) != 0) {
+        return -1;
+    }
+
+    // the 'host only' case needs special treatment
+    if(parsed_addr.host[0] != '\0' && parsed_addr.port[0] == '\0') {
+        // make sure the purely numeric port didn't go into host
+        if(strspn(parsed_addr.host, "0123456789") == strlen(parsed_addr.host)) {
+            // and fits into port
+            if(strlen(parsed_addr.host) < sizeof(parsed_addr.port)) {
+                // and then correct if required
+                strncpy(parsed_addr.port, parsed_addr.host, sizeof(parsed_addr.port));
+                parsed_addr.port[sizeof(parsed_addr.port)-1] = 0;
+                parsed_addr.host[0] = '\0';
+            }
+        }
+    }
+    // missing or empty port string results in port 0 (OS will choose)
+    uint16_t port = 0;
+    if(parsed_addr.port[0] != '\0') {
+        port = (uint16_t)atoi(parsed_addr.port);
+    }
+    // now, handle the different options
+    // specific, numeric IPv6 address
+    if(inet_pton(AF_INET6, parsed_addr.host, &((struct sockaddr_in6 *)out)->sin6_addr) == 1) {
+        struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)out;
+        sa6->sin6_family = AF_INET6;
+        sa6->sin6_port = htons(port);
+    }
+    // specific, numeric IPv4 address
+    else if(inet_pton(AF_INET, parsed_addr.host, &((struct sockaddr_in *)out)->sin_addr) == 1) {
+        struct sockaddr_in *sa = (struct sockaddr_in *)out;
+        sa->sin_family = AF_INET;
+        sa->sin_port = htons(port);
+    }
+    // IPv6 wildcard address
+    else if(strcmp(parsed_addr.host, "::") == 0) {
+        struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)out;
+        sa6->sin6_family = AF_INET6;
+        sa6->sin6_port = htons(port);
+        sa6->sin6_addr = in6addr_any;
+    }
+    // no host, e.g., just a port, default to the IPv6 wildcard (IPV6_ONLY will be turned off)
+    else if(parsed_addr.host[0] == '\0') {
+        struct sockaddr_in6 *sa = (struct sockaddr_in6 *)out;
+        sa->sin6_family = AF_INET6;
+        sa->sin6_port = htons(port);
+        sa->sin6_addr = in6addr_any;
+    }
+    // invalid (not a literal), we do not perfrom DNS lookups here
+    else {
+        return -1;
+    }
+    return 0;
+}
+
+
 int n3n_config_set_option (void *conf, char *section, char *option, char *value) {
     if(!value) {
         // Dont (currently?) support missing values
@@ -253,74 +318,43 @@ try_uint32:
             return 0;
         }
         case n3n_conf_sockaddr: {
-            // provide enough space for any family's sock
+            // One or more addresses, separated by spaces, into an array that
+            // an entry of family 0 ends; the option points at the first
             struct sockaddr_storage **val = (struct sockaddr_storage **)valvoid;
-            if(*val) {
-                free(*val);
-            }
-            *val = malloc(sizeof(**val));
-            if(!*val) {
+            struct sockaddr_storage *list;
+            char *copy, *item, *saveptr = NULL;
+            int count = 0;
+
+            list = calloc(N3N_BIND_MAX + 1, sizeof(*list));
+            copy = strdup(value);
+            if(!list || !copy) {
+                free(list);
+                free(copy);
                 return -1;
             }
-            memset(*val, 0, sizeof(**val));
-
-            n3n_parsed_address_t parsed_addr;
-
-            if(parse_address_spec(&parsed_addr, value) != 0) {
-                free(*val);
-                return -1;
-            }
-
-            // the 'host only' case needs special treatment
-            if(parsed_addr.host[0] != '\0' && parsed_addr.port[0] == '\0') {
-                // make sure the purely numeric port didn't go into host
-                if(strspn(parsed_addr.host, "0123456789") == strlen(parsed_addr.host)) {
-                    // and fits into port
-                    if(strlen(parsed_addr.host) < sizeof(parsed_addr.port)) {
-                        // and then correct if required
-                        strncpy(parsed_addr.port, parsed_addr.host, sizeof(parsed_addr.port));
-                        parsed_addr.port[sizeof(parsed_addr.port)-1] = 0;
-                        parsed_addr.host[0] = '\0';
+            for(item = strtok_r(copy, " ", &saveptr); item; item = strtok_r(NULL, " ", &saveptr)) {
+                if((count == N3N_BIND_MAX) || (n3n_config_parse_sockaddr(&list[count], item) != 0)) {
+                    free(list);
+                    free(copy);
+                    return -1;
+                }
+                // the same address twice would share its port with itself
+                for(int i = 0; i < count; i++) {
+                    if(!memcmp(&list[i], &list[count], sizeof(*list))) {
+                        free(list);
+                        free(copy);
+                        return -1;
                     }
                 }
+                count++;
             }
-            // missing or empty port string results in port 0 (OS will choose)
-            uint16_t port = 0;
-            if(parsed_addr.port[0] != '\0') {
-                port = (uint16_t)atoi(parsed_addr.port);
-            }
-            // now, handle the different options
-            // specific, numeric IPv6 address
-            if(inet_pton(AF_INET6, parsed_addr.host, &((struct sockaddr_in6 *)*val)->sin6_addr) == 1) {
-                struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)*val;
-                sa6->sin6_family = AF_INET6;
-                sa6->sin6_port = htons(port);
-            }
-            // specific, numeric IPv4 address
-            else if(inet_pton(AF_INET, parsed_addr.host, &((struct sockaddr_in *)*val)->sin_addr) == 1) {
-                struct sockaddr_in *sa = (struct sockaddr_in *)*val;
-                sa->sin_family = AF_INET;
-                sa->sin_port = htons(port);
-            }
-            // IPv6 wildcard address
-            else if(strcmp(parsed_addr.host, "::") == 0) {
-                struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)*val;
-                sa6->sin6_family = AF_INET6;
-                sa6->sin6_port = htons(port);
-                sa6->sin6_addr = in6addr_any;
-            }
-            // no host, e.g., just a port, default to the IPv6 wildcard (IPV6_ONLY will be turned off)
-            else if(parsed_addr.host[0] == '\0') {
-                struct sockaddr_in6 *sa = (struct sockaddr_in6 *)*val;
-                sa->sin6_family = AF_INET6;
-                sa->sin6_port = htons(port);
-                sa->sin6_addr = in6addr_any;
-            }
-            // invalid (not a literal), we do not perfrom DNS lookups here
-            else {
-                free(*val);
+            free(copy);
+            if(!count) {
+                free(list);
                 return -1;
             }
+            free(*val);
+            *val = list;
             return 0;
         }
         case n3n_conf_n2n_sock_addr: {
@@ -613,26 +647,36 @@ static const char * stringify_option (void *conf, struct n3n_conf_option option,
             if(!*val) {
                 return NULL;
             }
-            struct sockaddr *sa_ptr = (struct sockaddr *)*val;
+            buf[0] = 0;
+            for(struct sockaddr_storage *sas = *val; sas->ss_family; sas++) {
+                ssize_t used = strlen(buf);
+                char *p = buf + used;
+                size_t left = buflen - used;
 
-            if(sa_ptr->sa_family == AF_INET) {
-                struct sockaddr_in *sa = (struct sockaddr_in *)sa_ptr;
-                if(inet_ntop(AF_INET, &sa->sin_addr, buf, buflen) == NULL) {
+                if(used) {
+                    snprintf(p, left, " ");
+                    p++;
+                    left--;
+                }
+                if(sas->ss_family == AF_INET) {
+                    struct sockaddr_in *sa = (struct sockaddr_in *)sas;
+                    if(inet_ntop(AF_INET, &sa->sin_addr, p, left) == NULL) {
+                        return NULL;
+                    }
+                    used = strlen(p);
+                    snprintf(p + used, left - used, ":%u", ntohs(sa->sin_port));
+                } else if(sas->ss_family == AF_INET6) {
+                    struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)sas;
+                    // add brackets
+                    p[0] = '[';
+                    if(inet_ntop(AF_INET6, &sa6->sin6_addr, p + 1, left - 1) == NULL) {
+                        return NULL;
+                    }
+                    used = strlen(p);
+                    snprintf(p + used, left - used, "]:%u", ntohs(sa6->sin6_port));
+                } else {
                     return NULL;
                 }
-                ssize_t used = strlen(buf);
-                snprintf(buf + used, buflen - used, ":%u", ntohs(sa->sin_port));
-            } else if(sa_ptr->sa_family == AF_INET6) {
-                struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)sa_ptr;
-                // add brackets
-                buf[0] = '[';
-                if(inet_ntop(AF_INET6, &sa6->sin6_addr, buf + 1, buflen - 1) == NULL) {
-                    return NULL;
-                }
-                ssize_t used = strlen(buf);
-                snprintf(buf + used, buflen - used, "]:%u", ntohs(sa6->sin6_port));
-            } else {
-                return NULL;
             }
             return buf;
         }
@@ -859,7 +903,8 @@ static void dump_option (FILE *f, void *conf, int level, const struct n3n_conf_o
         }
         // TODO: if type == n3n_conf_filter_rule ...
 
-        char buf[100];
+        // enough for the longest value, a list of N3N_BIND_MAX addresses
+        char buf[512];
         char const *p = stringify_option(conf, option, buf, sizeof(buf));
 
         if(!p) {

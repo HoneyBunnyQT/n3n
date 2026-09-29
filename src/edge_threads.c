@@ -227,7 +227,9 @@ struct worker_queue {
 struct worker {
     struct n3n_runtime_data *eee;
     int slot;                           // its n3n_thread_slot
-    SOCKET sock;                        // its own socket, bound to the main socket's address
+    SOCKET sock[N3N_BIND_MAX];          // its own sockets: for the main socket's address, and
+                                        // on the supernode for each further one of connection.bind
+    int nsock;
     int tap;                            // its own tap queue, -1 if it has none
     pthread_t id;
     int started;
@@ -461,18 +463,24 @@ static void *worker_main (void *arg) {
     struct worker *w = (struct worker *)arg;
     struct n3n_runtime_data *eee = w->eee;
     struct edge_threads *t = eee->threads;
-    struct pollfd pfd[3];
+    // its sockets first, then the stop pipe and its tap queue
+    struct pollfd pfd[N3N_BIND_MAX + 2];
+    struct pollfd *stop = &pfd[w->nsock];
+    struct pollfd *tap = &pfd[w->nsock + 1];
+    int npfd = w->nsock + 2;
     struct n3n_pktbuf *pkt;
 
     n3n_thread_slot = w->slot;
     n3n_pktbuf_thread_init();
 
-    pfd[0].fd = w->sock;
-    pfd[0].events = POLLIN;
-    pfd[1].fd = t->stop_pipe[0];
-    pfd[1].events = POLLIN;
-    pfd[2].fd = w->tap;                 // poll() skips it if -1
-    pfd[2].events = POLLIN;
+    for(int i = 0; i < w->nsock; i++) {
+        pfd[i].fd = w->sock[i];
+        pfd[i].events = POLLIN;
+    }
+    stop->fd = t->stop_pipe[0];
+    stop->events = POLLIN;
+    tap->fd = w->tap;                   // poll() skips it if -1
+    tap->events = POLLIN;
 
     // the one buffer this worker reads into
     pkt = n3n_pktbuf_alloc(N2N_PKT_BUF_SIZE);
@@ -484,16 +492,19 @@ static void *worker_main (void *arg) {
     pkt->owner = n3n_pktbuf_owner_rx_pdu;
 
     while(!__atomic_load_n(&t->stop, __ATOMIC_ACQUIRE)) {
-        int drain = WORKER_DRAIN_MAX;
+        bool readable = false;
         time_t now;
 
-        if(poll(pfd, 3, 1000) <= 0) {
+        if(poll(pfd, npfd, 1000) <= 0) {
             continue;
         }
-        if(pfd[1].revents) {
+        if(stop->revents) {
             break;
         }
-        if(!(pfd[0].revents & POLLIN) && !pfd[2].revents) {
+        for(int i = 0; i < w->nsock; i++) {
+            readable |= (pfd[i].revents & POLLIN) != 0;
+        }
+        if(!readable && !tap->revents) {
             continue;
         }
 
@@ -501,29 +512,32 @@ static void *worker_main (void *arg) {
         // packets in the socket for a moment instead of queueing more.
         if(queue_backlog(t->queue[w->slot]) >= QUEUE_SLOTS) {
             w->waited++;
-            poll(&pfd[1], 1, 5);
+            poll(stop, 1, 5);
             continue;
         }
 
         // one batch: whatever is queued on the socket and on the tap queue,
         // up to the cap for each
         pthread_rwlock_rdlock(&t->lock);
-        if(pfd[0].revents & POLLIN) {
-            now = time(NULL);
-            while(drain && (t->ops->read_udp(eee, w->sock, pkt, now) > 0)) {
-                drain--;
+        now = time(NULL);
+        for(int i = 0; i < w->nsock; i++) {
+            if(pfd[i].revents & POLLIN) {
+                int drain = WORKER_DRAIN_MAX;
+                while(drain && (t->ops->read_udp(eee, w->sock[i], pkt, now) > 0)) {
+                    drain--;
+                }
+                w->packets += WORKER_DRAIN_MAX - drain;
             }
         }
-        if(pfd[2].revents) {
+        if(tap->revents) {
             w->frames += edge_read_from_tap_batch(eee, WORKER_DRAIN_MAX);
         }
         pthread_rwlock_unlock(&t->lock);
-        w->packets += WORKER_DRAIN_MAX - drain;
 
         // the main thread is going to open the device again, and start the
         // workers again with it
         if(__atomic_load_n(&t->tap_failed, __ATOMIC_ACQUIRE)) {
-            pfd[2].fd = -1;
+            tap->fd = -1;
         }
     }
 
@@ -539,8 +553,10 @@ static void edge_threads_free (struct n3n_runtime_data *eee) {
     int slot;
 
     for(slot = 1; slot < N3N_THREADS_MAX; slot++) {
-        if(t->worker[slot].sock >= 0) {
-            closesocket(t->worker[slot].sock);
+        for(int i = 0; i < t->worker[slot].nsock; i++) {
+            if(t->worker[slot].sock[i] >= 0) {
+                closesocket(t->worker[slot].sock[i]);
+            }
         }
         if(t->queue[slot]) {
             pthread_mutex_destroy(&t->queue[slot]->overflow_lock);
@@ -559,6 +575,59 @@ static void edge_threads_free (struct n3n_runtime_data *eee) {
     pthread_rwlock_destroy(&t->lock);
     free(t);
     eee->threads = NULL;
+}
+
+
+// A socket on the address of another one, to share its port: with
+// SO_REUSEPORT, and IPv6 only if that one is - the kernel groups only
+// sockets alike.
+static SOCKET open_like (SOCKET like) {
+
+    struct sockaddr_storage local;
+    socklen_t local_len = sizeof(local);
+    int v6only = 0;
+    socklen_t optlen = sizeof(v6only);
+    int one = 1;
+    SOCKET sock;
+
+    if(getsockname(like, (struct sockaddr *)&local, &local_len)) {
+        return -1;
+    }
+    if(local.ss_family == AF_INET6) {
+        getsockopt(like, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, &optlen);
+    }
+    sock = socket(local.ss_family, SOCK_DGRAM, 0);
+    if(sock < 0) {
+        return -1;
+    }
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+    setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, &one, sizeof(one));
+    if(local.ss_family == AF_INET6) {
+        setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof(v6only));
+    }
+    if(bind(sock, (struct sockaddr *)&local, local_len)) {
+        closesocket(sock);
+        return -1;
+    }
+    return sock;
+}
+
+
+// The sockets a worker shares with the main thread: its main socket's, and
+// on the supernode those of the further addresses of connection.bind.
+static int open_worker_sockets (struct n3n_runtime_data *eee, struct worker *w) {
+
+    int n = eee->bind_count ? eee->bind_count : 1;
+
+    for(w->nsock = 0; w->nsock < n; w->nsock++) {
+        SOCKET like = w->nsock ? eee->bind_sock[w->nsock] : eee->sock;
+
+        w->sock[w->nsock] = open_like(like);
+        if(w->sock[w->nsock] < 0) {
+            return -1;
+        }
+    }
+    return 0;
 }
 
 
@@ -599,9 +668,7 @@ static int threads_start (struct n3n_runtime_data *eee, int threads,
     t->ops = ops;
     t->wake_pipe[0] = t->wake_pipe[1] = -1;
     t->stop_pipe[0] = t->stop_pipe[1] = -1;
-    for(slot = 0; slot < N3N_THREADS_MAX; slot++) {
-        t->worker[slot].sock = -1;
-    }
+    // calloc() leaves every worker with nsock 0, no sockets to close
 
     pthread_rwlockattr_init(&attr);
 #ifdef __GLIBC__
@@ -625,8 +692,7 @@ static int threads_start (struct n3n_runtime_data *eee, int threads,
     // every socket bound to the same address and port with SO_REUSEPORT -
     // open_socket() sets it - gets a share of the senders
     for(slot = 1; slot < threads; slot++) {
-        t->worker[slot].sock = open_socket((struct sockaddr *)&local, local_len, 0);
-        if(t->worker[slot].sock < 0) {
+        if(open_worker_sockets(eee, &t->worker[slot]) < 0) {
             traceEvent(TRACE_WARNING, "cannot open a socket for thread %d", slot);
             break;
         }
@@ -750,7 +816,13 @@ void edge_threads_socket_changed (struct n3n_runtime_data *eee) {
 
 SOCKET edge_threads_sock (struct n3n_runtime_data *eee) {
 
-    return eee->threads->worker[n3n_thread_slot].sock;
+    return eee->threads->worker[n3n_thread_slot].sock[0];
+}
+
+
+SOCKET edge_threads_bind_sock (struct n3n_runtime_data *eee, int i) {
+
+    return eee->threads->worker[n3n_thread_slot].sock[i];
 }
 
 
@@ -820,6 +892,11 @@ void edge_threads_socket_changed (struct n3n_runtime_data *eee) {
 SOCKET edge_threads_sock (struct n3n_runtime_data *eee) {
 
     return eee->sock;
+}
+
+SOCKET edge_threads_bind_sock (struct n3n_runtime_data *eee, int i) {
+
+    return eee->bind_sock[i];
 }
 
 void edge_threads_tap_error (struct n3n_runtime_data *eee) {

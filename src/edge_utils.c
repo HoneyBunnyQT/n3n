@@ -661,6 +661,11 @@ struct n3n_runtime_data* edge_init (const n2n_edge_conf_t *conf, int *rv) {
 
     memcpy(&eee->conf, conf, sizeof(*conf));
 
+    // only the supernode answers on more than one address for now
+    if(eee->conf.bind_address && ((struct sockaddr_storage *)eee->conf.bind_address)[1].ss_family) {
+        traceEvent(TRACE_WARNING, "the edge uses only the first address of connection.bind");
+    }
+
 #ifdef _WIN32
     // TODO: more investigations in interface naming/renaming on windows
 #else

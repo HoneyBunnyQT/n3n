@@ -65,6 +65,9 @@ void n3n_config_register_section (char *, char *, struct n3n_conf_option[]);
 
 int n3n_config_set_option (void *, char *, char *, char *);
 
+struct sockaddr_storage;
+int n3n_config_parse_sockaddr (struct sockaddr_storage *out, const char *value);
+
 void n3n_config_dump (void *, FILE *, int);
 void n3n_config_debug_addr (void *, FILE *);
 

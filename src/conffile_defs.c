@@ -122,14 +122,21 @@ static struct n3n_conf_option section_connection[] = {
         .name = "bind",
         .type = n3n_conf_sockaddr,
         .offset = offsetof(n2n_edge_conf_t, bind_address),
-        .desc = "bind to a local address and/or port",
-        .help = "[address]:[port] to bind. This can be useful to allow home "
-                "router's port forwarding to point to a known port, or when "
-                "coupled with a local ip address can help with restriction to "
-                "a certain LAN or WiFi interface.  By default, the daemon "
-                "binds to any interface. (both edge and supernode). "
-                "This is unreliable and usually ignored when using TCP "
-                "outbound edge connections",
+        .desc = "bind to local addresses and/or ports",
+        .help = "One or more [address]:[port], separated by spaces, to bind. "
+                "This can be useful to allow home router's port forwarding to "
+                "point to a known port, or when coupled with a local ip "
+                "address can help with restriction to a certain LAN or WiFi "
+                "interface.  By default, the daemon binds to any interface. "
+                "The supernode answers edges on each of the addresses alike, "
+                "each one a UDP and a TCP socket of its own: an edge gets "
+                "its answers from the socket it came in on. An IPv6 address "
+                "is IPv6 only when an IPv4 one has the same port, so e.g. "
+                "bind=0.0.0.0:7654 [::]:7654 gives separate sockets for IPv4 "
+                "and IPv6. A second port lets edges see whether their NAT "
+                "maps each destination to a port of its own. The edge uses "
+                "only the first address, and it is unreliable and usually "
+                "ignored when using TCP outbound edge connections",
     },
     {
         .name = "connect_tcp",
