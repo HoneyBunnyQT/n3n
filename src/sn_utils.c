@@ -2953,6 +2953,21 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
 }
 
 
+#ifdef N2N_HAVE_TCP
+// close_tcp_connection() closes the socket but leaves the entry in the list,
+// as the caller may be iterating over it
+static void remove_closed_tcp_connections (struct n3n_runtime_data *sss) {
+    n2n_tcp_connection_t *conn, *tmp_conn;
+
+    HASH_ITER(hh, sss->tcp_connections, conn, tmp_conn) {
+        if(conn->inactive) {
+            HASH_DEL(sss->tcp_connections, conn);
+            free(conn);
+        }
+    }
+}
+#endif
+
 /** Long lived processing entry point. Split out from main to simply
  *  daemonisation on some platforms. */
 static int process_pdu (struct n3n_runtime_data * sss,
@@ -3064,6 +3079,13 @@ int run_sn_loop (struct n3n_runtime_data *sss) {
 #ifdef N2N_HAVE_TCP
         n3n_sock_str_t sockbuf;
         FD_SET(sss->tcp_sock, &readers);
+
+        // Connections can also be closed outside the handling of select()'s
+        // result, e.g. by a reload of the communities or when the timeout
+        // below is taken as an error. A closed one left in the set makes
+        // every select() fail with EBADF, and the loop spins without ever
+        // getting to the removal after the reads again.
+        remove_closed_tcp_connections(sss);
 
         // add the tcp connections' sockets
         HASH_ITER(hh, sss->tcp_connections, conn, tmp_conn) {
@@ -3254,13 +3276,8 @@ int run_sn_loop (struct n3n_runtime_data *sss) {
                 }
             }
 
-            // remove inactive / already closed tcp connections from list
-            HASH_ITER(hh, sss->tcp_connections, conn, tmp_conn) {
-                if(conn->inactive) {
-                    HASH_DEL(sss->tcp_connections, conn);
-                    free(conn);
-                }
-            }
+            // before accept() can hand out one of their file descriptors again
+            remove_closed_tcp_connections(sss);
 
             // accept new incoming tcp connection
             if(FD_ISSET(sss->tcp_sock, &readers)) {
