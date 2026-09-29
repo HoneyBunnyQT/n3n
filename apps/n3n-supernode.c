@@ -550,6 +550,31 @@ int main (int argc, char * argv[]) {
         }
     }
 
+    // The default [::] needs IPv6 in the kernel, which some systems boot
+    // without; any address of IPv4 is the nearest there is
+    struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)sss_node.conf.bind_address;
+    if(sa6 && (sa6->sin6_family == AF_INET6) && IN6_IS_ADDR_UNSPECIFIED(&sa6->sin6_addr)) {
+        SOCKET probe = socket(AF_INET6, SOCK_DGRAM, 0);
+        if((probe == -1) && (errno == EAFNOSUPPORT)) {
+            uint16_t port = sa6->sin6_port;
+            struct sockaddr_in *sa4 = (struct sockaddr_in *)sss_node.conf.bind_address;
+
+            memset(sa6, 0, sizeof(*sa6));
+            sa4->sin_family = AF_INET;
+            sa4->sin_port = port;
+            sa4->sin_addr.s_addr = htonl(INADDR_ANY);
+            bind_addr_len = sizeof(struct sockaddr_in);
+
+            traceEvent(TRACE_WARNING, "no IPv6 on this system, listening on 0.0.0.0:%u instead of [::]", ntohs(port));
+        } else if(probe != -1) {
+#ifdef _WIN32
+            closesocket(probe);
+#else
+            close(probe);
+#endif
+        }
+    }
+
     sss_node.sock = open_socket(
         sss_node.conf.bind_address,
         bind_addr_len,
