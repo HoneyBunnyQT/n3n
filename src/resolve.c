@@ -11,6 +11,7 @@
 #include <n3n/metrics.h>
 #include <n3n/resolve.h>     // for n3n_resolve_parameter_t
 #include <n3n/strings.h>     // for sock_to_cstr, parse_address_spec
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -38,6 +39,10 @@ struct peer_info;
 #include <netinet/in.h>
 #include <sys/socket.h>      // for AF_INET, PF_INET
 #include <sys/time.h>        // for gettimeofday, timersub
+#endif
+
+#ifndef _WIN32
+#define closesocket(a) close(a)
 #endif
 
 #define N2N_RESOLVE_INTERVAL            300 /* seconds until edge and supernode try to resolve supernode names again */
@@ -108,6 +113,26 @@ struct hostname_list_item {
 // TODO: zeroth item unused
 static struct hostname_list_item *hostname_lists[3];
 // static struct supernode_str *supernode_next_resolve;
+
+// Whether this host has a route to the address; connect() on a UDP socket
+// only looks the route up and sends nothing. Having an address of the family
+// is not enough: once the edge's TAP device is up, its IPv4 address makes an
+// IPv6 only host look as if it had IPv4 too.
+static bool have_route_to (const struct addrinfo *ai) {
+    SOCKET sock = socket(ai->ai_family, SOCK_DGRAM, 0);
+#ifdef _WIN32
+    if(sock == INVALID_SOCKET) {
+        return false;
+    }
+#else
+    if(sock < 0) {
+        return false;
+    }
+#endif
+    bool reachable = (connect(sock, ai->ai_addr, ai->ai_addrlen) == 0);
+    closesocket(sock);
+    return reachable;
+}
 
 /** Resolve the supernode IP address.
  *
@@ -211,32 +236,33 @@ int supernode2sock (n3n_sock_t *sn, const char *addrIn) {
     }
 
     /* ainfo is the head of a linked list if non-NULL. */
-    // loop through the results to find suitable one
-    // for comaptibility reasons, we will prefer any IPv4 result
+    // loop through the results to find suitable one: for compatibility
+    // reasons, we will prefer any IPv4 result, but first only among the
+    // results this host has a route to. Only if it has a route to none, e.g.
+    // while the network is not up yet, any IPv4 result, then any IPv6 one
     int found = 0;
-    for(struct addrinfo *p = ainfo; p != NULL; p = p->ai_next) {
-        if(p->ai_family == AF_INET) {
+    for(int pass = 0; (pass < 4) && !found; pass++) {
+        int family = (pass & 1) ? AF_INET6 : AF_INET;
+        bool need_route = (pass < 2);
+
+        for(struct addrinfo *p = ainfo; p != NULL; p = p->ai_next) {
+            if(p->ai_family != family) {
+                continue;
+            }
+            if(need_route && !have_route_to(p)) {
+                continue;
+            }
             if(fill_n3nsock(sn, p->ai_addr) == 0) {
                 // successfully filled the n3n_sock_t
-                traceEvent(TRACE_INFO, "supernode2sock successfully resolved preferred IPv4 address for '%s'", parsed_addr.host);
+                traceEvent(
+                    TRACE_INFO,
+                    "supernode2sock resolved %s address for '%s'%s",
+                    (family == AF_INET) ? "IPv4" : "IPv6",
+                    parsed_addr.host,
+                    need_route ? "" : " (no route to any of its addresses yet)"
+                );
                 found = 1;
                 break;
-            } else {
-                traceEvent(TRACE_DEBUG, "supernode2sock couldn't resolve no IPv4 address for %s", parsed_addr.host);
-            }
-        }
-    }
-
-    // look for IPv6 only in case no IPv4 found
-    if(!found) {
-        for(struct addrinfo *p = ainfo; p != NULL; p = p->ai_next) {
-            if(p->ai_family == AF_INET6) {
-                if(fill_n3nsock(sn, p->ai_addr) == 0) {
-                    // successfully filled the n3n_sock_t
-                    traceEvent(TRACE_INFO, "supernode2sock resolved IPv6 address for '%s'", parsed_addr.host);
-                    found = 1;
-                    break;
-                }
             }
         }
     }
