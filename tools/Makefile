@@ -24,6 +24,10 @@ all: $(TOOLS) $(TESTS)
 
 optional: $(TOOLS_OPTIONAL)
 
+# As in apps/Makefile: without this, a changed library does not relink
+# the tools, and "make test" runs the old test binaries
+$(TOOLS) $(TOOLS_OPTIONAL) $(TESTS): ../src/libn3n.a
+
 %: %.c
 	@echo "  CC      $@"
 	@$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
