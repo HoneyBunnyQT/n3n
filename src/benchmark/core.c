@@ -39,7 +39,11 @@
 #include <sys/user.h>           // for user_regs_struct
 #include <sys/wait.h>           // for wait
 
+// PERF_EVENT_IOC_ID came with Linux 3.12. Without it the counters of a
+// group cannot be told apart, so older kernel headers get no counters
+#ifdef PERF_EVENT_IOC_ID
 #define LINUX_PERF  1
+#endif
 #endif
 
 // Information about the current benchmark
