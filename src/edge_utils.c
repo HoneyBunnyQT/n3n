@@ -476,6 +476,9 @@ void supernode_connect (struct n3n_runtime_data *eee) {
         }
 
         char buf[50];
+        // the original address may be of the wrong family for the socket
+        // too, so it gets one try
+        bool retried = false;
 
 hack_retry:
         sockaddr_to_str(buf, sizeof(buf), (const struct sockaddr *)&dest_addr);
@@ -497,7 +500,7 @@ hack_retry:
         if(result == -1) {
             if(errno == EINPROGRESS) {
                 // Do nothing
-            } else if(errno == EAFNOSUPPORT) {
+            } else if((errno == EAFNOSUPPORT) && !retried) {
                 // HACK!
                 // This should be simpler if we just had one socket for
                 // each address type
@@ -506,6 +509,8 @@ hack_retry:
                     "Dual stack socket failed, retrying original sn addr"
                 );
                 memcpy(&dest_addr, &sn_sock_storage, sizeof(dest_addr));
+                peer_addr_len = sn_sock_len;
+                retried = true;
                 goto hack_retry;
             } else {
                 traceEvent(TRACE_INFO, "Error connecting TCP: %i", errno);
@@ -522,7 +527,7 @@ hack_retry:
         if(result == -1) {
             if(wsaerr == WSAEWOULDBLOCK) {
                 // Do nothing
-            } else if(wsaerr == WSAEAFNOSUPPORT) {
+            } else if((wsaerr == WSAEAFNOSUPPORT) && !retried) {
                 // HACK!
                 // This should be simpler if we just had one socket for
                 // each address type
@@ -531,6 +536,8 @@ hack_retry:
                     "Dual stack socket failed, retrying original sn addr"
                 );
                 memcpy(&dest_addr, &sn_sock_storage, sizeof(dest_addr));
+                peer_addr_len = sn_sock_len;
+                retried = true;
                 goto hack_retry;
             } else {
                 traceEvent(
