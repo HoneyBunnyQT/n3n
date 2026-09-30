@@ -2784,8 +2784,11 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
                        macaddr_str(mac_buf, nak.srcMac),
                        sock_to_cstr(sockbuf, &sender));
 
+            // Only another supernode of the federation passes a NAK on, for
+            // an edge in a regular community: from anyone else it could
+            // throw out any edge
             HASH_FIND_PEER(comm->edges, nak.srcMac, peer);
-            if(comm->is_federation) {
+            if(from_supernode && !comm->is_federation) {
                 if(peer != NULL) {
                     // this is a NAK for one of the edges conencted to this supernode, forward,
                     // i.e. re-assemble (memcpy from udpbuf to nakbuf could be sufficient as well)
@@ -3004,9 +3007,13 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
                        macaddr_str(mac_buf, pi.srcMac),
                        sock_to_cstr(sockbuf, &sender));
 
+            // The answer of another supernode of the federation to a
+            // QUERY_PEER that one of our edges sent to all of them. From
+            // anyone else it would tell the edge a wrong place for its peer,
+            // and us a wrong supernode for it.
             HASH_FIND_PEER(comm->edges, pi.srcMac, peer);
             if(peer != NULL) {
-                if((comm->is_federation) && (!is_null_mac(pi.srcMac))) {
+                if(from_supernode && !comm->is_federation && !is_null_mac(pi.srcMac)) {
                     // snoop on the information to use for supernode forwarding (do not wait until first remote REGISTER_SUPER)
                     update_node_supernode_association(comm, &(pi.mac), sender_sock, sock_size, now);
 
