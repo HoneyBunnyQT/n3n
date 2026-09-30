@@ -571,6 +571,17 @@ struct nat_view {
     uint16_t local_port;     /* of the socket, 0 if there is none */
 };
 
+/* What a peer told of its NAT in its last REGISTER through the supernode:
+ * kept apart from the peer tables, whose entries come and go while two edges
+ * try to reach each other */
+#define NAT_PEERS 16
+
+struct nat_peer {
+    n2n_mac_t mac;
+    time_t seen;             /* when it told; 0: unused */
+    n2n_cookie_t hint;
+};
+
 struct n3n_runtime_data {
     n2n_edge_conf_t conf;
 
@@ -598,6 +609,7 @@ struct n3n_runtime_data {
     int sock;
     n3n_sock_t advertised_sock;                                          /**< local socket told to the supernode, from advertise_addr (AF_INVALID: none) */
     struct nat_view nat[2];                                              /**< the NAT of the IPv4 [0] and the IPv6 [1] socket */
+    struct nat_peer nat_peers[NAT_PEERS];                                /**< the NATs of the peers, as they told */
 
 #ifndef SKIP_MULTICAST_PEERS_DISCOVERY
     int udp_multicast_sock_v4;                                           /**< socket for local IPv4 multicast registrations. */

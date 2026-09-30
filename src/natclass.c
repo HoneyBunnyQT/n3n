@@ -10,6 +10,7 @@
 #include <string.h>          // for memset, memcmp
 
 #include "n2n.h"             // for sock_equal
+#include "n2n_define.h"      // for N2N_REG_COOKIE_HINT_MASK
 #include "natclass.h"
 
 
@@ -133,14 +134,15 @@ bool nat_view_add (struct nat_view *view, const n3n_sock_t *to, const n3n_sock_t
 }
 
 
-const char *nat_view_str (char *buf, size_t size, const struct nat_view *view) {
+static const char *class_str (char *buf, size_t size, enum nat_class nat_class,
+                              bool port_kept, unsigned int lo, unsigned int hi) {
 
-    switch(view->nat_class) {
+    switch(nat_class) {
         case NAT_EASY:
-            snprintf(buf, size, "easy (port %s)", view->port_kept ? "kept" : "changed");
+            snprintf(buf, size, "easy (port %s)", port_kept ? "kept" : "changed");
             break;
         case NAT_HARD:
-            snprintf(buf, size, "hard (ports %u-%u)", view->port_lo, view->port_hi);
+            snprintf(buf, size, "hard (ports %u-%u)", lo, hi);
             break;
         case NAT_SEVERAL_ADDRESSES:
             snprintf(buf, size, "several addresses");
@@ -150,4 +152,59 @@ const char *nat_view_str (char *buf, size_t size, const struct nat_view *view) {
             break;
     }
     return buf;
+}
+
+
+const char *nat_view_str (char *buf, size_t size, const struct nat_view *view) {
+
+    return class_str(buf, size, view->nat_class, view->port_kept, view->port_lo, view->port_hi);
+}
+
+
+n2n_cookie_t nat_view_hint (const struct nat_view *view) {
+
+    n2n_cookie_t hint = view->nat_class;
+
+    if(view->nat_class == NAT_EASY) {
+        hint |= view->port_kept ? 0x4 : 0;
+    } else if(view->nat_class == NAT_HARD) {
+        unsigned int base = view->port_lo & ~1023u;
+        unsigned int e = 0;
+        while((e < 15) && (base + (2u << e) <= view->port_hi)) {
+            e++;
+        }
+        hint |= ((view->port_lo >> 10) << 2) | (e << 8);
+    }
+    return hint & N2N_REG_COOKIE_HINT_MASK;
+}
+
+
+const char *nat_hint_str (char *buf, size_t size, n2n_cookie_t hint) {
+
+    unsigned int lo = ((hint >> 2) & 0x3f) << 10;
+    unsigned int hi = lo + (2u << ((hint >> 8) & 0xf)) - 1;
+
+    return class_str(buf, size, (enum nat_class)(hint & 0x3), hint & 0x4,
+                     lo, (hi > UINT16_MAX) ? UINT16_MAX : hi);
+}
+
+
+struct nat_peer *nat_peer_find (struct nat_peer *table, const n2n_mac_t mac, bool create) {
+
+    struct nat_peer *oldest = &table[0];
+
+    for(int i = 0; i < NAT_PEERS; i++) {
+        if(table[i].seen && !memcmp(table[i].mac, mac, sizeof(n2n_mac_t))) {
+            return &table[i];
+        }
+        if(table[i].seen < oldest->seen) {
+            oldest = &table[i];
+        }
+    }
+    if(!create) {
+        return NULL;
+    }
+    memset(oldest, 0, sizeof(*oldest));
+    memcpy(oldest->mac, mac, sizeof(n2n_mac_t));
+    return oldest;
 }

@@ -14,7 +14,9 @@
  * address - leave nothing to guess.
  *
  * Nothing depends on the class yet; get_info shows it and it is logged when it
- * changes. It is a first step towards punching through hard NATs.
+ * changes, and the peers learn it from a hint in the REGISTERs that go
+ * through the supernode (see nat_view_hint()) and show it in get_edges. It is
+ * a first step towards punching through hard NATs.
  */
 
 #ifndef N3N_NATCLASS_H
@@ -41,5 +43,23 @@ bool nat_view_add (struct nat_view *view, const n3n_sock_t *to, const n3n_sock_t
 
 // "unknown", "easy (port kept)", "hard (ports 40100-40180)", ...
 const char *nat_view_str (char *buf, size_t size, const struct nat_view *view);
+
+// The class as a hint for a peer, in the bits N2N_REG_COOKIE_HINT_MASK of
+// the cookie of the REGISTER that goes through the supernode; 0 if unknown.
+// The peer learns the sender's public address from the supernode anyway, the
+// hint adds how that address can be reached:
+//   bits 0-1   the enum nat_class
+//   easy:      bit 2 set if the port is kept
+//   hard:      the ports seen, rounded out to at least [lo, hi]: bits 2-7 the
+//              lowest of them divided by 1024, bits 8-11 the exponent e of
+//              the size of the range, 2 << e ports
+n2n_cookie_t nat_view_hint (const struct nat_view *view);
+
+// the hint as the string nat_view_str() would give, the port range rounded
+const char *nat_hint_str (char *buf, size_t size, n2n_cookie_t hint);
+
+// The entry of a peer in the table of NAT_PEERS, or NULL; with create, a new
+// one if there is none, in place of the one heard from the longest ago
+struct nat_peer *nat_peer_find (struct nat_peer *table, const n2n_mac_t mac, bool create);
 
 #endif

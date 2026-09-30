@@ -72,6 +72,7 @@ recv:
         "local": 0,
         "macaddr": "00:00:00:00:00:03",
         "mode": "sn",
+        "nat": "unknown",
         "prefered_sockaddr": "0.0.0.0:0",
         "purgeable": 1,
         "sockaddr": "127.0.0.1:7000",

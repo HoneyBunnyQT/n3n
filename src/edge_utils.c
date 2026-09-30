@@ -531,6 +531,14 @@ static void note_nat (struct n3n_runtime_data *eee, const n3n_sock_t *sn, const 
 }
 
 
+// The cookie of a REGISTER through the supernode, with the hint for the peer
+// how the NAT maps the socket that reaches the supernode, and so the peer
+static n2n_cookie_t forwarded_reg_cookie (const struct n3n_runtime_data *eee) {
+
+    return N2N_FORWARDED_REG_COOKIE | nat_view_hint(&eee->nat[eee->curr_sn->sock.family == AF_INET6]);
+}
+
+
 // the UDP sockets, or the TCP connection to the supernode
 static void close_sockets (struct n3n_runtime_data *eee) {
 
@@ -1027,7 +1035,7 @@ static void register_with_new_peer (struct n3n_runtime_data *eee,
                 /* Normal STUN */
                 send_register(eee, &(scan->sock), mac, N2N_REGULAR_REG_COOKIE);
             }
-            send_register(eee, &(eee->curr_sn->sock), mac, N2N_FORWARDED_REG_COOKIE);
+            send_register(eee, &(eee->curr_sn->sock), mac, forwarded_reg_cookie(eee));
         } else {
             /* P2P register, send directly */
             send_register(eee, &(scan->sock), mac, N2N_REGULAR_REG_COOKIE);
@@ -1994,7 +2002,7 @@ static int check_query_peer_info (struct n3n_runtime_data *eee, time_t now, cons
     }
 
     if(now - scan->last_sent_query > eee->conf.register_interval) {
-        send_register(eee, &(eee->curr_sn->sock), mac, N2N_FORWARDED_REG_COOKIE);
+        send_register(eee, &(eee->curr_sn->sock), mac, forwarded_reg_cookie(eee));
         send_query_peer(eee, scan->mac_addr);
         scan->last_sent_query = now;
         return(0);
@@ -3040,6 +3048,13 @@ void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_control *c) {
 
             decode_REGISTER(&reg, &cmn, udp_buf, &rem, &idx);
 
+            // The hint about the peer's NAT is only meant for the way through
+            // the supernode: an older peer can send the bits back directly,
+            // as they were in a cookie of ours. Either way they are no part of
+            // the cookie's rank.
+            n2n_cookie_t nat_hint = reg.cookie & N2N_REG_COOKIE_HINT_MASK;
+            reg.cookie &= ~N2N_REG_COOKIE_HINT_MASK;
+
             if(!from_supernode && is_link_local(&sender)) {
                 traceEvent(TRACE_DEBUG, "ignored REGISTER from a link-local address");
                 break;
@@ -3095,6 +3110,19 @@ void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_control *c) {
 
             check_peer_registration_needed(eee, from_supernode, via_multicast,
                                            reg.srcMac, reg.cookie, &reg.dev_addr, (const n2n_desc_t*)&reg.dev_desc, orig_sender);
+
+            if(from_supernode) {
+                struct nat_peer *np = nat_peer_find(eee->nat_peers, reg.srcMac, true);
+                if(np->hint != nat_hint) {
+                    char hintbuf[40];
+                    traceEvent(TRACE_INFO, "NAT of %s at [%s]: %s",
+                               macaddr_str(mac_buf1, reg.srcMac),
+                               sock_to_cstr(sockbuf1, orig_sender),
+                               nat_hint_str(hintbuf, sizeof(hintbuf), nat_hint));
+                }
+                np->hint = nat_hint;
+                np->seen = now;
+            }
             break;
         }
 

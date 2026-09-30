@@ -583,11 +583,14 @@ static void jsonrpc_get_communities (char *id, struct n3n_runtime_data *eee, con
     jsonrpc_result_tail(conn, 200);
 }
 
-static void jsonrpc_get_edges_row (strbuf_t **reply, struct peer_info *peer, const char *mode, const char *community) {
+static void jsonrpc_get_edges_row (strbuf_t **reply, struct peer_info *peer, const char *mode, const char *community,
+                                   struct nat_peer *nat_peers) {
     macstr_t mac_buf;
     n3n_sock_str_t sockbuf;
     n3n_sock_str_t sockbuf2;
     dec_ip_bit_str_t ip_bit_str = {'\0'};
+    char nat[40];
+    const struct nat_peer *np = nat_peer_find(nat_peers, peer->mac_addr, false);
 
     sb_reprintf(reply,
                 "{"
@@ -601,6 +604,7 @@ static void jsonrpc_get_edges_row (strbuf_t **reply, struct peer_info *peer, con
                 "\"prefered_sockaddr\":\"%s\","
                 "\"desc\":\"%.20s\","
                 "\"version\":\"%.20s\","
+                "\"nat\":\"%s\","
                 "\"timeout\":%i,"
                 "\"uptime\":%u,"
                 "\"time_alloc\":%u,"
@@ -617,6 +621,7 @@ static void jsonrpc_get_edges_row (strbuf_t **reply, struct peer_info *peer, con
                 sock_to_cstr(sockbuf2, &(peer->preferred_sock)),
                 peer->dev_desc,
                 peer->version,
+                nat_hint_str(nat, sizeof(nat), np ? np->hint : 0),
                 peer->timeout,
                 (uint32_t)peer->uptime,
                 (uint32_t)peer->time_alloc,
@@ -654,7 +659,8 @@ static void jsonrpc_get_edges (char *id, struct n3n_runtime_data *eee, conn_t *c
             &conn->request,
             peer,
             "pSp",
-            eee->conf.community_name
+            eee->conf.community_name,
+            eee->nat_peers
         );
 
         if(jsonrpc_error_overflow(id, conn, count)) {
@@ -678,7 +684,8 @@ static void jsonrpc_get_edges (char *id, struct n3n_runtime_data *eee, conn_t *c
             &conn->request,
             peer,
             "p2p",
-            eee->conf.community_name
+            eee->conf.community_name,
+            eee->nat_peers
         );
 
         if(jsonrpc_error_overflow(id, conn, count)) {
@@ -703,7 +710,8 @@ static void jsonrpc_get_edges (char *id, struct n3n_runtime_data *eee, conn_t *c
                 &conn->request,
                 peer,
                 "sn",
-                (community->is_federation) ? "-/-" : community->community
+                (community->is_federation) ? "-/-" : community->community,
+                eee->nat_peers
             );
 
             if(jsonrpc_error_overflow(id, conn, count)) {

@@ -154,6 +154,11 @@ enum n3n_event_topic {
 #define N2N_REGULAR_REG_COOKIE     0x00010000
 #define N2N_MCAST_REG_COOKIE       0x00400000
 #define N2N_LOCAL_REG_COOKIE       0x01000000
+/* Bits below the lowest of those, in the cookie of a REGISTER that goes
+ * through the supernode: a hint how the sender's NAT maps the socket it sent
+ * from, see src/natclass.h. Below all the values above, they leave the ranking
+ * of the cookies as it is, and older edges ignore them. */
+#define N2N_REG_COOKIE_HINT_MASK   0x00000fff
 #define N2N_DESC_SIZE              16
 #define N2N_PKT_BUF_SIZE           2048
 #define N3N_SOCKBUF_SIZE           128  /* string representation of INET or INET6 sockets */
