@@ -987,8 +987,9 @@ void sn_init_conf_defaults (struct n3n_runtime_data *sss, char *sessionname) {
     strncpy(conf->version, VERSION, sizeof(n2n_version_t));
     conf->version[sizeof(n2n_version_t) - 1] = '\0';
 
-    // one address and the end of the list, see n3n_conf_sockaddr
-    conf->bind_address = calloc(2, sizeof(*conf->sas));
+    // room for a full list and its end, as n3n_conf_sockaddr makes it:
+    // open_bind_sockets() may add to it
+    conf->bind_address = calloc(N3N_BIND_MAX + 1, sizeof(*conf->sas));
 
 #ifdef _WIN32
     // Cannot rely on having unix domain sockets on windows
@@ -1042,8 +1043,8 @@ void sn_init_conf_defaults (struct n3n_runtime_data *sss, char *sessionname) {
     sss->conf.sn_mac_addr[0] &= ~0x01; /* Clear multicast bit */
     sss->conf.sn_mac_addr[0] |= 0x02;    /* Set locally-assigned bit */
 
+    // [::] stands for IPv4 too, see open_bind_sockets()
     struct sockaddr_in6 *sa = (struct sockaddr_in6 *)conf->bind_address;
-    // make sure to later set socket option IPV6_ONLY to 'no'
     sa->sin6_family = AF_INET6;
     sa->sin6_port = htons(N2N_SN_LPORT_DEFAULT);
     sa->sin6_addr = in6addr_any;

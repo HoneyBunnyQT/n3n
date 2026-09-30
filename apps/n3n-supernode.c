@@ -470,12 +470,12 @@ static SOCKET open_bind_socket (const struct sockaddr *sa, int type, int v6only)
 
 
 // A UDP and a TCP socket for each address of connection.bind, alike: the
-// first ones are also sock and tcp_sock. An IPv6 address is IPv6 only when
-// an IPv4 one has the same port - the IPv4 edges on that port belong to that
-// one. Without IPv6 on the system its addresses are left out, but a [::]
-// whose port no IPv4 address has listens on 0.0.0.0 instead, as the default
-// [::] always did. Anything else that stops a socket from opening stops the
-// supernode.
+// first ones are also sock and tcp_sock. A [::] gets a 0.0.0.0 on its port
+// beside it, and an IPv6 address is IPv6 only when an IPv4 one has the same
+// port - the IPv4 edges on that port belong to that one. Without IPv6 on the
+// system its addresses are left out, but a [::] whose port no IPv4 address
+// has listens on 0.0.0.0 instead, as the default [::] always did. Anything
+// else that stops a socket from opening stops the supernode.
 static void open_bind_sockets (struct n3n_runtime_data *sss) {
 
     struct sockaddr_storage *list = (struct sockaddr_storage *)sss->conf.bind_address;
@@ -524,6 +524,31 @@ static void open_bind_sockets (struct n3n_runtime_data *sss) {
     if(!count) {
         traceEvent(TRACE_ERROR, "no address of connection.bind can be used");
         exit(-2);
+    }
+
+    // [::] - also the default, and what a port alone stands for - is for
+    // IPv4 as well: on a socket of its own at 0.0.0.0, so that IPv4 edges
+    // are no mapped IPv6 addresses to it, unless an IPv4 address with that
+    // port is given already
+    for(int i = 0; i < count; i++) {
+        struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)&list[i];
+        uint16_t port;
+
+        if((sa6->sin6_family != AF_INET6) || !IN6_IS_ADDR_UNSPECIFIED(&sa6->sin6_addr)) {
+            continue;
+        }
+        port = ntohs(sa6->sin6_port);
+        if(v4_on_port(list, count, port) || (count == N3N_BIND_MAX)) {
+            continue;
+        }
+        memmove(&list[i + 2], &list[i + 1], (count - i) * sizeof(list[i]));   // with the end of the list
+        struct sockaddr_in *sa4 = (struct sockaddr_in *)&list[i + 1];
+        memset(&list[i + 1], 0, sizeof(list[i + 1]));
+        sa4->sin_family = AF_INET;
+        sa4->sin_port = htons(port);
+        sa4->sin_addr.s_addr = htonl(INADDR_ANY);
+        count++;
+        i++;
     }
 
     for(int i = 0; i < count; i++) {

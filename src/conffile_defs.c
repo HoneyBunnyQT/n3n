@@ -130,13 +130,14 @@ static struct n3n_conf_option section_connection[] = {
                 "interface.  By default, the daemon binds to any interface. "
                 "The supernode answers edges on each of the addresses alike, "
                 "each one a UDP and a TCP socket of its own: an edge gets "
-                "its answers from the socket it came in on. An IPv6 address "
-                "is IPv6 only when an IPv4 one has the same port, so e.g. "
-                "bind=0.0.0.0:7654 [::]:7654 gives separate sockets for IPv4 "
-                "and IPv6. A second port lets edges see whether their NAT "
-                "maps each destination to a port of its own. The edge uses "
-                "only the first address, and it is unreliable and usually "
-                "ignored when using TCP outbound edge connections",
+                "its answers from the socket it came in on. [::], which a "
+                "port alone stands for, and the supernode's default "
+                "[::]:7654, are for IPv4 too, on a socket of its own at "
+                "0.0.0.0 on the same port, unless an IPv4 address with that "
+                "port is given. A second port lets edges see whether their "
+                "NAT maps each destination to a port of its own. The edge "
+                "uses only the first address, and it is unreliable and "
+                "usually ignored when using TCP outbound edge connections",
     },
     {
         .name = "connect_tcp",
