@@ -136,8 +136,12 @@ static struct n3n_conf_option section_connection[] = {
                 "0.0.0.0 on the same port, unless an IPv4 address with that "
                 "port is given. A second port lets edges see whether their "
                 "NAT maps each destination to a port of its own. The edge "
-                "uses only the first address, and it is unreliable and "
-                "usually ignored when using TCP outbound edge connections",
+                "opens its UDP sockets the same way, by default [::]:0 - a "
+                "socket for IPv6 and one for IPv4, on ports the system "
+                "picks - and sends from the first socket of the "
+                "destination's family. Over TCP (connect_tcp) it binds its "
+                "one connection to the first address of the supernode's "
+                "family",
     },
     {
         .name = "connect_tcp",

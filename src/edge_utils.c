@@ -311,9 +311,23 @@ void reset_sup_attempts (struct n3n_runtime_data *eee) {
 }
 
 
+/* The first of the edge's UDP sockets that can send to a family: an IPv4 one
+ * for IPv4, or an IPv6 one that takes mapped IPv4 addresses too; -1 if none. */
+static int family_entry (const struct n3n_runtime_data *eee, int family) {
+
+    for(int i = 0; i < eee->bind_count; i++) {
+        if((eee->bind_family[i] == family) || ((family == AF_INET) && !eee->bind_v6only[i])) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+
 // Detect the local address by probing a connection to the supernode: the
 // address the kernel would send from towards the supernode, of whichever
-// family the supernode's address is, and the port of the main socket.
+// family the supernode's address is, and the port of the socket for that
+// family.
 static int detect_local_ip_address (n3n_sock_t* out_sock, const struct n3n_runtime_data* eee) {
 
     struct sockaddr_storage local_sock;
@@ -326,20 +340,25 @@ static int detect_local_ip_address (n3n_sock_t* out_sock, const struct n3n_runti
     memset(out_sock, 0, sizeof(*out_sock));
     out_sock->family = AF_INVALID;
 
-    // always detect local port even/especially if chosen by OS...
-    sock_len = sizeof(local_sock);
-    if(getsockname(eee->sock, (struct sockaddr *)&local_sock, &sock_len) != 0) {
-        return -1;
-    }
-    if(fill_n3nsock(&main_sock, (struct sockaddr *)&local_sock) != 0) {
-        return -1;
-    }
-
     if(!eee->curr_sn) {
         // We dont have a current supernode, so we cannot use it to find our
         // local address
         // TODO: fall back to a different sample dest address?
         return -5;
+    }
+
+    // always detect local port even/especially if chosen by OS...
+    SOCKET sock = eee->sock;
+    int i = family_entry(eee, eee->curr_sn->sock.family);
+    if(i >= 0) {
+        sock = eee->bind_sock[i];
+    }
+    sock_len = sizeof(local_sock);
+    if(getsockname(sock, (struct sockaddr *)&local_sock, &sock_len) != 0) {
+        return -1;
+    }
+    if(fill_n3nsock(&main_sock, (struct sockaddr *)&local_sock) != 0) {
+        return -1;
     }
 
     memset(&sn_sock, 0, sizeof(sn_sock));
@@ -382,177 +401,10 @@ static int detect_local_ip_address (n3n_sock_t* out_sock, const struct n3n_runti
 }
 
 
-// open socket, close it before if TCP
-// in case of TCP, 'connect()' is required
-void supernode_connect (struct n3n_runtime_data *eee) {
+// TOS and path MTU discovery, for a socket of either family
+static void set_sock_options (struct n3n_runtime_data *eee, SOCKET sock, int family) {
 
     int sockopt;
-    struct sockaddr_storage sn_sock_storage;
-    socklen_t sn_sock_len;
-    n3n_sock_t local_sock;
-    n3n_sock_str_t sockbuf;
-
-    if(eee->conf.connect_tcp) {
-        // It might be already closed, but we can simply ignore errors and
-        // carry on
-        mainloop_unregister_fd(eee->sock);
-        closesocket(eee->sock);
-        eee->sock = -1;
-    }
-
-    if(eee->sock >= 0) {
-        return;
-    }
-
-    // determine the correct address length
-    socklen_t bind_addr_len = 0;
-    if(eee->conf.bind_address) {
-        if(eee->conf.bind_address->sa_family == AF_INET) {
-            bind_addr_len = sizeof(struct sockaddr_in);
-        } else if(eee->conf.bind_address->sa_family == AF_INET6) {
-            bind_addr_len = sizeof(struct sockaddr_in6);
-        }
-    }
-
-    eee->sock = open_socket(
-        eee->conf.bind_address,
-        bind_addr_len,
-        eee->conf.connect_tcp
-    );
-
-    if(eee->sock < 0) {
-        traceEvent(TRACE_ERROR, "failed to bind main UDP port");
-        return;
-    }
-
-    if(eee->conf.connect_tcp) {
-        mainloop_register_fd(eee->sock, fd_info_proto_v3tcp);
-    } else {
-        mainloop_register_fd(eee->sock, fd_info_proto_v3udp);
-        // packet threads, if any, need a share of the new socket's port
-        edge_threads_socket_changed(eee);
-    }
-
-    // REVISIT: TODO:
-    // - add a management event for "new supernode socket" to make it simpler
-    //   to track subscriptions externally
-
-    // set tcp socket to O_NONBLOCK so connect does not hang
-    // requires checking the socket for readiness before sending and receving
-    if(eee->conf.connect_tcp) {
-#ifdef _WIN32
-        u_long value = 1;
-        ioctlsocket(eee->sock, FIONBIO, &value);
-#else
-        fcntl(eee->sock, F_SETFL, O_NONBLOCK);
-#endif
-
-        sn_sock_len = fill_sockaddr((struct sockaddr*)&sn_sock_storage, sizeof(sn_sock_storage), &eee->curr_sn->sock);
-        if(sn_sock_len == 0) {
-            traceEvent(
-                TRACE_WARNING,
-                "failed to prepare sockaddr for family %d",
-                eee->curr_sn->sock.family
-            );
-            return;
-        }
-
-        // TODO: FIXME:
-        // - this feels like a hack
-        // - this assumes we operate on a IPv6 dual stock socket
-        struct sockaddr_storage dest_addr = {0};
-        socklen_t peer_addr_len = prepare_sockaddr_for_send(
-            &dest_addr,
-            AF_INET6,
-            (const struct sockaddr *)&sn_sock_storage
-        );
-        if(peer_addr_len == 0) {
-            traceEvent(
-                TRACE_DEBUG,
-                "found unknown address family %d",
-                sn_sock_storage.ss_family
-            );
-            return;
-        }
-
-        char buf[50];
-        // the original address may be of the wrong family for the socket
-        // too, so it gets one try
-        bool retried = false;
-
-hack_retry:
-        sockaddr_to_str(buf, sizeof(buf), (const struct sockaddr *)&dest_addr);
-
-        traceEvent(
-            TRACE_DEBUG,
-            "tcp_connect family=%d, sockaddr %s",
-            dest_addr.ss_family,
-            buf
-        );
-
-        int result = connect(
-            eee->sock,
-            (struct sockaddr*)&(dest_addr),
-            peer_addr_len
-        );
-
-#ifndef _WIN32
-        if(result == -1) {
-            if(errno == EINPROGRESS) {
-                // Do nothing
-            } else if((errno == EAFNOSUPPORT) && !retried) {
-                // HACK!
-                // This should be simpler if we just had one socket for
-                // each address type
-                traceEvent(
-                    TRACE_INFO,
-                    "Dual stack socket failed, retrying original sn addr"
-                );
-                memcpy(&dest_addr, &sn_sock_storage, sizeof(dest_addr));
-                peer_addr_len = sn_sock_len;
-                retried = true;
-                goto hack_retry;
-            } else {
-                traceEvent(TRACE_INFO, "Error connecting TCP: %i", errno);
-                closesocket(eee->sock);
-                mainloop_unregister_fd(eee->sock);
-                eee->sock = -1;
-                return;
-            }
-        }
-#else
-        // Oh Windows, this just seems needlessly incompatible
-        int wsaerr = WSAGetLastError();
-
-        if(result == -1) {
-            if(wsaerr == WSAEWOULDBLOCK) {
-                // Do nothing
-            } else if((wsaerr == WSAEAFNOSUPPORT) && !retried) {
-                // HACK!
-                // This should be simpler if we just had one socket for
-                // each address type
-                traceEvent(
-                    TRACE_INFO,
-                    "Dual stack socket failed, retrying original sn addr"
-                );
-                memcpy(&dest_addr, &sn_sock_storage, sizeof(dest_addr));
-                peer_addr_len = sn_sock_len;
-                retried = true;
-                goto hack_retry;
-            } else {
-                traceEvent(
-                    TRACE_INFO,
-                    "Error connecting TCP: WSAGetLastError %i",
-                    wsaerr
-                );
-                closesocket(eee->sock);
-                mainloop_unregister_fd(eee->sock);
-                eee->sock = -1;
-                return;
-            }
-        }
-#endif
-    }
 
     if(eee->conf.tos) {
         /*
@@ -564,34 +416,40 @@ hack_retry:
          * This does work on linux, but - TODO, check this on other OS
          */
         sockopt = eee->conf.tos;
-
-        if(setsockopt(eee->sock, IPPROTO_IP, IP_TOS, (char *)&sockopt, sizeof(sockopt)) == 0)
+        int r = -1;
+        if(family == AF_INET) {
+            r = setsockopt(sock, IPPROTO_IP, IP_TOS, (char *)&sockopt, sizeof(sockopt));
+        }
+#ifdef IPV6_TCLASS
+        if(family == AF_INET6) {
+            r = setsockopt(sock, IPPROTO_IPV6, IPV6_TCLASS, (char *)&sockopt, sizeof(sockopt));
+        }
+#endif
+        if(r == 0)
             traceEvent(TRACE_INFO, "TOS set to 0x%x", eee->conf.tos);
         else
             traceEvent(TRACE_WARNING, "could not set TOS 0x%x[%d]: %s", eee->conf.tos, errno, strerror(errno));
     }
 
 #ifdef IP_PMTUDISC_DO
-    if(eee->conf.pmtu_discovery) {
-        sockopt = IP_PMTUDISC_DO;
-    } else {
-        sockopt = IP_PMTUDISC_DONT;
-    }
     traceEvent(
         TRACE_INFO,
         "Setting pmtu_discovery %s",
         (eee->conf.pmtu_discovery) ? "true" : "false"
     );
 
-    int i = setsockopt(
-        eee->sock,
-        IPPROTO_IP,
-        IP_MTU_DISCOVER,
-        &sockopt,
-        sizeof(sockopt)
-    );
-
-    if(i < 0) {
+    int r = 0;
+    if(family == AF_INET) {
+        sockopt = eee->conf.pmtu_discovery ? IP_PMTUDISC_DO : IP_PMTUDISC_DONT;
+        r = setsockopt(sock, IPPROTO_IP, IP_MTU_DISCOVER, &sockopt, sizeof(sockopt));
+    }
+#ifdef IPV6_PMTUDISC_DO
+    if(family == AF_INET6) {
+        sockopt = eee->conf.pmtu_discovery ? IPV6_PMTUDISC_DO : IPV6_PMTUDISC_DONT;
+        r = setsockopt(sock, IPPROTO_IPV6, IPV6_MTU_DISCOVER, &sockopt, sizeof(sockopt));
+    }
+#endif
+    if(r < 0) {
         traceEvent(
             TRACE_WARNING,
             "Setting pmtu_discovery failed: %s(%d)",
@@ -602,6 +460,174 @@ hack_retry:
 #else
     traceEvent(TRACE_INFO, "No platform support for setting pmtu_discovery");
 #endif
+}
+
+
+// The UDP sockets, one for each address of connection.bind, by default [::]:0,
+// which stands for an IPv6 and an IPv4 socket on ports of the system's choice.
+// A family the system does not have is left out quietly, unless asked for.
+static int open_udp_sockets (struct n3n_runtime_data *eee) {
+
+    struct sockaddr_storage list[N3N_BIND_MAX + 1];
+    int count = 0;
+
+    memset(list, 0, sizeof(list));
+    if(eee->conf.bind_address) {
+        const struct sockaddr_storage *conf_list = (const struct sockaddr_storage *)eee->conf.bind_address;
+        while((count < N3N_BIND_MAX) && conf_list[count].ss_family) {
+            list[count] = conf_list[count];
+            count++;
+        }
+    } else {
+        struct sockaddr_in6 *any = (struct sockaddr_in6 *)&list[0];
+        any->sin6_family = AF_INET6;
+        any->sin6_addr = in6addr_any;
+    }
+
+    if(n3n_open_bind_sockets(eee, list, false, eee->conf.bind_address ? TRACE_WARNING : TRACE_INFO) != 0) {
+        return -1;
+    }
+    for(int i = 0; i < eee->bind_count; i++) {
+        mainloop_register_fd(eee->bind_sock[i], fd_info_proto_v3udp);
+        set_sock_options(eee, eee->bind_sock[i], eee->bind_family[i]);
+    }
+    return 0;
+}
+
+
+// the UDP sockets, or the TCP connection to the supernode
+static void close_sockets (struct n3n_runtime_data *eee) {
+
+    if(eee->bind_count) {
+        for(int i = 0; i < eee->bind_count; i++) {
+            mainloop_unregister_fd(eee->bind_sock[i]);
+        }
+        close_bind_sockets(eee);
+        return;
+    }
+    if(eee->sock >= 0) {
+        mainloop_unregister_fd(eee->sock);
+        closesocket(eee->sock);
+        eee->sock = -1;
+    }
+}
+
+
+// open socket, close it before if TCP
+// in case of TCP, 'connect()' is required
+void supernode_connect (struct n3n_runtime_data *eee) {
+
+    struct sockaddr_storage sn_sock_storage;
+    socklen_t sn_sock_len;
+    n3n_sock_t local_sock;
+    n3n_sock_str_t sockbuf;
+
+    if(eee->conf.connect_tcp) {
+        // It might be already closed, but we can simply ignore errors and
+        // carry on
+        close_sockets(eee);
+    }
+
+    if(eee->sock >= 0) {
+        return;
+    }
+
+    if(!eee->conf.connect_tcp) {
+        if(open_udp_sockets(eee) != 0) {
+            traceEvent(TRACE_ERROR, "failed to bind main UDP port");
+            return;
+        }
+        // packet threads, if any, need a share of the new sockets' ports
+        edge_threads_socket_changed(eee);
+    } else {
+        // One TCP socket, of the supernode's family - bound to the first
+        // address of connection.bind of that family, or with IPv4 to the
+        // port of a [::], which stands for IPv4 too
+        sn_sock_len = fill_sockaddr((struct sockaddr*)&sn_sock_storage, sizeof(sn_sock_storage), &eee->curr_sn->sock);
+        if(sn_sock_len == 0) {
+            traceEvent(
+                TRACE_WARNING,
+                "failed to prepare sockaddr for family %d",
+                eee->curr_sn->sock.family
+            );
+            return;
+        }
+
+        struct sockaddr_storage local = {0};
+        local.ss_family = sn_sock_storage.ss_family;
+        const struct sockaddr_storage *list = (const struct sockaddr_storage *)eee->conf.bind_address;
+        for(int i = 0; list && (i < N3N_BIND_MAX) && list[i].ss_family; i++) {
+            const struct sockaddr_in6 *sa6 = (const struct sockaddr_in6 *)&list[i];
+
+            if(list[i].ss_family == local.ss_family) {
+                memcpy(&local, &list[i], sizeof(local));
+                break;
+            }
+            if((local.ss_family == AF_INET) && (sa6->sin6_family == AF_INET6)
+               && IN6_IS_ADDR_UNSPECIFIED(&sa6->sin6_addr)) {
+                ((struct sockaddr_in *)&local)->sin_port = sa6->sin6_port;
+                break;
+            }
+        }
+        eee->sock = open_socket((struct sockaddr *)&local,
+                                (local.ss_family == AF_INET) ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6),
+                                1 /* TCP */);
+        if(eee->sock < 0) {
+            traceEvent(TRACE_ERROR, "failed to open the TCP socket");
+            return;
+        }
+        mainloop_register_fd(eee->sock, fd_info_proto_v3tcp);
+
+        // REVISIT: TODO:
+        // - add a management event for "new supernode socket" to make it simpler
+        //   to track subscriptions externally
+
+        // set tcp socket to O_NONBLOCK so connect does not hang
+        // requires checking the socket for readiness before sending and receving
+#ifdef _WIN32
+        u_long value = 1;
+        ioctlsocket(eee->sock, FIONBIO, &value);
+#else
+        fcntl(eee->sock, F_SETFL, O_NONBLOCK);
+#endif
+
+        char buf[50];
+        sockaddr_to_str(buf, sizeof(buf), (const struct sockaddr *)&sn_sock_storage);
+        traceEvent(
+            TRACE_DEBUG,
+            "tcp_connect family=%d, sockaddr %s",
+            sn_sock_storage.ss_family,
+            buf
+        );
+
+        int result = connect(
+            eee->sock,
+            (struct sockaddr*)&(sn_sock_storage),
+            sn_sock_len
+        );
+
+#ifndef _WIN32
+        if((result == -1) && (errno != EINPROGRESS)) {
+            traceEvent(TRACE_INFO, "Error connecting TCP: %i", errno);
+            close_sockets(eee);
+            return;
+        }
+#else
+        // Oh Windows, this just seems needlessly incompatible
+        int wsaerr = WSAGetLastError();
+
+        if((result == -1) && (wsaerr != WSAEWOULDBLOCK)) {
+            traceEvent(
+                TRACE_INFO,
+                "Error connecting TCP: WSAGetLastError %i",
+                wsaerr
+            );
+            close_sockets(eee);
+            return;
+        }
+#endif
+        set_sock_options(eee, eee->sock, local.ss_family);
+    }
 
     // What to tell the supernode about our local socket, from advertise_addr:
     // - auto: nothing, local peers find each other by multicast
@@ -632,12 +658,8 @@ void supernode_disconnect (struct n3n_runtime_data *eee) {
     if(!eee) {
         return;
     }
-    if(eee->sock >= 0) {
-        closesocket(eee->sock);
-        mainloop_unregister_fd(eee->sock);
-        eee->sock = -1;
-        traceEvent(TRACE_DEBUG, "closed");
-    }
+    close_sockets(eee);
+    traceEvent(TRACE_DEBUG, "closed");
 }
 
 
@@ -660,11 +682,6 @@ struct n3n_runtime_data* edge_init (const n2n_edge_conf_t *conf, int *rv) {
     }
 
     memcpy(&eee->conf, conf, sizeof(*conf));
-
-    // only the supernode answers on more than one address for now
-    if(eee->conf.bind_address && ((struct sockaddr_storage *)eee->conf.bind_address)[1].ss_family) {
-        traceEvent(TRACE_WARNING, "the edge uses only the first address of connection.bind");
-    }
 
 #ifdef _WIN32
     // TODO: more investigations in interface naming/renaming on windows
@@ -823,6 +840,18 @@ edge_init_error:
 static uint32_t localhost_v4 = 0x7f000001;
 static uint8_t localhost_v6[IPV6_SIZE] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1};
 
+// An IPv6 link-local address is only good together with the interface it is
+// on, and n3n_sock_t has no room for that: sent to without it, the system may
+// pick any interface - n3n's own tap device included. Such an address comes
+// only from local discovery on a host with no other IPv6 address, as the
+// system prefers any other as the source; that host has IPv4 or the
+// supernode to reach its peers.
+static bool is_link_local (const n3n_sock_t *sock) {
+
+    return (sock->family == AF_INET6) && (sock->addr.v6[0] == 0xfe) && ((sock->addr.v6[1] & 0xc0) == 0x80);
+}
+
+
 /* Exclude localhost as it may be received when an edge node runs
  * in the same supernode host.
  */
@@ -938,15 +967,25 @@ static void register_with_new_peer (struct n3n_runtime_data *eee,
                 socklen_t lenTTL = sizeof(int);
                 n3n_sock_t sock = scan->sock;
                 int alter = 16; /* TODO: set by command line or more reliable prediction method */
+                // the socket these REGISTERs leave from, and its hop limit
+                int i = family_entry(eee, sock.family);
+                SOCKET ttl_sock = (i >= 0) ? eee->bind_sock[i] : eee->sock;
+                int level = IPPROTO_IP, name = IP_TTL;
+#ifdef IPV6_UNICAST_HOPS
+                if((i >= 0) && (eee->bind_family[i] == AF_INET6)) {
+                    level = IPPROTO_IPV6;
+                    name = IPV6_UNICAST_HOPS;
+                }
+#endif
 
-                getsockopt(eee->sock, IPPROTO_IP, IP_TTL, (void *) (char *) &curTTL, &lenTTL);
-                setsockopt(eee->sock, IPPROTO_IP, IP_TTL,
+                getsockopt(ttl_sock, level, name, (void *) (char *) &curTTL, &lenTTL);
+                setsockopt(ttl_sock, level, name,
                            (void *) (char *) &eee->conf.register_ttl,
                            sizeof(eee->conf.register_ttl));
                 for(; alter > 0; alter--, sock.port++) {
                     send_register(eee, &sock, mac, N2N_PORT_REG_COOKIE);
                 }
-                setsockopt(eee->sock, IPPROTO_IP, IP_TTL, (void *) (char *) &curTTL, sizeof(curTTL));
+                setsockopt(ttl_sock, level, name, (void *) (char *) &curTTL, sizeof(curTTL));
 #endif
             } else { /* eee->conf.register_ttl == 0 */
                 /* Normal STUN */
@@ -1249,12 +1288,10 @@ static void check_known_peer_sock_change (struct n3n_runtime_data *eee,
 /* ************************************** */
 
 /** Send a datagram to a socket file descriptor */
-static void sendto_fd (struct n3n_runtime_data *eee, const void *buf,
+static void sendto_fd (struct n3n_runtime_data *eee, SOCKET sock, const void *buf,
                        size_t len, struct sockaddr *dest, socklen_t dest_len) {
 
     ssize_t sent = 0;
-    // a packet thread sends from its own socket
-    SOCKET sock = n3n_thread_slot ? edge_threads_sock(eee) : eee->sock;
 
     sent = sendto(sock, buf, len, 0 /*flags*/,
                   dest, dest_len);
@@ -1343,23 +1380,29 @@ static void sendto_sock (struct n3n_runtime_data *eee, const void * buf,
 
     traceEvent(TRACE_DEBUG, "%s AF %i", __func__, dest->family);
 
-    // TODO: FIXME:
-    // This is a hack.  It was needed to successfully progress the test suite
-    // with the new IPv6 code, but I suspect it breaks things.
-    if(dest->family == AF_INET) {
-        sendto_fd(eee, buf, len, (struct sockaddr *) &peer_addr_storage, peer_addr_len);
+    if(is_link_local(dest)) {
+        traceEvent(TRACE_DEBUG, "not sending to a link-local address");
         return;
     }
 
-    // this assumes we operate on a IPv6 dual stock socket
-    peer_addr_len = prepare_sockaddr_for_send(&dest_addr, AF_INET6, (const struct sockaddr *)&peer_addr_storage);
+    int i = family_entry(eee, dest->family);
+    if(i < 0) {
+        // e.g. an IPv6 peer, and this edge bound to an IPv4 address only
+        traceEvent(TRACE_DEBUG, "no socket for address family %d", dest->family);
+        return;
+    }
+
+    // an IPv6 socket that takes IPv4 too wants it as a mapped address
+    peer_addr_len = prepare_sockaddr_for_send(&dest_addr, eee->bind_family[i], (const struct sockaddr *)&peer_addr_storage);
     if(peer_addr_len == 0) {
         // unknown or unsupported family we cannot send (unlikely after previous check though)
         traceEvent(TRACE_DEBUG, "found unknown address family %d", peer_addr_storage.ss_family);
         return;
     }
 
-    sendto_fd(eee, buf, len, (struct sockaddr *) &dest_addr, peer_addr_len);
+    // a packet thread sends from its own socket for that address
+    SOCKET sock = n3n_thread_slot ? edge_threads_bind_sock(eee, i) : eee->bind_sock[i];
+    sendto_fd(eee, sock, buf, len, (struct sockaddr *) &dest_addr, peer_addr_len);
 }
 
 
@@ -2961,6 +3004,11 @@ void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_control *c) {
 
             decode_REGISTER(&reg, &cmn, udp_buf, &rem, &idx);
 
+            if(!from_supernode && is_link_local(&sender)) {
+                traceEvent(TRACE_DEBUG, "ignored REGISTER from a link-local address");
+                break;
+            }
+
             via_multicast &= is_null_mac(reg.dstMac);
 
             if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED) {
@@ -3031,6 +3079,11 @@ void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_control *c) {
                     traceEvent(TRACE_DEBUG, "dropped REGISTER_ACK due to time stamp error");
                     return;
                 }
+            }
+
+            if(is_link_local(&sender)) {
+                traceEvent(TRACE_DEBUG, "ignored REGISTER_ACK from a link-local address");
+                break;
             }
 
             if(is_valid_peer_sock(&ra.sock))
@@ -3963,11 +4016,7 @@ void edge_term (struct n3n_runtime_data * eee) {
 
     resolve_cancel_thread(eee->resolve_parameter);
 
-    if(eee->sock >= 0) {
-        closesocket(eee->sock);
-        mainloop_unregister_fd(eee->sock);
-        eee->sock = -1;
-    }
+    close_sockets(eee);
 
 #ifndef SKIP_MULTICAST_PEERS_DISCOVERY
     if(eee->udp_multicast_sock_v4 >= 0) {

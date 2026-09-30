@@ -604,13 +604,15 @@ struct n3n_runtime_data {
 
     network_traffic_filter_t         *network_traffic_filter;
 
-    // Supernode specific data
-    int tcp_sock;                                           /* auxiliary socket for optional TCP connections */
+    // The sockets of connection.bind, on the supernode and on the edge
     SOCKET bind_sock[N3N_BIND_MAX];                         /* a UDP socket for each address of bind; sock is the first */
-    SOCKET bind_tcp[N3N_BIND_MAX];                          /* and a TCP one; tcp_sock is the first */
+    SOCKET bind_tcp[N3N_BIND_MAX];                          /* on the supernode a TCP one too; tcp_sock is the first */
     int bind_family[N3N_BIND_MAX];                          /* the family each of them was opened with */
     bool bind_v6only[N3N_BIND_MAX];                         /* IPv6 without mapped IPv4 */
-    int bind_count;                                         /* 0 for the edge, which has only sock */
+    int bind_count;                                         /* 0 for an edge connected over TCP, which has only sock */
+
+    // Supernode specific data
+    int tcp_sock;                                           /* auxiliary socket for optional TCP connections */
     n2n_mac_t mac_addr;
     uint32_t dynamic_key_time;                                /* UTC time of last dynamic key generation (second accuracy) */
     n2n_tcp_connection_t                   *tcp_connections;/* list of established TCP connections */
