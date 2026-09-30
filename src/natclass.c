@@ -179,13 +179,33 @@ n2n_cookie_t nat_view_hint (const struct nat_view *view) {
 }
 
 
+enum nat_class nat_hint_class (n2n_cookie_t hint) {
+
+    return (enum nat_class)(hint & 0x3);
+}
+
+
+bool nat_hint_range (n2n_cookie_t hint, unsigned int *lo, unsigned int *size) {
+
+    if(nat_hint_class(hint) != NAT_HARD) {
+        return false;
+    }
+    *lo = ((hint >> 2) & 0x3f) << 10;
+    *size = 2u << ((hint >> 8) & 0xf);
+    if(*lo + *size > UINT16_MAX + 1u) {
+        *size = UINT16_MAX + 1u - *lo;
+    }
+    return true;
+}
+
+
 const char *nat_hint_str (char *buf, size_t size, n2n_cookie_t hint) {
 
-    unsigned int lo = ((hint >> 2) & 0x3f) << 10;
-    unsigned int hi = lo + (2u << ((hint >> 8) & 0xf)) - 1;
+    unsigned int lo = 0;
+    unsigned int span = 0;
 
-    return class_str(buf, size, (enum nat_class)(hint & 0x3), hint & 0x4,
-                     lo, (hi > UINT16_MAX) ? UINT16_MAX : hi);
+    nat_hint_range(hint, &lo, &span);
+    return class_str(buf, size, nat_hint_class(hint), hint & 0x4, lo, lo + span - 1);
 }
 
 

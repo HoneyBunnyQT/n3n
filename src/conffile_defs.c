@@ -186,6 +186,19 @@ static struct n3n_conf_option section_connection[] = {
                 "not supported)",
     },
     {
+        .name = "punch_ports",
+        .type = n3n_conf_uint32,
+        .offset = offsetof(n2n_edge_conf_t, punch_ports),
+        .desc = "Ports to try per round towards a peer behind a hard NAT",
+        .help = "A peer behind a NAT that maps a new public port for "
+                "every destination cannot be reached on the port the "
+                "supernode sees.  If it tells that its NAT is such, and "
+                "the range of its ports is small enough, the edge sends a "
+                "REGISTER to this many more ports of the range in each "
+                "round of registrations, until one gets through.  0 turns "
+                "this off.  See docs/advanced/NatTraversal.md",
+    },
+    {
         .name = "register_interval",
         .type = n3n_conf_uint32,
         .offset = offsetof(n2n_edge_conf_t, register_interval),

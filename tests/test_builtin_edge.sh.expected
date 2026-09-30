@@ -17,6 +17,7 @@ allow_p2p=false
 connect_tcp=false
 local_discovery=false
 pmtu_discovery=false
+punch_ports=0
 register_interval=0
 register_pkt_ttl=0
 tos=0

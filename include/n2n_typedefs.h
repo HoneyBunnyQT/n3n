@@ -455,6 +455,7 @@ typedef struct n2n_edge_conf {
     char                     *encrypt_key;
     uint32_t register_interval;                      /**< Interval for supernode registration, also used for UDP NAT hole punching. */
     uint32_t register_ttl;                           /**< TTL for registration packet when UDP NAT hole punching through supernode. */
+    uint32_t punch_ports;                            /**< ports to try per round towards a peer behind a hard NAT, 0: none */
     union {
         struct sockaddr *bind_address;               /**< The address to bind to if provided; the first of an array ended by family 0 */
         struct sockaddr_storage *sas;
@@ -580,6 +581,11 @@ struct nat_peer {
     n2n_mac_t mac;
     time_t seen;             /* when it told; 0: unused */
     n2n_cookie_t hint;
+    time_t punched;          /* the last round of REGISTERs towards it, see punch_round() */
+    n3n_sock_t found;        /* behind a hard NAT: where it answered from (family 0: nowhere yet) */
+    uint32_t tried;          /* how many ports of its range have been tried */
+    uint16_t start;          /* where in the range, and in which steps */
+    uint16_t stride;
 };
 
 struct n3n_runtime_data {

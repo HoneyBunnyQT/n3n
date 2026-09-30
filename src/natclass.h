@@ -13,10 +13,10 @@
  * one uplink, or a supernode in the local network, which sees the local
  * address - leave nothing to guess.
  *
- * Nothing depends on the class yet; get_info shows it and it is logged when it
- * changes, and the peers learn it from a hint in the REGISTERs that go
- * through the supernode (see nat_view_hint()) and show it in get_edges. It is
- * a first step towards punching through hard NATs.
+ * get_info shows the class and it is logged when it changes. The peers learn
+ * it from a hint in the REGISTERs that go through the supernode (see
+ * nat_view_hint()) and show it in get_edges, and towards a peer behind a hard
+ * NAT, an edge guesses its port (see punch_hard_peer() in edge_utils.c).
  */
 
 #ifndef N3N_NATCLASS_H
@@ -61,5 +61,19 @@ const char *nat_hint_str (char *buf, size_t size, n2n_cookie_t hint);
 // The entry of a peer in the table of NAT_PEERS, or NULL; with create, a new
 // one if there is none, in place of the one heard from the longest ago
 struct nat_peer *nat_peer_find (struct nat_peer *table, const n2n_mac_t mac, bool create);
+
+// The class in a hint
+enum nat_class nat_hint_class (n2n_cookie_t hint);
+
+// The range of ports in a hint of a hard NAT, a power of two in size unless
+// it reaches the top; false for any other class
+bool nat_hint_range (n2n_cookie_t hint, unsigned int *lo, unsigned int *size);
+
+// How many ports to try per round towards a peer behind a hard NAT, by
+// default (connection.punch_ports), and the largest range to try at all: at
+// 16 ports every 20 seconds, 4096 ports take an hour and a half. Beyond that,
+// trying ports one by one hardly ever meets the one mapping of the peer.
+#define NAT_PUNCH_PORTS_DFL 16
+#define NAT_PUNCH_MAX_RANGE 4096
 
 #endif

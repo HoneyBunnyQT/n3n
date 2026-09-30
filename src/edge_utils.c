@@ -1788,6 +1788,94 @@ static void send_register (struct n3n_runtime_data * eee,
 
 /* ************************************** */
 
+/* A peer behind a hard NAT (see natclass.h) cannot be reached on the port the
+ * supernode saw, and its REGISTERs straight to us get as far as our NAT only:
+ * its NAT gave them a public port of their own, one we have not sent to. Its
+ * hint tells the range of its ports, so each round we send REGISTERs to a few
+ * more of them. Once one meets that port, its NAT lets ours in, the peer
+ * answers, and our NAT lets the answer in, as we just sent to where it comes
+ * from. Slowly, once per register_interval, so that it adds little to the
+ * REGISTERs sent anyway.
+ *
+ * Where the peer answered is kept: when its entry expires, which happens
+ * whenever the traffic goes one way only for a while, the next REGISTER
+ * there finds the port again as long as the peer keeps it.
+ */
+static void punch_hard_peer (struct n3n_runtime_data *eee, struct peer_info *peer,
+                             struct nat_peer *np, time_t now) {
+
+    unsigned int lo, size, span, sent = 0;
+    n3n_sock_t sock = peer->sock;
+    n3n_sock_str_t sockbuf;
+    macstr_t mac_buf;
+
+    // with a hard NAT of our own, the peer's port would be for another port
+    // of ours than the one we send from now
+    enum nat_class own = eee->nat[sock.family == AF_INET6].nat_class;
+    if((own == NAT_HARD) || (own == NAT_SEVERAL_ADDRESSES)) {
+        return;
+    }
+    if(np->found.family) {
+        send_register(eee, &np->found, peer->mac_addr, N2N_PORT_REG_COOKIE);
+    }
+    if(!nat_hint_range(np->hint, &lo, &size) || (size > NAT_PUNCH_MAX_RANGE) ||
+       ((sock.family != AF_INET) && (sock.family != AF_INET6)) || is_empty_ip_address(&sock) ||
+       (now - np->punched < eee->conf.register_interval)) {
+        return;
+    }
+    // A stride through the range rounded up to a power of two meets every
+    // port once, in an order hard to tell from random. Once through, it
+    // starts over: the peer's port may have changed meanwhile.
+    for(span = 1; span < size; span <<= 1);
+    if(np->tried % span == 0) {
+        np->start = n3n_rand();
+        np->stride = n3n_rand() | 1;
+    }
+    while(sent < eee->conf.punch_ports) {
+        unsigned int i = (np->start + np->tried * np->stride) & (span - 1);
+        np->tried++;
+        if((i < size) && (lo + i >= 1024)) {
+            sock.port = lo + i;
+            send_register(eee, &sock, peer->mac_addr, N2N_PORT_REG_COOKIE);
+            sent++;
+        }
+        if(np->tried % span == 0) {
+            break;
+        }
+    }
+    np->punched = now;
+    traceEvent(TRACE_INFO, "sent REGISTERs to %u more ports of %s [%s], %u tried",
+               sent, macaddr_str(mac_buf, peer->mac_addr), sock_to_cstr(sockbuf, &sock),
+               np->tried);
+}
+
+
+/* A round towards a peer that cannot reach us directly yet: with it behind a
+ * hard NAT, guess its port; with us behind one, send a REGISTER straight to
+ * its public socket, which makes the port it guesses for, and keeps it for
+ * the next rounds. */
+static void punch_round (struct n3n_runtime_data *eee, struct peer_info *peer, time_t now) {
+
+    struct nat_peer *np = nat_peer_find(eee->nat_peers, peer->mac_addr, false);
+    int f = peer->sock.family;
+
+    if(!np || !eee->conf.punch_ports || eee->conf.connect_tcp || !eee->conf.allow_p2p) {
+        return;
+    }
+
+    enum nat_class theirs = nat_hint_class(np->hint);
+    if(theirs == NAT_HARD) {
+        punch_hard_peer(eee, peer, np, now);
+    } else if((theirs != NAT_SEVERAL_ADDRESSES) && ((f == AF_INET) || (f == AF_INET6)) &&
+              !is_empty_ip_address(&peer->sock) && (eee->nat[f == AF_INET6].nat_class == NAT_HARD) &&
+              (now - np->punched >= eee->conf.register_interval)) {
+        send_register(eee, &peer->sock, peer->mac_addr, N2N_REGULAR_REG_COOKIE);
+        np->punched = now;
+    }
+}
+
+/* ************************************** */
+
 /** Send a REGISTER_ACK packet to a peer edge. */
 static void send_register_ack (struct n3n_runtime_data * eee,
                                const n3n_sock_t * remote_peer,
@@ -2005,6 +2093,7 @@ static int check_query_peer_info (struct n3n_runtime_data *eee, time_t now, cons
         send_register(eee, &(eee->curr_sn->sock), mac, forwarded_reg_cookie(eee));
         send_query_peer(eee, scan->mac_addr);
         scan->last_sent_query = now;
+        punch_round(eee, scan, now);
         return(0);
     }
 
@@ -3119,9 +3208,19 @@ void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_control *c) {
                                macaddr_str(mac_buf1, reg.srcMac),
                                sock_to_cstr(sockbuf1, orig_sender),
                                nat_hint_str(hintbuf, sizeof(hintbuf), nat_hint));
+                    // another range, or no guessing at all
+                    np->tried = 0;
+                    memset(&np->found, 0, sizeof(np->found));
                 }
                 np->hint = nat_hint;
                 np->seen = now;
+
+                // the peer is trying to reach us, so this is a round as well
+                struct peer_info *peer;
+                HASH_FIND_PEER(eee->pending_peers, reg.srcMac, peer);
+                if(peer) {
+                    punch_round(eee, peer, now);
+                }
             }
             break;
         }
@@ -3163,6 +3262,12 @@ void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_control *c) {
             peer_set_p2p_confirmed(eee, ra.srcMac,
                                    ra.cookie,
                                    &sender, now);
+
+            // behind a hard NAT, the port it answered from is worth keeping
+            struct nat_peer *np = nat_peer_find(eee->nat_peers, ra.srcMac, false);
+            if(np && (nat_hint_class(np->hint) == NAT_HARD)) {
+                np->found = sender;
+            }
             break;
         }
 
@@ -3408,13 +3513,22 @@ void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_control *c) {
                 }
             } else {
                 // regular PEER_INFO
+                bool known = false;
                 HASH_FIND_PEER(eee->pending_peers, pi.mac, scan);
-                if(!scan)
+                if(!scan) {
                     // just in case the remote edge has been upgraded by the REG/ACK mechanism in the meantime
                     HASH_FIND_PEER(eee->known_peers, pi.mac, scan);
+                    known = (scan != NULL);
+                }
 
                 if(scan) {
-                    scan->sock = pi.sock;
+                    // A peer that got known meanwhile keeps the address it
+                    // answered from: the supernode may see it at another one,
+                    // as behind a hard NAT, where the one that answered was
+                    // guessed (see punch_hard_peer())
+                    if(!known) {
+                        scan->sock = pi.sock;
+                    }
 
                     traceEvent(TRACE_INFO, "Rx PEER_INFO %s can be found at [%s]",
                                macaddr_str(mac_buf1, pi.mac),
@@ -3429,7 +3543,7 @@ void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_control *c) {
                                    sock_to_cstr(sockbuf1, &pi.preferred_sock));
                     }
 
-                    send_register(eee, &scan->sock, scan->mac_addr, N2N_REGULAR_REG_COOKIE);
+                    send_register(eee, &pi.sock, scan->mac_addr, N2N_REGULAR_REG_COOKIE);
 
                 } else {
                     traceEvent(TRACE_INFO, "Rx PEER_INFO unknown peer %s",
@@ -4304,6 +4418,7 @@ void edge_init_conf_defaults (n2n_edge_conf_t *conf, char *sessionname) {
     conf->local_discovery = true;
     conf->threads = 1;
     conf->register_interval = REGISTER_SUPER_INTERVAL_DFL;
+    conf->punch_ports = NAT_PUNCH_PORTS_DFL;
 
     // Ensure we can notice if the config has set a dev name
     conf->tuntap_dev_name[0] = '\0';
