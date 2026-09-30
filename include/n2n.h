@@ -120,6 +120,10 @@ int memxor (uint8_t *destination, const uint8_t *source, size_t len);
 
 /* Sockets */
 SOCKET open_socket(struct sockaddr *, socklen_t, int type);
+int n3n_open_bind_sockets (struct n3n_runtime_data *sss, struct sockaddr_storage *list,
+                           bool with_tcp, int missing_v6_level);
+// closes what n3n_open_bind_sockets() opened
+void close_bind_sockets (struct n3n_runtime_data *sss);
 int sock_equal (const n3n_sock_t * a,
                 const n3n_sock_t * b);
 socklen_t prepare_sockaddr_for_send (struct sockaddr_storage *out_sa,
