@@ -136,6 +136,7 @@ OBJS=\
 	src/n2n.o \
 	src/n2n_port_mapping.o \
 	src/n2n_regex.o \
+	src/natclass.o \
 	src/network_traffic_filter.o \
 	src/peer_info.o \
 	src/pktbuf.o \

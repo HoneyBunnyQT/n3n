@@ -29,6 +29,7 @@
 #include "management.h"
 #include "n2n.h"
 #include "n2n_typedefs.h"
+#include "natclass.h"    // for nat_view_str
 #include "peer_info.h"   // for peer_info
 #include "counter.h"     // for SHARED_LOAD
 #include "stats.h"       // for n3n_stats_sum
@@ -723,6 +724,8 @@ static void jsonrpc_get_edges (char *id, struct n3n_runtime_data *eee, conn_t *c
 static void jsonrpc_get_info (char *id, struct n3n_runtime_data *eee, conn_t *conn, const char *params) {
     macstr_t mac_buf;
     n3n_sock_str_t sockbuf;
+    char nat4[40];
+    char nat6[40];
 
     ipstr_t ip_address;
 
@@ -738,14 +741,18 @@ static void jsonrpc_get_info (char *id, struct n3n_runtime_data *eee, conn_t *co
                 "\"is_supernode\":%i,"
                 "\"macaddr\":\"%s\","
                 "\"ip4addr\":\"%s\","
-                "\"sockaddr\":\"%s\"}",
+                "\"sockaddr\":\"%s\","
+                "\"nat4\":\"%s\","
+                "\"nat6\":\"%s\"}",
                 VERSION,
                 BUILDDATE,
                 eee->conf.is_edge,
                 eee->conf.is_supernode,
                 is_null_mac(eee->device.mac_addr) ? "" : macaddr_str(mac_buf, eee->device.mac_addr),
                 ip_address,
-                sock_to_cstr(sockbuf, eee->conf.is_edge ? &eee->advertised_sock : &eee->conf.preferred_sock)
+                sock_to_cstr(sockbuf, eee->conf.is_edge ? &eee->advertised_sock : &eee->conf.preferred_sock),
+                nat_view_str(nat4, sizeof(nat4), &eee->nat[0]),
+                nat_view_str(nat6, sizeof(nat6), &eee->nat[1])
     );
 
     jsonrpc_result_tail(conn, 200);

@@ -55,6 +55,7 @@
 #include "minmax.h"                  // for MIN, MAX
 #include "n2n.h"                     // for n3n_runtime_data, n2n_edge_...
 #include "n2n_wire.h"                // for fill_sockaddr, decod...
+#include "natclass.h"                // for nat_view_add, nat_view_reset, ...
 #include "pearson.h"                 // for pearson_hash_128, pearson_hash_64
 #include "peer_info.h"               // for peer_info, clear_peer_list, ...
 #include "resolve.h"                 // for resolve_create_thread, resolve_c...
@@ -491,7 +492,42 @@ static int open_udp_sockets (struct n3n_runtime_data *eee) {
         mainloop_register_fd(eee->bind_sock[i], fd_info_proto_v3udp);
         set_sock_options(eee, eee->bind_sock[i], eee->bind_family[i]);
     }
+
+    // the NAT maps new sockets anew; each family's samples are about the
+    // socket that sends to that family
+    for(int f = 0; f < 2; f++) {
+        int i = family_entry(eee, f ? AF_INET6 : AF_INET);
+        struct sockaddr_storage sa;
+        socklen_t len = sizeof(sa);
+        uint16_t port = 0;
+        if((i >= 0) && (getsockname(eee->bind_sock[i], (struct sockaddr *)&sa, &len) == 0)) {
+            port = ntohs((sa.ss_family == AF_INET6) ? ((struct sockaddr_in6 *)&sa)->sin6_port
+                                                     : ((struct sockaddr_in *)&sa)->sin_port);
+        }
+        nat_view_reset(&eee->nat[f], port);
+    }
     return 0;
+}
+
+
+// What a supernode saw of the socket the edge sent to it from. Over TCP it
+// sees a connection, which a NAT maps apart from the UDP socket.
+static void note_nat (struct n3n_runtime_data *eee, const n3n_sock_t *sn, const n3n_sock_t *seen, time_t now) {
+
+    char buf[40];
+    n3n_sock_str_t sockbuf;
+
+    if(eee->conf.connect_tcp || (seen->family != sn->family) ||
+       ((sn->family != AF_INET) && (sn->family != AF_INET6))) {
+        return;
+    }
+    struct nat_view *view = &eee->nat[sn->family == AF_INET6];
+    if(nat_view_add(view, sn, seen, now)) {
+        traceEvent(TRACE_NORMAL, "%s NAT: %s, as of supernode [%s]",
+                   (sn->family == AF_INET6) ? "IPv6" : "IPv4",
+                   nat_view_str(buf, sizeof(buf), view),
+                   sock_to_cstr(sockbuf, sn));
+    }
 }
 
 
@@ -3150,8 +3186,10 @@ void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_control *c) {
                 return;
             }
 
-            if(is_valid_peer_sock(&ra.sock))
+            if(is_valid_peer_sock(&ra.sock)) {
                 orig_sender = &(ra.sock);
+                note_nat(eee, &sender, &ra.sock, now);
+            }
 
             traceEvent(TRACE_INFO, "Rx REGISTER_SUPER_ACK from %s [%s] (external %s) with %u attempts left",
                        macaddr_str(mac_buf1, ra.srcMac),
@@ -3331,6 +3369,12 @@ void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_control *c) {
                     traceEvent(TRACE_INFO, "Rx PONG from supernode %s version '%s'",
                                macaddr_str(mac_buf1, pi.srcMac),
                                pi.version);
+
+                    // by the sender, not scan->sock: that is one entry for
+                    // all the addresses of a supernode
+                    if(is_valid_peer_sock(&pi.sock)) {
+                        note_nat(eee, &sender, &pi.sock, now);
+                    }
 
                     break;
                 }

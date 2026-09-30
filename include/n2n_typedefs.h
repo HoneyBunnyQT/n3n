@@ -545,6 +545,32 @@ typedef struct slots slots_t;
 
 struct edge_threads;
 
+/* How the NAT maps one of the edge's sockets, from what its supernodes see of
+ * it - see src/natclass.h */
+#define NAT_SAMPLES 8
+
+enum nat_class {
+    NAT_UNKNOWN = 0,         /* too few supernodes to tell */
+    NAT_EASY,                /* one public port for every destination */
+    NAT_HARD,                /* a public port per destination */
+    NAT_SEVERAL_ADDRESSES,   /* a public address per destination */
+};
+
+struct nat_sample {
+    n3n_sock_t to;           /* the supernode, as its reply came from it */
+    n3n_sock_t seen;         /* the edge, as that supernode saw it */
+    time_t when;             /* 0: unused */
+};
+
+struct nat_view {
+    struct nat_sample sample[NAT_SAMPLES];
+    enum nat_class nat_class;
+    bool port_kept;          /* NAT_EASY: the public port is the local one */
+    uint16_t port_lo;        /* NAT_HARD: the lowest and the highest public port seen */
+    uint16_t port_hi;
+    uint16_t local_port;     /* of the socket, 0 if there is none */
+};
+
 struct n3n_runtime_data {
     n2n_edge_conf_t conf;
 
@@ -571,6 +597,7 @@ struct n3n_runtime_data {
     slots_t *mgmt_slots;
     int sock;
     n3n_sock_t advertised_sock;                                          /**< local socket told to the supernode, from advertise_addr (AF_INVALID: none) */
+    struct nat_view nat[2];                                              /**< the NAT of the IPv4 [0] and the IPv6 [1] socket */
 
 #ifndef SKIP_MULTICAST_PEERS_DISCOVERY
     int udp_multicast_sock_v4;                                           /**< socket for local IPv4 multicast registrations. */
