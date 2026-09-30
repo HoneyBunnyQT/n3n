@@ -57,6 +57,7 @@
 
 // FIXME, including private headers
 #include "../src/crypto/speck.h"     // for speck_init, speck_context_t
+#include "../src/edge_threads.h"     // for edge_threads_open_early
 #include "../src/peer_info.h"        // for peer_info, peer_info_t
 #include "../src/resolve.h"          // for resolve_check
 
@@ -1208,6 +1209,9 @@ int main (int argc, char* argv[]) {
     );
 #endif
 #endif /* HAVE_LIBCAP */
+
+    // while this is still the user of the main socket
+    edge_threads_open_early(eee);
 
     if((conf.userid != 0) || (conf.groupid != 0)) {
         traceEvent(TRACE_NORMAL, "dropping privileges to uid=%d, gid=%d",

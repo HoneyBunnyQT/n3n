@@ -613,6 +613,86 @@ static SOCKET open_like (SOCKET like) {
 }
 
 
+// Worker sockets opened ahead of the workers by edge_threads_open_early().
+// The kernel shares a port's traffic only between SO_REUSEPORT sockets of
+// the same user, and the daemons drop their privileges before the workers
+// start: sockets opened then belong to another user than the main thread's,
+// get a group of their own, and the kernel hands every datagram to one of
+// the two groups only.
+static SOCKET early_sock[N3N_THREADS_MAX][N3N_BIND_MAX];
+static int early_slots;                     // slots 1 up to early_slots - 1
+static int early_nsock;
+
+
+// the main thread's socket that a worker's socket i shares a port with
+static SOCKET like_sock (struct n3n_runtime_data *eee, int i) {
+
+    return i ? eee->bind_sock[i] : eee->sock;
+}
+
+
+void edge_threads_open_early (struct n3n_runtime_data *eee) {
+
+    // as many as edge_threads_wanted() will ask for, without its log line
+    int threads = eee->conf.threads ? (int)eee->conf.threads : edge_threads_possible(&eee->conf);
+
+#ifndef __linux__
+    return;
+#endif
+    if(threads > N3N_THREADS_MAX) {
+        threads = N3N_THREADS_MAX;
+    }
+    if((threads <= 1) || eee->conf.connect_tcp || (eee->sock < 0)) {
+        return;
+    }
+    early_nsock = eee->bind_count ? eee->bind_count : 1;
+    for(int slot = 1; slot < threads; slot++) {
+        for(int i = 0; i < early_nsock; i++) {
+            early_sock[slot][i] = open_like(like_sock(eee, i));
+        }
+    }
+    early_slots = threads;
+}
+
+
+// Take the socket opened early for a worker's socket i, if it is still on
+// the address of the main thread's one - which may have been opened again
+// since, then as the same user as a new one.
+static SOCKET take_early (struct n3n_runtime_data *eee, int slot, int i) {
+
+    struct sockaddr_storage now, then;
+    socklen_t now_len = sizeof(now), then_len = sizeof(then);
+    SOCKET sock;
+
+    if((slot >= early_slots) || (i >= early_nsock) || (early_sock[slot][i] < 0)) {
+        return -1;
+    }
+    sock = early_sock[slot][i];
+    early_sock[slot][i] = -1;
+    if(!getsockname(like_sock(eee, i), (struct sockaddr *)&now, &now_len)
+       && !getsockname(sock, (struct sockaddr *)&then, &then_len)
+       && (now_len == then_len) && !memcmp(&now, &then, now_len)) {
+        return sock;
+    }
+    closesocket(sock);
+    return -1;
+}
+
+
+// the early sockets no worker took, e.g. when fewer threads started
+static void close_early_sockets (void) {
+
+    for(int slot = 1; slot < early_slots; slot++) {
+        for(int i = 0; i < early_nsock; i++) {
+            if(early_sock[slot][i] >= 0) {
+                closesocket(early_sock[slot][i]);
+            }
+        }
+    }
+    early_slots = 0;
+}
+
+
 // The sockets a worker shares with the main thread: its main socket's, and
 // on the supernode those of the further addresses of connection.bind.
 static int open_worker_sockets (struct n3n_runtime_data *eee, struct worker *w) {
@@ -620,10 +700,13 @@ static int open_worker_sockets (struct n3n_runtime_data *eee, struct worker *w) 
     int n = eee->bind_count ? eee->bind_count : 1;
 
     for(w->nsock = 0; w->nsock < n; w->nsock++) {
-        SOCKET like = w->nsock ? eee->bind_sock[w->nsock] : eee->sock;
+        SOCKET sock = take_early(eee, w->slot, w->nsock);
 
-        w->sock[w->nsock] = open_like(like);
-        if(w->sock[w->nsock] < 0) {
+        if(sock < 0) {
+            sock = open_like(like_sock(eee, w->nsock));
+        }
+        w->sock[w->nsock] = sock;
+        if(sock < 0) {
             return -1;
         }
     }
@@ -690,8 +773,9 @@ static int threads_start (struct n3n_runtime_data *eee, int threads,
     fcntl(t->wake_pipe[1], F_SETFL, O_NONBLOCK);
 
     // every socket bound to the same address and port with SO_REUSEPORT -
-    // open_socket() sets it - gets a share of the senders
+    // open_like() sets it - gets a share of the senders
     for(slot = 1; slot < threads; slot++) {
+        t->worker[slot].slot = slot;
         if(open_worker_sockets(eee, &t->worker[slot]) < 0) {
             traceEvent(TRACE_WARNING, "cannot open a socket for thread %d", slot);
             break;
@@ -702,7 +786,6 @@ static int threads_start (struct n3n_runtime_data *eee, int threads,
         }
         pthread_mutex_init(&t->queue[slot]->overflow_lock, NULL);
         t->worker[slot].eee = eee;
-        t->worker[slot].slot = slot;
         t->worker[slot].tap = -1;
 #ifdef __linux__
         if(ops->tap) {
@@ -744,6 +827,8 @@ int edge_threads_start (struct n3n_runtime_data *eee, int threads,
                         const struct edge_thread_ops *ops) {
 
     int started = threads_start(eee, threads, ops);
+
+    close_early_sockets();
 
 #ifdef __linux__
     if(ops->tap) {
@@ -872,6 +957,9 @@ void edge_threads_post_pdu (struct n3n_runtime_data *eee,
 }
 
 void edge_threads_drain (struct n3n_runtime_data *eee) {
+}
+
+void edge_threads_open_early (struct n3n_runtime_data *eee) {
 }
 
 int edge_threads_start (struct n3n_runtime_data *eee, int threads,

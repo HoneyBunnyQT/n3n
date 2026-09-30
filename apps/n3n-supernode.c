@@ -43,6 +43,7 @@
 #include "uthash.h"            // for UT_hash_handle, HASH_ITER, HASH_ADD_STR
 
 // FIXME, including private headers
+#include "../src/edge_threads.h"      // for edge_threads_open_early
 #include "../src/peer_info.h"         // for peer_info
 #include "../src/resolve.h"           // for resolve_hostnames_str_to_peer_info
 
@@ -754,6 +755,9 @@ int main (int argc, char * argv[]) {
      * If we have a non-zero requested uid/gid, attempt to switch to use
      * those
      */
+    // while this is still the user of the supernode's sockets
+    edge_threads_open_early(&sss_node);
+
     if((sss_node.conf.userid != 0) || (sss_node.conf.groupid != 0)) {
         traceEvent(TRACE_INFO, "dropping privileges to uid=%d, gid=%d",
                    (signed int)sss_node.conf.userid, (signed int)sss_node.conf.groupid);

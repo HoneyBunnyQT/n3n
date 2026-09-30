@@ -78,6 +78,11 @@ void edge_threads_post_pdu (struct n3n_runtime_data *eee,
 // On the main thread, holding the lock: apply everything the workers queued.
 void edge_threads_drain (struct n3n_runtime_data *eee);
 
+// Open the workers' sockets now, for edge_threads_start() to use later: to be
+// called once the main sockets are open and before dropping privileges, as
+// sockets opened after that do not share their port's traffic with them.
+void edge_threads_open_early (struct n3n_runtime_data *eee);
+
 // Start threads-1 workers beside the main thread; returns how many threads
 // handle packets now, the main thread included - 1 if threads are not
 // possible here. The tap queues beyond that are closed. Called by the main
