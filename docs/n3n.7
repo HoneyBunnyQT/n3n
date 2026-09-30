@@ -102,7 +102,8 @@ broadcast these and edges send them direct in peer-to-peer mode.
 .TP
 REGISTER
 A peer-to-peer mode registration request from one edge to another. Supernodes
-forward these to facilitate NAT crossing introductions.
+forward these to facilitate NAT crossing introductions; the one forwarded also
+carries a hint how the sender's NAT maps it.
 .TP
 REGISTER_ACK
 Complete peer-to-peer mode setup between two edges. These messages need to
@@ -134,4 +135,4 @@ ifconfig(8) n3n-edge(8) n3n-supernode(8)
 .br
 the documentation contained in the source code
 .br
-the extensive documentation found in n3n's \fBdoc/\fR folder
+the extensive documentation found in n3n's \fBdocs/\fR folder

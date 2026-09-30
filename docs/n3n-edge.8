@@ -243,6 +243,17 @@ specified but no valid keys can be determined, edge exits with an error at
 startup. If all keys become invalid while running, edge continues to encode
 using the last key that was valid.
 
+.SH NAT TRAVERSAL
+By default the edge opens a UDP socket for IPv6 and one for IPv4, on ports the
+system picks (\fBconnection.bind\fR=[::]:0), and sends each packet from the
+socket of its destination's family.  From the answers of its supernodes, it
+tells how its NAT maps it: \fBn3nctl get_info\fR shows that as nat4 and nat6,
+and \fBn3nctl get_edges\fR shows it for peers not reached directly yet.
+Towards a peer behind a NAT that maps each destination to a port of its own,
+the edge tries a few more of the peer's ports in each round of registrations
+(\fBconnection.punch_ports\fR).  See docs/advanced/NatTraversal.md for
+details.
+
 .SH MANAGEMENT INTERFACE
 Edge always provides JsonAPI listening on a Unix Domain socket in /run/n3n and
 optionally a TCP port (if configured with the management.port option)
@@ -265,8 +276,8 @@ deri (at) ntop.org - original author of n2n
 Don Bindner
 (--) - significant contributions to n2n-1
 .SH SEE ALSO
-ifconfig(8) supernode(8) tunctl(8) n3n(7)
+ifconfig(8) n3n-supernode(8) tunctl(8) n3n(7)
 .br
 the documentation contained in the source code
 .br
-the extensive documentation found in n3n's \fBdoc/\fR folder
+the extensive documentation found in n3n's \fBdocs/\fR folder

@@ -81,6 +81,14 @@ option - multiple times if needed. Details can be found in the [Traffic
 Restrictions](../advanced/TrafficRestrictions.md).
 
 
+## NAT Traversal
+
+How edges get through NATs to reach each other directly, how an edge tells
+what kind of NAT it is behind, and what `connection.bind` and
+`connection.punch_ports` do about it is described in
+[NAT Traversal](../advanced/NatTraversal.md).
+
+
 ## Threads
 
 An edge or a supernode with a lot of traffic can handle its packets on

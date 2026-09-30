@@ -19,7 +19,14 @@ below) on your firewall (usually `iptables`).
 3. Start the supernode service with `sudo systemctl start n3n-supernode`
 4. Optionally enable supernode start on boot: `sudo systemctl enable n3n-supernode`
 
-Now the supernode service should be up and running on port 1234. On your edge
-nodes you can now specify `-l your_supernode_ip:1234` to use it. All the edge
-nodes must use the same supernode (or be part of the same
-[supernode federation](Federation.md))
+Now the supernode service should be up and running on port 1234, for IPv6 and
+IPv4, UDP and TCP. On your edge nodes you can now specify
+`-l your_supernode_ip:1234` to use it. All the edge nodes must use the same
+supernode (or be part of the same [supernode federation](Federation.md))
+
+`bind` takes several addresses, separated by spaces, and the supernode answers
+edges on each of them alike, for example `bind=[::]:1234 [::]:1235` - open
+both ports then.  A second port lets edges see whether their NAT maps each
+destination to a port of its own (see [NAT Traversal](../advanced/NatTraversal.md)).
+A port alone, or `[::]`, stands for IPv6 and IPv4; a given address only for
+its own family.

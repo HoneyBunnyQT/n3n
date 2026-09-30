@@ -16,7 +16,10 @@ The Supernode is a node introduction registry, broadcast conduit and packet
 relay node for the n3n system.
 
 Once it has the full config loaded, the supernode begins listening on the
-specified UDP port for node registrations, and other packets to route. The
+addresses of \fBconnection.bind\fR, UDP and TCP, for node registrations, and
+other packets to route.  By default that is [::]:7654, which stands for IPv6
+and IPv4 on port 7654; several addresses can be given, and the supernode
+answers edges on each of them alike.  The
 supernode can service any number of communities and routes packets only between
 members of the same community. The supernode does not hold the community
 encryption key and so cannot snoop or inject packets into the community.
@@ -77,7 +80,12 @@ set the federation name so it is not visible at the command line
 .SH EXAMPLES
 .TP
 .B n3n-supernode start -v
-Start supernode listening on default UDP port (7654) with verbose output.
+Start supernode listening on the default port (7654), IPv6 and IPv4, with
+verbose output.
+.TP
+.B n3n-supernode start \-O connection.bind='[::]:7654 [::]:7655'
+Also listen on port 7655.  With two ports, an edge can see that its NAT maps
+every destination to a port of its own, even with just this supernode.
 .PP
 .SH RESTART
 When supernode restarts it loses all registration information from associated
@@ -98,8 +106,8 @@ andrews (at) ntop.org
 .TP
 Don Bindner
 .SH SEE ALSO
-ifconfig(8) edge(8)
+ifconfig(8) n3n-edge(8) n3n(7)
 .br
 the documentation contained in the source code
 .br
-the extensive documentation found in n3n's \fBdoc/\fR folder
+the extensive documentation found in n3n's \fBdocs/\fR folder
