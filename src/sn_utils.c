@@ -3079,6 +3079,7 @@ static void process_pdu_handed_over (struct n3n_runtime_data *sss,
                                      uint8_t *buf, size_t size, const void *note) {
 
     struct pdu_head *h = (struct pdu_head *)note;
+    struct pdu_head again;
     struct sn_community *comm = NULL;
 
     if(h->community[0]) {
@@ -3088,6 +3089,17 @@ static void process_pdu_handed_over (struct n3n_runtime_data *sss,
             traceEvent(TRACE_DEBUG, "dropped a PDU for community '%s' which is gone", h->community);
             return;
         }
+    } else {
+        // The community may have come up meanwhile, from the REGISTER_SUPER
+        // of another edge handed over just before this one: look again, or
+        // this REGISTER_SUPER creates a second community of the same name,
+        // and the edges in one never find those in the other. The thread
+        // found no community, so it has not decrypted the header either.
+        if(pdu_head_find(sss, buf, size, &again, &comm) < 0) {
+            return;
+        }
+        again.socket_fd = h->socket_fd;
+        h = &again;
     }
     process_pdu_body(sss, sender, sender_len, h->socket_fd, buf, size, comm, h, time(NULL));
 }
