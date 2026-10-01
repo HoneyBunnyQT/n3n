@@ -32,6 +32,9 @@
 // Connect the two runtimes
 void local_link_init (struct n3n_runtime_data *relay, struct n3n_runtime_data *edge);
 
+// The edge of the supernode of this process, if it has one
+struct n3n_runtime_data *local_link_edge (void);
+
 // The address of the other side, as either side sees it
 void local_link_sock (n3n_sock_t *out);
 bool local_link_is_sock (const n3n_sock_t *sock);

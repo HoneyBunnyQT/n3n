@@ -136,6 +136,7 @@ OBJS=\
 	src/logging.o \
 	src/mainloop.o \
 	src/management.o \
+	src/management_page.o \
 	src/metrics.o \
 	src/n2n.o \
 	src/n2n_port_mapping.o \
@@ -194,9 +195,8 @@ DEPS+=$(OBJS:%.o=%.d)
 CLEAN_FILES+=$(OBJS) $(RELAY_OBJS)
 CLEAN_FILES+=$(DEPS)
 
-src/management.o: src/management_index.html.h
 src/management.o: src/management_script.js.h
-CLEAN_FILES+=src/management_index.html.h src/management_script.js.h
+CLEAN_FILES+=src/management_script.js.h
 
 src/libn3n.a: $(OBJS)
 	@echo "  AR      $@"

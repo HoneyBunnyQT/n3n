@@ -59,6 +59,12 @@ void local_link_init (struct n3n_runtime_data *relay, struct n3n_runtime_data *e
 }
 
 
+struct n3n_runtime_data *local_link_edge (void) {
+
+    return link_relay ? link_edge : NULL;
+}
+
+
 void local_link_sock (n3n_sock_t *out) {
 
     uint32_t addr = htonl(INADDR_LOOPBACK);

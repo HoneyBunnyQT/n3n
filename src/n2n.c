@@ -27,7 +27,8 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>          // for free, atoi, calloc, strtol
-#include <string.h>          // for memcmp, memcpy, memset, strlen, strerror
+#include <string.h>
+#include <strings.h>            // for strncasecmp          // for memcmp, memcpy, memset, strlen, strerror
 #include <sys/time.h>        // for gettimeofday, timeval
 
 #include "n2n.h"

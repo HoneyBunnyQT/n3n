@@ -45,8 +45,12 @@ docmd sudo "${BINDIR}"/apps/n3n-edge start ci_edge1 \
 # available?
 sleep 0.1
 
+# The page is made by the daemon: its sections, as a text browser sees them
 docmd curl --unix-socket /run/n3n/ci_edge1/mgmt http://x/ -o /tmp/index.html
-docmd diff -u src/management_index.html /tmp/index.html
+docmd grep -o '<h[23]>[A-Za-z ]*' /tmp/index.html
+
+# An HTTP/1.0 client (lynx) reads until the connection closes
+docmd timeout 5 curl -s --http1.0 --unix-socket /run/n3n/ci_edge1/mgmt http://x/ -o /dev/null
 
 docmd curl --unix-socket /run/n3n/ci_edge1/mgmt http://x/script.js -o /tmp/script.js
 docmd diff -u src/management_script.js /tmp/script.js

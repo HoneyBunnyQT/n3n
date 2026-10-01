@@ -20,12 +20,15 @@
 #include <stdint.h>
 #include <stdlib.h>      // for strtoul
 #include <string.h>      // for strtok, strlen, strncpy
+#include <strings.h>     // for strncasecmp
 #include <time.h>
 #include <unistd.h>
 
 #include "base64.h"      // for base64decode
 #include "connslot/strbuf.h"
+#include "local_link.h"  // for local_link_edge
 #include "management.h"
+#include "management_page.h"
 #include "n2n.h"
 #include "n2n_typedefs.h"
 #include "natclass.h"    // for nat_view_str
@@ -1106,7 +1109,40 @@ static void jsonrpc_help (char *id, struct n3n_runtime_data *eee, conn_t *conn, 
     jsonrpc_result_tail(conn, 200);
 }
 
+// The JSON API of one role of the process, see the paths below; without one
+// it is the process's own runtime, as always
+static void handle_jsonrpc_role (struct n3n_runtime_data *eee, conn_t *conn);
+static struct n3n_runtime_data *mgmt_edge (struct n3n_runtime_data *rt);
+static struct n3n_runtime_data *mgmt_relay (struct n3n_runtime_data *rt);
+
+static void handle_jsonrpc_edge (struct n3n_runtime_data *eee, conn_t *conn) {
+
+    struct n3n_runtime_data *edge = mgmt_edge(eee);
+
+    if(!edge) {
+        render_error(conn, "no edge in this process");
+        return;
+    }
+    handle_jsonrpc_role(edge, conn);
+}
+
+static void handle_jsonrpc_supernode (struct n3n_runtime_data *eee, conn_t *conn) {
+
+    struct n3n_runtime_data *relay = mgmt_relay(eee);
+
+    if(!relay) {
+        render_error(conn, "no supernode in this process");
+        return;
+    }
+    handle_jsonrpc_role(relay, conn);
+}
+
 static void handle_jsonrpc (struct n3n_runtime_data *eee, conn_t *conn) {
+
+    handle_jsonrpc_role(eee, conn);
+}
+
+static void handle_jsonrpc_role (struct n3n_runtime_data *eee, conn_t *conn) {
     char *body = strstr(conn->request->str, "\r\n\r\n");
     if(!body) {
         render_error(conn, "Error: no body");
@@ -1173,15 +1209,146 @@ static void render_metrics_page (struct n3n_runtime_data *eee, conn_t *conn) {
     generate_http_headers(conn, "text/plain", 200);
 }
 
-#include "management_index.html.h"
+// The roles running in the process whose management interface rt has: its
+// edge (rt itself, or the edge of a supernode with supernode.tap) and its
+// supernode
+static struct n3n_runtime_data *mgmt_edge (struct n3n_runtime_data *rt) {
 
-// Generate the output for the human user interface
+    return rt->conf.is_edge ? rt : local_link_edge();
+}
+
+static struct n3n_runtime_data *mgmt_relay (struct n3n_runtime_data *rt) {
+
+    return rt->conf.is_supernode ? rt : NULL;
+}
+
+
+// The value of a header of the request into buf; false without one
+static bool http_header (conn_t *conn, const char *name, char *buf, size_t size) {
+
+    const char *str = conn->request->str;
+    const char *end = strstr(str, "\r\n\r\n");
+    size_t n = strlen(name);
+
+    if(!end) {
+        end = str + strlen(str);
+    }
+    for(const char *p = strstr(str, "\r\n"); p && (p < end); p = strstr(p + 2, "\r\n")) {
+        const char *h = p + 2;
+        if(strncasecmp(h, name, n) || (h[n] != ':')) {
+            continue;
+        }
+        h += n + 1;
+        while(*h == ' ') {
+            h++;
+        }
+        size_t len = strcspn(h, "\r\n");
+        if(len >= size) {
+            len = size - 1;
+        }
+        memcpy(buf, h, len);
+        buf[len] = 0;
+        return true;
+    }
+    return false;
+}
+
+
+// Whether a POST may change something: not when a browser sends it for
+// another site (its Origin is not this host), which could otherwise use a
+// password the browser remembers for this page.  Clients other than
+// browsers send no Origin.
+static bool same_origin (conn_t *conn) {
+
+    char origin[128];
+    char host[128];
+
+    if(!http_header(conn, "Origin", origin, sizeof(origin))) {
+        return true;
+    }
+    if(!http_header(conn, "Host", host, sizeof(host))) {
+        return false;
+    }
+    const char *o = strstr(origin, "://");
+    return o && !strcmp(o + 3, host);
+}
+
+
+// The page is too big for the request buffer, which the other replies use:
+// it has buffers of its own, each one free again once its connection has
+// sent it (or gone on to something else)
+#define PAGE_BUFS 4
+
+static struct {
+    strbuf_t *buf;
+    conn_t *owner;
+} page_bufs[PAGE_BUFS];
+
+static int page_buf_take (conn_t *conn) {
+
+    for(int i = 0; i < PAGE_BUFS; i++) {
+        if(!page_bufs[i].buf) {
+            page_bufs[i].buf = sb_malloc(16384, 1 << 18);
+            if(!page_bufs[i].buf) {
+                return -1;
+            }
+        } else if((page_bufs[i].owner != conn) && (page_bufs[i].owner->reply == page_bufs[i].buf)
+                  && sb_len(page_bufs[i].buf)) {
+            continue;
+        }
+        page_bufs[i].owner = conn;
+        sb_zero(page_bufs[i].buf);
+        return i;
+    }
+    return -1;
+}
+
+
+// The human interface: one page for the edge and the supernode, see
+// management_page.c
 static void render_index_page (struct n3n_runtime_data *eee, conn_t *conn) {
-    // TODO:
-    // - could allow overriding of built in text with an external file
-    conn->reply = &management_index;
-    conn->reply->wr_pos = conn->reply->capacity - 1;
-    generate_http_headers(conn, "text/html", 200);
+
+    int i = page_buf_take(conn);
+
+    if(i < 0) {
+        render_error(conn, "busy, try again");
+        return;
+    }
+    mgmt_page_render(&page_bufs[i].buf, eee, mgmt_edge(eee), mgmt_relay(eee));
+    conn->reply = page_bufs[i].buf;
+    generate_http_headers(conn, "text/html; charset=utf-8", 200);
+}
+
+
+// The buttons of the page: "do=less", "do=more" or "do=stop"
+static void handle_page_action (struct n3n_runtime_data *eee, conn_t *conn) {
+
+    char *body = strstr(conn->request->str, "\r\n\r\n");
+    int level = getTraceLevel();
+
+    if(!auth_check(eee, conn)) {
+        auth_request(conn);
+        return;
+    }
+    body = body ? body + 4 : "";
+    if(strstr(body, "do=stop")) {
+        *eee->keep_running = false;
+        sb_zero(conn->request);
+        sb_printf(conn->request, "<!DOCTYPE html><html><head><meta charset=utf-8><title>n3n</title></head>"
+                  "<body><p>n3n is stopping.</p></body></html>\n");
+        conn->reply = conn->request;
+        generate_http_headers(conn, "text/html; charset=utf-8", 200);
+        return;
+    }
+    if(strstr(body, "do=less") && (level > 0)) {
+        setTraceLevel(level - 1);
+    } else if(strstr(body, "do=more") && (level < 4)) {
+        setTraceLevel(level + 1);
+    }
+    // back to the page, which a reload then does not post again
+    sb_zero(conn->request);
+    conn->reply = conn->request;
+    sb_reprintf(&conn->reply_header, "HTTP/1.1 303 See Other\r\nLocation: /\r\nContent-Length: 0\r\n\r\n");
 }
 
 #include "management_script.js.h"
@@ -1227,6 +1394,9 @@ struct mgmt_api_endpoint {
 
 static const struct mgmt_api_endpoint api_endpoints[] = {
     { "POST /v1 ", handle_jsonrpc, "JsonRPC" },
+    { "POST /v1/edge ", handle_jsonrpc_edge, "JsonRPC of the edge in this process" },
+    { "POST /v1/supernode ", handle_jsonrpc_supernode, "JsonRPC of the supernode in this process" },
+    { "POST /page ", handle_page_action, "The buttons of the human interface" },
     { "GET / ", render_index_page, "Human interface" },
     { "GET /debug/slots ", render_debug_slots, "Internal slots dump" },
     { "GET /events/", event_subscribe, "Subscribe to events" },
@@ -1260,6 +1430,13 @@ static void render_help_page (struct n3n_runtime_data *eee, conn_t *conn) {
 
 void mgmt_api_handler (struct n3n_runtime_data *eee, conn_t *conn) {
     int i;
+
+    if(!strncmp(conn->request->str, "POST ", 5) && !same_origin(conn)) {
+        render_error(conn, "not from another site");
+        conn_write(conn, conn->fd);
+        return;
+    }
+
     int nr_handlers = sizeof(api_endpoints) / sizeof(api_endpoints[0]);
     for( i=0; i < nr_handlers; i++ ) {
         if(!strncmp(

@@ -2,7 +2,14 @@
 
 ### test: curl --unix-socket /run/n3n/ci_edge1/mgmt http://x/ -o /tmp/index.html
 
-### test: diff -u src/management_index.html /tmp/index.html
+### test: grep -o <h[23]>[A-Za-z ]* /tmp/index.html
+<h2>Peer
+<h2>Edge
+<h3>Peers
+<h3>Supernodes
+<h3>Traffic
+
+### test: timeout 5 curl -s --http1.0 --unix-socket /run/n3n/ci_edge1/mgmt http://x/ -o /dev/null
 
 ### test: curl --unix-socket /run/n3n/ci_edge1/mgmt http://x/script.js -o /tmp/script.js
 
