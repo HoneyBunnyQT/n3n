@@ -86,9 +86,12 @@ tests and `make lint` pass after each.
       `role_tap.c` for the edge, `role_relay.c`, `role_federate.c`,
       `sn_communities.c` for the supernode; `edge_utils.c` and
       `sn_utils.c` keep init, sockets, front end and loop of each
-- [ ] Step 8: one binary `n3n`; `n3n-edge` and `n3n-supernode` stay as
-      names (links) that pick their roles from `argv[0]`, with unchanged
-      options, help and config dumps
+- [x] Step 8: one binary `n3n` (`apps/n3n.c`); `n3n-edge` and
+      `n3n-supernode` are links to it (copies on Windows) that pick their
+      roles from `argv[0]`, with unchanged options, help and config dumps;
+      `n3n edge ...` and `n3n supernode ...` work too.  The binary holds both
+      roles, so an edge-only package grows a little until
+      `--disable-relay`
 - [ ] Step 9: relay and tap in one process, still v3: the client role
       registers with the local relay role without packets, and a PACKET for
       the local MAC goes straight to the TAP device
@@ -274,7 +277,7 @@ Seen once each in a few full runs, passing on re-runs:
 
 - `no-punch` went direct although port guessing is off on the easy side: the
   hard side's own REGISTERs may get through the easy NAT
-- `easy-hard-pool`, `hard-hard-threads`: an edge behind `hard-range` took its
+- `easy-hard-pool`, `hard-hard-threads`, `failover-relayed`: an edge behind `hard-range` took its
   NAT for "easy (port changed)" - perhaps both supernodes saw the same port
   drawn from the range of 240
 

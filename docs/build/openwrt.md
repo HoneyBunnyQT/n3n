@@ -55,7 +55,8 @@ make package/n3n/compile V=s
 
 If everything went fine, two ipk will be generated, one for the n3n-edge
 and the other for n3n-supernode. They can be found with `find . -name "n3n*.ipk"`,
-copied to the target device, and installed with `opkg install`.
+copied to the target device, and installed with `opkg install`.  Each holds
+the whole `n3n` program, under the name of its daemon.
 
 The github action described in `.github/workflows/openwrt.yml` implements
 an automated version of the above steps.

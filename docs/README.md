@@ -21,6 +21,11 @@ computer can be part of multiple communities at the same time (by running
 multiple _edge_ daemons). An encryption key can be used by the edge nodes to
 encrypt the packets within their community.
 
+Both daemons are one program, `n3n`, installed under the names `n3n-edge` and
+`n3n-supernode` as well.  Started under one of those names it is that daemon;
+started as `n3n`, its first argument says which: `n3n edge start` is the same
+as `n3n-edge start`.
+
 n3n tries to establish a direct peer-to-peer connection via udp between the
 edge nodes when possible. When this is not possible (usually due to special NAT
 devices), the supernode is also used to relay the packets.
