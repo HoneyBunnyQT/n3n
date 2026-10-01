@@ -1,12 +1,23 @@
-.TH "n3n_v3" 7 "Sep 27, 2021" "version 3" "Background"
+.TH "n3n_v3" 7 "Oct 1, 2026" "version 3" "Background"
 .SH NAME
-n3n-edge, n3nctl, n3n-supernode \- the n3n decentralised peer-to-peer network
-overlay VPN
+n3n, n3n-edge, n3n-supernode, n3nctl \- the n3n decentralised peer-to-peer
+network overlay VPN
 .SH DESCRIPTION
 n3n is a peer-to-peer network overlay or VPN system that provides layer 2 over
 layer 3 encapsulation with data transform capabilities such as encryption and
 compression. This guide also discusses the differences of version 3 of n3n from
 version 2.
+.SH ROLES
+An n3n node has roles.  An \fIedge\fR is a client of the supernodes and has a
+TAP device: it is a member of one community, a virtual LAN.  A
+\fIsupernode\fR relays for the edges and introduces them to each other, and
+can be part of a federation of supernodes.  Both are one program,
+.BR n3n (8),
+installed as
+.BR n3n-edge (8)
+and
+.BR n3n-supernode (8).
+A supernode can be an edge too (\fBsupernode.tap\fR).
 .SH PROTOCOLS
 n3n is aiming to remain protocol compatible with n2n-3.  n2n-3, in turn
 basically uses the same set of messages to communicate with edges and
@@ -45,6 +56,14 @@ User Password Authentication
 n3n implements an optional user-password authentication scheme. A key
 generator assists in generating user's public keys to be stored at the
 supernode side.
+.SH NAT TRAVERSAL
+Edges try to reach each other directly, peer-to-peer, and fall back to the
+supernode, which relays.  From the addresses their supernodes see them at,
+edges tell how their NAT maps them: \fIeasy\fR, the same public port towards
+every destination, or \fIhard\fR, a new port per destination.  Towards a peer
+behind a hard NAT an edge guesses ports in rounds, and behind a hard NAT
+itself it opens more sockets towards a peer that guesses.  Between two hard
+NATs the traffic stays relayed.  See docs/advanced/NatTraversal.md.
 .SH COMPRESSION
 LZO for payload compression is an always available option at n3n. If compiled with
 zstdlib support, ZSTD is at optional service as well.
@@ -96,6 +115,13 @@ supernodes.
 REGISTER_SUPER_NAK
 Supernode refusing to register an edge.
 .TP
+UNREGISTER_SUPER
+Sent from an edge to its supernode when it stops.
+.TP
+RE_REGISTER_SUPER
+Sent from a supernode to the edges of a community with user/password
+authentication to make them register again, after the keys changed.
+.TP
 PACKET
 Encapsulated ethernet packets sent between edges. Supernodes forward or
 broadcast these and edges send them direct in peer-to-peer mode.
@@ -131,7 +157,7 @@ deri (at) ntop.org - original author of n2n
 Don Bindner
 (--) - significant contributions to n2n-1
 .SH SEE ALSO
-ifconfig(8) n3n-edge(8) n3n-supernode(8)
+n3n(8) n3n-edge(8) n3n-supernode(8)
 .br
 the documentation contained in the source code
 .br

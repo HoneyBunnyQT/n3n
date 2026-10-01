@@ -1,4 +1,4 @@
-.TH n3n-supernode 8  "16 Feb 2025" "version 3" "USER COMMANDS"
+.TH n3n-supernode 8  "1 Oct 2026" "version 3" "USER COMMANDS"
 .SH NAME
 n3n-supernode \- n3n supernode daemon
 .SH SYNOPSIS
@@ -8,12 +8,18 @@ n3n-supernode \- n3n supernode daemon
 .B n3n-supernode start
 [\fIsessionname\fR]
 .br
+.B n3n supernode
+[\fIoptions..\fR] [command] [\fIcommand args\fR]
+.br
 .B n3n-supernode --help
 .SH DESCRIPTION
 N3N is a peer-to-peer VPN system - it is the LAN you have when you have noLAN.
 
 The Supernode is a node introduction registry, broadcast conduit and packet
-relay node for the n3n system.
+relay node for the n3n system.  It is the supernode role of the
+.BR n3n (8)
+program, which also runs as
+.BR "n3n supernode" .
 
 Once it has the full config loaded, the supernode begins listening on the
 addresses of \fBconnection.bind\fR, UDP and TCP, for node registrations, and
@@ -27,7 +33,11 @@ encryption key and so cannot snoop or inject packets into the community.
 Supernode can service a number of n3n communities concurrently. Traffic does
 not cross between communities.
 
-All logging goes to stdout.
+All logging goes to stdout, or with \fBdaemon.background\fR to syslog.
+
+The configuration file is found as for the edge, by the session name
+(default "supernode"): /etc/n3n/\fB<sessionname>\fR.conf.  All options are
+described by \fBn3n-edge help config\fR and in docs/configure/Options.md.
 
 .SH OPTIONS
 Some of the most common options also have a shortcut version and you can see
@@ -44,6 +54,9 @@ Sets any config option value.
 .TP
 \fB\-h\fR, \fB\--help\fR
 Show some quick usage notes.
+.TP
+\fB\-V\fR, \fB\--version\fR
+Show the version.
 .TP
 \fB\-d\fR, \fB\-\-daemon\fR
 Fork and run as a daemon, instead of the default of running in foreground.
@@ -73,6 +86,39 @@ netleo
 .PP
 More details on creating the allowed communities file are found in the
 Communities.md and Authentication.md documentation included with this package.
+.SH COMMUNITIES IN THE CONFIGURATION
+The communities can also be given in the configuration file, a section for
+each, or along with the community file; a section wins over the same
+community in the file:
+.PP
+.nf
+.RS
+[community netleo]
+network = 10.77.0.0/24
+user = logan nHWum+r42k1qDXdIeH-WFKeylK5UyLStRzxofRNAgpG
+
+[supernode]
+community_regex = myCommunity[0-9][0-9]
+.RE
+.fi
+.PP
+With any allowed communities given, the supernode takes no others.  A reload
+(\fBn3nctl reload_communities\fR) reads the community file again.
+.SH FEDERATION
+Supernodes with the same \fBsupernode.federation\fR name form a federation:
+each \fBsupernode.peer\fR is another one to register with.  Edges can use
+any supernode of a federation and still reach each other, and move to another
+one when theirs goes away.  See docs/configure/Federation.md.
+.SH THE SUPERNODE AS AN EDGE
+With \fBsupernode.tap\fR=true the supernode also joins \fBcommunity.name\fR
+with a TAP device of its own, set up by the \fB[tuntap]\fR options as for an
+edge.  It reaches the other edges of the community through itself.  It needs
+the privileges to open the TAP device at start, before it drops them.  See
+docs/configure/Supernode.md.
+.SH THREADS
+With \fBdaemon.threads\fR the supernode relays PACKETs on several threads.
+This needs Linux and a build with \fB--enable-pthread\fR, see
+docs/advanced/Threads.md.
 .SH ENVIRONMENT
 .TP
 .B N3N_FEDERATION
@@ -89,8 +135,10 @@ every destination to a port of its own, even with just this supernode.
 .PP
 .SH RESTART
 When supernode restarts it loses all registration information from associated
-edge nodes. It can take up to five minutes for the edge nodes to re-register
-and normal traffic flow to resume.
+edge nodes.  The edges register again within their
+\fBconnection.register_interval\fR (20 seconds by default); an edge that has
+another supernode of the federation moves there when its supernode does not
+answer.
 .SH EXIT STATUS
 supernode is a daemon and any exit is an error
 .SH AUTHORS
@@ -106,7 +154,7 @@ andrews (at) ntop.org
 .TP
 Don Bindner
 .SH SEE ALSO
-ifconfig(8) n3n-edge(8) n3n(7)
+n3n(8) n3n-edge(8) n3n(7)
 .br
 the documentation contained in the source code
 .br

@@ -61,6 +61,7 @@ rm -fr $RPM_BUILD_ROOT
 /usr/share/doc/n3n/edge.conf.sample
 /usr/share/doc/n3n/supernode.conf.sample
 /usr/share/man/man7/n3n.7.gz
+/usr/share/man/man8/n3n.8.gz
 /usr/share/man/man8/n3n-edge.8.gz
 /usr/share/man/man8/n3n-supernode.8.gz
 

@@ -1,8 +1,11 @@
-.TH n3n-edge 8  "16 Feb 2025" "version 3" "SUPERUSER COMMANDS"
+.TH n3n-edge 8  "1 Oct 2026" "version 3" "SUPERUSER COMMANDS"
 .SH NAME
 n3n-edge \- VPN edge node daemon
 .SH SYNOPSIS
-.B edge
+.B n3n-edge
+[\fIoptions..\fR] [command] [\fIcommand args\fR]
+.br
+.B n3n edge
 [\fIoptions..\fR] [command] [\fIcommand args\fR]
 .br
 .B n3n-edge start
@@ -14,7 +17,10 @@ n3n is a peer-to-peer VPN system - it is the LAN you have when you have noLAN.
 
 .B n3n-edge
 is a daemon for n3n which creates a TAP interface to expose
-the n3n virtual LAN, providing an "edge node".
+the n3n virtual LAN, providing an "edge node".  It is the edge role of the
+.BR n3n (8)
+program, which also runs as
+.BR "n3n edge" .
 
 On startup
 .B n3n-edge
@@ -41,14 +47,17 @@ Sets any config option value.
 \fB\-h\fR, \fB\--help\fR
 Show some quick usage notes.
 .TP
+\fB\-V\fR, \fB\--version\fR
+Show the version.
+.TP
 .SH
 Options related to the network community being joined.
 .TP
 \fB\-c \fR<\fIcommunity\fR>, \fB\-\-community\fR=<\fIcommunity\fR>
 sets the n3n community name (see also the ENVIRONMENT section). All edges
 within the same community appear on the same LAN (layer 2 network segment).
-Community name is 16 bytes in length. A name smaller than this is padded with
-0x00 bytes and a name longer than this is truncated to take the first 16 bytes.
+A community name has up to 19 characters; a longer one is cut.  The
+characters . * + ? [ ] \\ cannot be used, see docs/configure/Communities.md.
 .TP
 \fB\-l \fR<\fIhost:port\fR>, \fB\-\-supernode-list\fR=<\fIhost:port\fR>
 sets the n3n supernode IP address and port to register to. Multiple supernodes
@@ -98,6 +107,19 @@ available with the commandline:
 .RS
 .B n3n-edge help config
 .RE
+
+or in docs/configure/Options.md.  The community can also be given in a
+section with its name, \fB[community\fR \fIname\fR\fB]\fR, instead of
+\fB[community]\fR with \fBname\fR: an edge joins exactly one community, so
+it takes that one section, and stops with an error if the configuration has
+more than one community.
+
+.RS
+.B n3n-edge debug config load_dump
+[\fIsessionname\fR]
+.RE
+
+shows the configuration as loaded from all its sources.
 .SH ENVIRONMENT
 After loading any config file, some settings are loaded from the environment.
 (They can still be replaced by additional options from the commandline)
@@ -164,7 +186,7 @@ supernode = 123.121.120.119:7654
 [daemon]
 userid = 99
 groupid = 99
-backgroun = true
+background = true
 [connection]
 bind = 50001
 .RE
@@ -230,18 +252,19 @@ address to be allocated from the supernode.
 The MAC address (tuntap.macaddr) and virtual IP address (tuntap.address) must
 be different on all edges in the same community,
 
-.SH CLEARTEXT MODE
-If
-.B -k
-is not specified then edge uses cleartext mode. In cleartext mode there is no
-transform of the packet data it is simply encrypted. This is useful for
-debugging n3n as packet contents can be seen clearly.
+.SH ENCRYPTION
+With a key (\fB-k\fR, \fBcommunity.key\fR or N3N_KEY) the payload is
+encrypted with \fBcommunity.cipher\fR, AES if no cipher is given; all edges
+of a community need the same key and cipher.  Without a key, the edge sends
+the payload in cleartext (cipher null), which is useful for debugging as the
+packet contents can be seen clearly.
 
-To prevent accidental exposure of data, edge only enters cleartext mode when no
-keying parameters are specified. In the case where keying parameters are
-specified but no valid keys can be determined, edge exits with an error at
-startup. If all keys become invalid while running, edge continues to encode
-using the last key that was valid.
+\fBcommunity.header_encryption\fR also encrypts the headers, which hides the
+community name and adds replay protection; the supernode needs to know such
+a community (see n3n-supernode(8)).  With \fBauth.password\fR the edge
+authenticates with a user name (\fBconnection.description\fR) and password
+instead, see docs/configure/Authentication.md.  \fBn3n-edge test
+benchmark\fR shows how fast each cipher is in this build.
 
 .SH NAT TRAVERSAL
 By default the edge opens a UDP socket for IPv6 and one for IPv4, on ports the
@@ -255,6 +278,11 @@ the edge tries a few more of the peer's ports in each round of registrations
 sockets towards a peer that guesses, so that a guess meets one of their
 ports sooner (\fBconnection.punch_sockets\fR, \fBconnection.punch_ttl\fR).
 See docs/advanced/NatTraversal.md for details.
+
+.SH THREADS
+With \fBdaemon.threads\fR the edge encrypts and decrypts packets on several
+threads.  This needs Linux and a build with \fB--enable-pthread\fR, see
+docs/advanced/Threads.md.
 
 .SH MANAGEMENT INTERFACE
 Edge always provides JsonAPI listening on a Unix Domain socket in /run/n3n and
@@ -278,7 +306,7 @@ deri (at) ntop.org - original author of n2n
 Don Bindner
 (--) - significant contributions to n2n-1
 .SH SEE ALSO
-ifconfig(8) n3n-supernode(8) tunctl(8) n3n(7)
+n3n(8) n3n-supernode(8) n3n(7) ip(8) tunctl(8)
 .br
 the documentation contained in the source code
 .br
