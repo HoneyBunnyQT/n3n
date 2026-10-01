@@ -120,6 +120,7 @@ struct fd_info {
     int stats_reads;            // The number of ready to read events
     enum fd_info_proto proto;   // What protocol to use on a read event
     int8_t connnr;              // which connlist[] is being used as buffer
+    struct n3n_runtime_data *rt;    // whose it is, NULL: of mainloop_run()
 };
 
 // The known file descriptors.  The table starts big enough for an edge's own
@@ -156,6 +157,7 @@ static struct tick {
     mainloop_tick_fn fn;
     int interval;
     time_t last;
+    struct n3n_runtime_data *rt;    // whose it is, NULL: of mainloop_run()
 } ticks[MAX_TICKS];
 static int ticks_count;
 
@@ -386,7 +388,7 @@ static bool fdlist_grow () {
     return true;
 }
 
-static int fdlist_allocslot (int fd, enum fd_info_proto proto) {
+static int fdlist_allocslot (int fd, enum fd_info_proto proto, struct n3n_runtime_data *rt) {
 #ifndef _WIN32
     if(fd >= FD_SETSIZE) {
         // FD_SET() would write beyond the end of the fd_set
@@ -413,6 +415,7 @@ static int fdlist_allocslot (int fd, enum fd_info_proto proto) {
             fdlist[slot].proto = proto;
             fdlist[slot].stats_reads = 0;
             fdlist[slot].connnr = connnr;
+            fdlist[slot].rt = rt;
 
             fdlist_next_search = slot + 1;
             return slot;
@@ -425,7 +428,7 @@ static int fdlist_allocslot (int fd, enum fd_info_proto proto) {
         traceEvent(TRACE_ERROR, "no room for fd %i in the mainloop", fd);
         return -1;
     }
-    return fdlist_allocslot(fd, proto);
+    return fdlist_allocslot(fd, proto, rt);
 }
 
 static int fdlist_findslot (int fd) {
@@ -458,6 +461,7 @@ static void fdlist_freefd (int fd) {
         }
         fdlist[slot].fd = -1;
         fdlist[slot].proto = fd_info_proto_unknown;
+        fdlist[slot].rt = NULL;
         fdlist_next_search = slot;
         return;
     }
@@ -594,7 +598,7 @@ static void accept_v3tcp (struct n3n_runtime_data *eee, int listen_fd, time_t no
         return;
     }
 
-    if(too_many || (fdlist_allocslot(client, fd_info_proto_v3tcp) < 0)) {
+    if(too_many || (fdlist_allocslot(client, fd_info_proto_v3tcp, eee) < 0)) {
         traceEvent(
             TRACE_WARNING,
             "denied incoming TCP connection from [%s] due to max connections limit hit",
@@ -651,7 +655,7 @@ static void handle_fd (const time_t now, int slot, struct n3n_runtime_data *eee)
                 return;
             }
 
-            int slotnr = fdlist_allocslot(client, fd_info_proto_http);
+            int slotnr = fdlist_allocslot(client, fd_info_proto_http, eee);
             if(slotnr < 0) {
                 // TODO:
                 // - increment error stats
@@ -836,9 +840,12 @@ static void fdlist_check_ready (fd_set *rd, fd_set *wr, const time_t now, struct
             slot++;
             continue;
         }
+        // the runtime the fd belongs to
+        struct n3n_runtime_data *rt = fdlist[slot].rt ? fdlist[slot].rt : eee;
+
         if(FD_ISSET(fd, rd)) {
             fdlist[slot].stats_reads++;
-            handle_fd(now, slot, eee);
+            handle_fd(now, slot, rt);
         }
         if((fdlist[slot].fd == fd) && FD_ISSET(fd, wr)) {
             // We should not be listening on this socket if there is no
@@ -861,7 +868,7 @@ static void fdlist_check_ready (fd_set *rd, fd_set *wr, const time_t now, struct
         }
 
         if(fdlist[slot].fd == fd) {
-            fdlist_closeidle_slot(now, slot, eee);
+            fdlist_closeidle_slot(now, slot, rt);
         }
         slot++;
     }
@@ -1011,7 +1018,11 @@ bool mainloop_send_v3tcp (int fd, const void *buf, int bufsize) {
 }
 
 int mainloop_register_fd (int fd, enum fd_info_proto proto) {
-    return fdlist_allocslot(fd, proto);
+    return fdlist_allocslot(fd, proto, NULL);
+}
+
+int mainloop_register_fd_rt (int fd, enum fd_info_proto proto, struct n3n_runtime_data *rt) {
+    return fdlist_allocslot(fd, proto, rt);
 }
 
 void mainloop_unregister_fd (int fd) {
@@ -1027,9 +1038,9 @@ void mainloop_close_fd (int fd) {
     fdlist_close_slot(slot);
 }
 
-int mainloop_register_tick (mainloop_tick_fn fn, int interval) {
+int mainloop_register_tick_rt (mainloop_tick_fn fn, int interval, struct n3n_runtime_data *rt) {
     for(int i = 0; i < ticks_count; i++) {
-        if(ticks[i].fn == fn) {
+        if((ticks[i].fn == fn) && (ticks[i].rt == rt)) {
             ticks[i].interval = interval;
             return 0;
         }
@@ -1040,8 +1051,13 @@ int mainloop_register_tick (mainloop_tick_fn fn, int interval) {
     ticks[ticks_count].fn = fn;
     ticks[ticks_count].interval = interval;
     ticks[ticks_count].last = 0;
+    ticks[ticks_count].rt = rt;
     ticks_count++;
     return 0;
+}
+
+int mainloop_register_tick (mainloop_tick_fn fn, int interval) {
+    return mainloop_register_tick_rt(fn, interval, NULL);
 }
 
 static void run_ticks (struct n3n_runtime_data *rt, time_t now) {
@@ -1051,7 +1067,7 @@ static void run_ticks (struct n3n_runtime_data *rt, time_t now) {
             continue;
         }
         t->last = now;
-        t->fn(rt, now);
+        t->fn(t->rt ? t->rt : rt, now);
     }
 }
 

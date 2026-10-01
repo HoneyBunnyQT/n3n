@@ -43,8 +43,11 @@ bool mainloop_send_v3tcp (int, const void *, int);
 
 int mainloop_runonce (struct n3n_runtime_data *);
 
-// the slot of the fd, or -1 if there is no free one
+// the slot of the fd, or -1 if there is no free one.  The fd is handled
+// for the runtime given to mainloop_run(), or with _rt for the one given:
+// a process can have more than one, see local_link.h
 int mainloop_register_fd (int, enum fd_info_proto);
+int mainloop_register_fd_rt (int, enum fd_info_proto, struct n3n_runtime_data *);
 void mainloop_unregister_fd (int);
 
 // Close a socket and, if it is registered, its connection, and unregister it
@@ -56,7 +59,10 @@ typedef void (*mainloop_tick_fn)(struct n3n_runtime_data *, time_t now);
 // Call fn about every interval seconds, 0 for every time round the loop.
 // Ticks run in the order they were registered; registering the same fn
 // again only changes its interval.  -1 if there is no room for another.
+// The tick gets the runtime given to mainloop_run(), or with _rt the one
+// given.
 int mainloop_register_tick (mainloop_tick_fn fn, int interval);
+int mainloop_register_tick_rt (mainloop_tick_fn fn, int interval, struct n3n_runtime_data *rt);
 
 // Go round the loop - fds, what packet threads handed over, ticks - until
 // *keep_running turns false
