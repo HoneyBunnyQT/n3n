@@ -2085,16 +2085,1138 @@ static bool community_appends_hash (const struct sn_community *comm) {
 }
 
 
+/* The handlers of the PDUs a supernode takes, by message type - see
+ * sn_pdu_handlers below.  Each takes the locals it needs from the
+ * struct pdu_ctx first.  Only a PACKET that relay_here() lets through runs
+ * on a packet thread, everything else on the main thread. */
+
+/* MSG_TYPE_PACKET */
+static void sn_rx_packet (struct n3n_runtime_data *sss, struct pdu_ctx *c) {
+
+    uint8_t *udp_buf = c->buf;
+    size_t udp_size = c->size;
+    time_t now = c->now;
+    n2n_common_t cmn = c->cmn;
+    size_t rem = c->rem;
+    size_t idx = c->idx;
+    bool from_supernode = c->from_supernode;
+    struct peer_info *sn = c->sn;
+    struct sn_community *comm = c->comm;
+    n3n_sock_t sender = c->sender;
+    macstr_t mac_buf;
+    macstr_t mac_buf2;
+    uint64_t stamp = c->stamp;
+
+    /* PACKET from one edge to another edge via supernode. */
+
+    /* pkt will be modified in place and recoded to an output of potentially
+     * different size due to addition of the socket.*/
+    n2n_PACKET_t pkt;
+    n2n_common_t cmn2;
+    uint8_t encbuf[N2N_SN_PKTBUF_SIZE];
+    size_t encx = 0;
+    int unicast;           /* non-zero if unicast */
+    uint8_t *     rec_buf; /* either udp_buf or encbuf */
+
+    if(!comm) {
+        traceEvent(TRACE_DEBUG, "PACKET with unknown community %s", cmn.community);
+        return;
+    }
+
+    // every packet thread stores this, so only if it changed
+    if(SHARED_LOAD(sss->relay.last_sn_fwd) != now) {
+        SHARED_STORE(sss->relay.last_sn_fwd, now);
+    }
+    // whatever follows the header is the payload
+    if(decode_PACKET(&pkt, &cmn, udp_buf, &rem, &idx) < 0) {
+        traceEvent(TRACE_INFO, "PACKET section too short");
+        return;
+    }
+
+    // already checked for valid comm
+    if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
+        if(!find_peer_time_stamp_and_verify(
+               comm->edges,
+               NULL,
+               sn,
+               pkt.srcMac,
+               stamp,
+               TIME_STAMP_ALLOW_JITTER)) {
+            traceEvent(TRACE_DEBUG, "dropped PACKET due to time stamp error");
+            return;
+        }
+    }
+
+    unicast = (0 == is_multi_broadcast(pkt.dstMac));
+
+    traceEvent(TRACE_DEBUG, "RX PACKET (%s) %s -> %s %s",
+               (unicast ? "unicast" : "multicast"),
+               macaddr_str(mac_buf, pkt.srcMac),
+               macaddr_str(mac_buf2, pkt.dstMac),
+               (from_supernode ? "from sn" : "local"));
+
+    if(!from_supernode) {
+        memcpy(&cmn2, &cmn, sizeof(n2n_common_t));
+
+        /* We are going to add socket even if it was not there before */
+        cmn2.flags |= N2N_FLAGS_SOCKET | N2N_FLAGS_FROM_SUPERNODE;
+
+        memcpy(&pkt.sock, &sender, sizeof(sender));
+
+        rec_buf = encbuf;
+        /* Re-encode the header. */
+        encode_PACKET(encbuf, &encx, &cmn2, &pkt);
+
+        uint16_t oldEncx = encx;
+
+        /* Copy the original payload unchanged */
+        encode_buf(encbuf, &encx, (udp_buf + idx), (udp_size - idx));
+
+        if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
+            // in case of user-password auth, also encrypt the iv of payload assuming ChaCha20 and SPECK having the same iv size
+            packet_header_encrypt(rec_buf, oldEncx + (NULL != comm->allowed_users) * MIN(encx - oldEncx, N2N_SPECK_IVEC_SIZE), encx,
+                                  comm->header_encryption_ctx_dynamic, comm->header_iv_ctx_dynamic,
+                                  time_stamp());
+        }
+    } else {
+        /* Already from a supernode. Nothing to modify, just pass to
+         * destination. */
+
+        traceEvent(TRACE_DEBUG, "Rx PACKET fwd unmodified");
+
+        rec_buf = udp_buf;
+        encx = udp_size;
+
+        if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
+            // in case of user-password auth, also encrypt the iv of payload assuming ChaCha20 and SPECK having the same iv size
+            packet_header_encrypt(rec_buf, idx + (NULL != comm->allowed_users) * MIN(encx - idx, N2N_SPECK_IVEC_SIZE), encx,
+                                  comm->header_encryption_ctx_dynamic, comm->header_iv_ctx_dynamic,
+                                  time_stamp());
+        }
+    }
+
+    /* Common section to forward the final product. */
+    if(unicast) {
+        try_forward(sss, comm, &cmn, pkt.dstMac, from_supernode, rec_buf, encx, now);
+    } else {
+        try_broadcast(sss, comm, &cmn, pkt.srcMac, from_supernode, rec_buf, encx, now);
+    }
+}
+
+
+/* MSG_TYPE_REGISTER */
+static void sn_rx_register (struct n3n_runtime_data *sss, struct pdu_ctx *c) {
+
+    uint8_t *udp_buf = c->buf;
+    size_t udp_size = c->size;
+    time_t now = c->now;
+    n2n_common_t cmn = c->cmn;
+    size_t rem = c->rem;
+    size_t idx = c->idx;
+    bool from_supernode = c->from_supernode;
+    struct peer_info *sn = c->sn;
+    struct sn_community *comm = c->comm;
+    n3n_sock_t sender = c->sender;
+    macstr_t mac_buf;
+    macstr_t mac_buf2;
+    uint64_t stamp = c->stamp;
+
+    /* Forwarding a REGISTER from one edge to the next */
+
+    n2n_REGISTER_t reg;
+    n2n_common_t cmn2;
+    uint8_t encbuf[N2N_SN_PKTBUF_SIZE];
+    size_t encx = 0;
+    int unicast;             /* non-zero if unicast */
+    uint8_t *       rec_buf; /* either udp_buf or encbuf */
+
+    if(!comm) {
+        traceEvent(TRACE_DEBUG, "REGISTER from unknown community %s", cmn.community);
+        return;
+    }
+
+    sss->relay.last_sn_fwd = now;
+    if(decode_REGISTER(&reg, &cmn, udp_buf, &rem, &idx) < 0) {
+        traceEvent(TRACE_INFO, "REGISTER section too short");
+        return;
+    }
+    if(rem != 0) {
+        traceEvent(TRACE_INFO, "REGISTER section too long");
+        return;
+    }
+
+    // already checked for valid comm
+    if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
+        if(!find_peer_time_stamp_and_verify(
+               comm->edges,
+               NULL,
+               sn,
+               reg.srcMac,
+               stamp,
+               TIME_STAMP_NO_JITTER)) {
+            traceEvent(TRACE_DEBUG, "dropped REGISTER due to time stamp error");
+            return;
+        }
+    }
+
+    unicast = (0 == is_multi_broadcast(reg.dstMac));
+
+    if(unicast) {
+        traceEvent(TRACE_DEBUG, "Rx REGISTER %s -> %s %s",
+                   macaddr_str(mac_buf, reg.srcMac),
+                   macaddr_str(mac_buf2, reg.dstMac),
+                   ((cmn.flags & N2N_FLAGS_FROM_SUPERNODE) ? "from sn" : "local"));
+
+        if(0 == (cmn.flags & N2N_FLAGS_FROM_SUPERNODE)) {
+            memcpy(&cmn2, &cmn, sizeof(n2n_common_t));
+
+            /* We are going to add socket even if it was not there before */
+            cmn2.flags |= N2N_FLAGS_SOCKET | N2N_FLAGS_FROM_SUPERNODE;
+
+            memcpy(&reg.sock, &sender, sizeof(sender));
+
+            /* Re-encode the header. */
+            encode_REGISTER(encbuf, &encx, &cmn2, &reg);
+
+            rec_buf = encbuf;
+        } else {
+            /* Already from a supernode. Nothing to modify, just pass to
+             * destination. */
+
+            rec_buf = udp_buf;
+            encx = udp_size;
+        }
+
+        if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
+            packet_header_encrypt(rec_buf, encx, encx,
+                                  comm->header_encryption_ctx_dynamic, comm->header_iv_ctx_dynamic,
+                                  time_stamp());
+        }
+        try_forward(sss, comm, &cmn, reg.dstMac, from_supernode, rec_buf, encx, now); /* unicast only */
+    } else {
+        traceEvent(TRACE_ERROR, "Rx REGISTER with multicast destination");
+    }
+}
+
+
+/* MSG_TYPE_REGISTER_ACK */
+static void sn_rx_register_ack (struct n3n_runtime_data *sss, struct pdu_ctx *c) {
+
+    traceEvent(TRACE_DEBUG, "Rx REGISTER_ACK (not implemented) should not be via supernode");
+}
+
+
+/* MSG_TYPE_REGISTER_SUPER */
+static void sn_rx_register_super (struct n3n_runtime_data *sss, struct pdu_ctx *c) {
+
+    const struct sockaddr *sender_sock = c->sender_sock;
+    socklen_t sock_size = c->sock_size;
+    const SOCKET socket_fd = c->socket_fd;
+    uint8_t *udp_buf = c->buf;
+    size_t udp_size = c->size;
+    time_t now = c->now;
+    n2n_common_t cmn = c->cmn;
+    size_t rem = c->rem;
+    size_t idx = c->idx;
+    bool from_supernode = c->from_supernode;
+    struct peer_info *sn = c->sn;
+    struct sn_community *comm = c->comm;
+    n3n_sock_t sender = c->sender;
+    macstr_t mac_buf;
+    n3n_sock_str_t sockbuf;
+    uint8_t *hash_buf = c->hash_buf;
+    uint64_t stamp = c->stamp;
+    int skip_add;
+    time_t any_time = 0;
+
+    n2n_REGISTER_SUPER_t reg;
+    n2n_REGISTER_SUPER_ACK_t ack;
+    n2n_REGISTER_SUPER_NAK_t nak;
+    n2n_common_t cmn2;
+    uint8_t ackbuf[N2N_SN_PKTBUF_SIZE];
+    uint8_t payload_buf[REG_SUPER_ACK_PAYLOAD_SPACE];
+    n2n_REGISTER_SUPER_ACK_payload_t       *payload;
+    size_t encx = 0;
+    struct sn_community_regular_expression *re, *tmp_re;
+    struct peer_info                       *peer, *tmp_peer, *p;
+    int8_t allowed_match = -1;
+    uint8_t match = 0;
+    int match_length = 0;
+    n2n_ip_subnet_t ipaddr;
+    int num = 0;
+    int skip;
+    int ret_value;
+    sn_user_t                              *user = NULL;
+
+    /*
+     * ack.dev_addr is only set when the edge needs an IP assigned
+     * (lines below); zero the whole struct so the encoded dev_addr
+     * is zero rather than garbage when that branch is not taken
+     */
+    // TODO: refactor code to avoid needing memset
+    memset(&ack, 0, sizeof(n2n_REGISTER_SUPER_ACK_t));
+
+    /* Edge/supernode requesting registration with us.    */
+    sss->relay.last_sn_reg=now;
+    STATS_INC(sss, sn_reg);
+    if(decode_REGISTER_SUPER(&reg, &cmn, udp_buf, &rem, &idx) < 0) {
+        traceEvent(TRACE_INFO, "REGISTER_SUPER section too short");
+        return;
+    }
+    // the length of the rest is checked once the community is known
+
+    if(comm) {
+        if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
+            if(!find_peer_time_stamp_and_verify(
+                   comm->edges,
+                   NULL,
+                   sn,
+                   reg.edgeMac,
+                   stamp,
+                   TIME_STAMP_NO_JITTER)) {
+                traceEvent(TRACE_DEBUG, "dropped REGISTER_SUPER due to time stamp error");
+                return;
+            }
+        }
+    }
+
+    /*
+        Before we move any further, we need to check if the requested
+        community is allowed by the supernode. In case it is not we do
+        not report any message back to the edge to hide the supernode
+        existance (better from the security standpoint)
+     */
+
+    if(!comm && sss->relay.lock_communities) {
+        HASH_ITER(hh, sss->relay.rules, re, tmp_re) {
+            allowed_match = re_matchp(re->rule, (const char *)cmn.community, &match_length);
+
+            if((allowed_match != -1)
+               && (match_length == strlen((const char *)cmn.community)) // --- only full matches allowed (remove, if also partial matches wanted)
+               && (allowed_match == 0)) { // --- only full matches allowed (remove, if also partial matches wanted)
+                match = 1;
+                break;
+            }
+        }
+        if(match != 1) {
+            traceEvent(TRACE_INFO, "discarded registration with unallowed community '%s'",
+                       (char*)cmn.community);
+            return;
+        }
+    }
+
+    if(!comm && (!sss->relay.lock_communities || (match == 1))) {
+        comm = (struct sn_community*)calloc(1, sizeof(struct sn_community));
+
+        if(comm) {
+            comm_init(comm, (char *)cmn.community);
+            /* new communities introduced by REGISTERs could not have had encrypted header... */
+            comm->header_encryption = HEADER_ENCRYPTION_NONE;
+            free(comm->header_encryption_ctx_static);
+            comm->header_encryption_ctx_static = NULL;
+            free(comm->header_encryption_ctx_dynamic);
+            comm->header_encryption_ctx_dynamic = NULL;
+            /* ... and also are purgeable during periodic purge */
+            comm->purgeable = true;
+            memset(comm->number_enc_packets, 0, sizeof(comm->number_enc_packets));
+            HASH_ADD_STR(sss->relay.communities, community, comm);
+
+            traceEvent(TRACE_INFO, "new community: %s", comm->community);
+            assign_one_ip_subnet(sss, comm);
+        }
+    }
+
+    if(!comm) {
+        traceEvent(TRACE_INFO, "discarded registration with unallowed community '%s'",
+                   (char*)cmn.community);
+        return;
+    }
+
+    // with user/password and header encryption, a hash follows,
+    // which the decoder leaves unread
+    if(rem != (community_appends_hash(comm) ? N2N_REG_SUP_HASH_CHECK_LEN : 0)) {
+        traceEvent(TRACE_INFO, "REGISTER_SUPER section of wrong size");
+        return;
+    }
+
+    // hash check (user/pw auth only)
+    if(comm->allowed_users) {
+        // check if submitted public key is in list of allowed users
+        HASH_FIND(hh, comm->allowed_users, &reg.auth.token, sizeof(n2n_private_public_key_t), user);
+        if(user) {
+            speck_128_encrypt(hash_buf, (speck_context_t*)user->shared_secret_ctx);
+            if(memcmp(hash_buf, udp_buf + udp_size - N2N_REG_SUP_HASH_CHECK_LEN /* length has already been checked */, N2N_REG_SUP_HASH_CHECK_LEN)) {
+                traceEvent(TRACE_INFO, "Rx REGISTER_SUPER with wrong hash");
+                return;
+            }
+        } else {
+            traceEvent(TRACE_INFO, "Rx REGISTER_SUPER from unknown user");
+            // continue and let auth check do the rest (otherwise, no NAK is sent)
+        }
+    }
+
+    if(!memcmp(reg.edgeMac, sss->conf.relay.sn_mac_addr, sizeof(n2n_mac_t))) {
+        traceEvent(TRACE_DEBUG, "Rx REGISTER_SUPER from self, ignoring");
+        return;
+    }
+
+    cmn2.ttl = N2N_DEFAULT_TTL;
+    cmn2.pc = MSG_TYPE_REGISTER_SUPER_ACK;
+    cmn2.flags = N2N_FLAGS_SOCKET | N2N_FLAGS_FROM_SUPERNODE;
+    memcpy(cmn2.community, cmn.community, sizeof(n2n_community_t));
+
+    ack.cookie = reg.cookie;
+    memcpy(ack.srcMac, sss->conf.relay.sn_mac_addr, sizeof(n2n_mac_t));
+
+    if(!comm->is_federation) { /* alternatively, do not send zero tap ip address in federation REGISTER_SUPER */
+        if((reg.dev_addr.net_addr == 0) || (reg.dev_addr.net_addr == 0xFFFFFFFF) || (reg.dev_addr.net_bitlen == 0) ||
+           ((reg.dev_addr.net_addr & 0xFFFF0000) == 0xA9FE0000 /* 169.254.0.0 */)) {
+            memset(&ipaddr, 0, sizeof(n2n_ip_subnet_t));
+            assign_one_ip_addr(comm, reg.dev_desc, &ipaddr);
+            ack.dev_addr.net_addr = ipaddr.net_addr;
+            ack.dev_addr.net_bitlen = ipaddr.net_bitlen;
+        }
+    }
+
+    ack.lifetime = reg_lifetime(sss);
+
+    memcpy(&ack.sock, &sender, sizeof(sender));
+
+    /* Add sender's data to federation (or update it) */
+    if(comm->is_federation) {
+        skip_add = SN_ADD;
+        p = add_sn_to_list_by_mac_or_sock(&(sss->relay.federation->edges), &(ack.sock), reg.edgeMac, &skip_add);
+        p->last_seen = now;
+        // answered where it came in
+        p->socket_fd = socket_fd;
+        if(skip_add == SN_ADD_ADDED) {
+            sock_to_cstr(sockbuf, &(p->sock));
+            p->hostname = strdup(sockbuf);
+        }
+    }
+
+    /* Skip random numbers of supernodes before payload assembling, calculating an appropriate random_number.
+     * That way, all supernodes have a chance to be propagated with REGISTER_SUPER_ACK. */
+    skip = HASH_COUNT(sss->relay.federation->edges) - (int)(REG_SUPER_ACK_PAYLOAD_ENTRY_SIZE / REG_SUPER_ACK_PAYLOAD_ENTRY_SIZE);
+    skip = (skip < 0) ? 0 : n3n_rand_sqr(skip);
+
+    /* Assembling supernode list for REGISTER_SUPER_ACK payload */
+    payload = (n2n_REGISTER_SUPER_ACK_payload_t*)payload_buf;
+    HASH_ITER(hh, sss->relay.federation->edges, peer, tmp_peer) {
+        if(skip) {
+            skip--;
+            continue;
+        }
+        if(peer->sock.family == (uint8_t)AF_INVALID)
+            continue; /* do not add unresolved supernodes to payload */
+        if(memcmp(&(peer->sock), &(ack.sock), sizeof(n3n_sock_t)) == 0) continue; /* a supernode doesn't add itself to the payload */
+        if((now - peer->last_seen) >= LAST_SEEN_SN_NEW) continue;  /* skip long-time-not-seen supernodes.
+                                                                    * We need to allow for a little extra time because supernodes sometimes exceed
+                                                                    * their SN_ACTIVE time before they get re-registred to. */
+        if(((++num)*REG_SUPER_ACK_PAYLOAD_ENTRY_SIZE) > REG_SUPER_ACK_PAYLOAD_SPACE) break; /* no more space available in REGISTER_SUPER_ACK payload */
+
+        // bugfix for https://github.com/ntop/n2n/issues/1029
+        // REVISIT: best to be removed with 4.0 (replace with encode_sock)
+        idx = 0;
+        encode_sock_payload(payload->sock, &idx, &(peer->sock));
+
+        memcpy(payload->mac, peer->mac_addr, sizeof(n2n_mac_t));
+        // shift to next payload entry
+        payload++;
+    }
+    ack.num_sn = num;
+
+    traceEvent(TRACE_DEBUG, "Rx REGISTER_SUPER for %s [%s]",
+               macaddr_str(mac_buf, reg.edgeMac),
+               sock_to_cstr(sockbuf, &(ack.sock)));
+
+    // check authentication
+    ret_value = update_edge_no_change;
+    if(!comm->is_federation) { /* REVISIT: auth among supernodes is not implemented yet */
+        if(cmn.flags & N2N_FLAGS_FROM_SUPERNODE) {
+            ret_value = update_edge(sss, &cmn, &reg, comm, &(ack.sock), socket_fd, &(ack.auth), SN_ADD_SKIP, now);
+        } else {
+            // do not add in case of null mac (edge asking for ip address)
+            ret_value = update_edge(sss, &cmn, &reg, comm, &(ack.sock), socket_fd, &(ack.auth), is_null_mac(reg.edgeMac) ? SN_ADD_SKIP : SN_ADD, now);
+        }
+    }
+
+    if(ret_value == update_edge_auth_fail) {
+        // send REGISTER_SUPER_NAK
+        cmn2.pc = MSG_TYPE_REGISTER_SUPER_NAK;
+        nak.cookie = reg.cookie;
+        memcpy(nak.srcMac, reg.edgeMac, sizeof(n2n_mac_t));
+
+        encode_REGISTER_SUPER_NAK(ackbuf, &encx, &cmn2, &nak);
+
+        if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
+            packet_header_encrypt(ackbuf, encx, encx,
+                                  comm->header_encryption_ctx_static, comm->header_iv_ctx_static,
+                                  time_stamp());
+            // if user-password-auth
+            if(comm->allowed_users) {
+                encode_buf(ackbuf, &encx, hash_buf /* no matter what content */, N2N_REG_SUP_HASH_CHECK_LEN);
+            }
+        }
+        sendto_sock(sss, socket_fd, sender_sock, ackbuf, encx);
+
+        traceEvent(TRACE_DEBUG, "Tx REGISTER_SUPER_NAK for %s",
+                   macaddr_str(mac_buf, reg.edgeMac));
+
+        return;
+    }
+
+    // if this is not already from a supernode ...
+    // and not from federation, ...
+    if((!(cmn.flags & N2N_FLAGS_FROM_SUPERNODE)) || (!(cmn.flags & N2N_FLAGS_SOCKET))) {
+        // ... forward to all other supernodes (note try_broadcast()'s behavior with
+        //     NULL comm and from_supernode parameter)
+        // exception: do not forward auto ip draw
+        if(!is_null_mac(reg.edgeMac)) {
+            memcpy(&reg.sock, &sender, sizeof(sender));
+
+            cmn2.pc = MSG_TYPE_REGISTER_SUPER;
+            encode_REGISTER_SUPER(ackbuf, &encx, &cmn2, &reg);
+
+            if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
+                packet_header_encrypt(ackbuf, encx, encx,
+                                      comm->header_encryption_ctx_static, comm->header_iv_ctx_static,
+                                      time_stamp());
+                // if user-password-auth
+                if(comm->allowed_users) {
+                    // append an encrypted packet hash
+                    pearson_hash_128(hash_buf, ackbuf, encx);
+                    // same 'user' as above
+                    speck_128_encrypt(hash_buf, (speck_context_t*)user->shared_secret_ctx);
+                    encode_buf(ackbuf, &encx, hash_buf, N2N_REG_SUP_HASH_CHECK_LEN);
+                }
+            }
+
+            try_broadcast(sss, NULL, &cmn, reg.edgeMac, from_supernode, ackbuf, encx, now);
+        }
+
+        // dynamic key time handling if appropriate
+        ack.key_time = 0;
+        if(comm->is_federation) {
+            if(reg.key_time > sss->relay.dynamic_key_time) {
+                traceEvent(TRACE_DEBUG, "setting new key time");
+                // have all edges re_register (using old dynamic key)
+                send_re_register_super(sss);
+                // set new key time
+                sss->relay.dynamic_key_time = reg.key_time;
+                // calculate new dynamic keys for all communities
+                calculate_dynamic_keys(sss);
+                // force re-register with all supernodes
+                re_register_and_purge_supernodes(sss, sss->relay.federation, &any_time, now, 1 /* forced */);
+            }
+            ack.key_time = sss->relay.dynamic_key_time;
+        }
+
+        // send REGISTER_SUPER_ACK
+        encx = 0;
+        cmn2.pc = MSG_TYPE_REGISTER_SUPER_ACK;
+
+        encode_REGISTER_SUPER_ACK(ackbuf, &encx, &cmn2, &ack, payload_buf);
+
+        if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
+            packet_header_encrypt(ackbuf, encx, encx,
+                                  comm->header_encryption_ctx_static, comm->header_iv_ctx_static,
+                                  time_stamp());
+            // if user-password-auth
+            if(comm->allowed_users) {
+                // append an encrypted packet hash
+                pearson_hash_128(hash_buf, ackbuf, encx);
+                // same 'user' as above
+                speck_128_encrypt(hash_buf, (speck_context_t*)user->shared_secret_ctx);
+                encode_buf(ackbuf, &encx, hash_buf, N2N_REG_SUP_HASH_CHECK_LEN);
+            }
+        }
+
+        sendto_sock(sss, socket_fd, sender_sock, ackbuf, encx);
+
+        traceEvent(TRACE_DEBUG, "Tx REGISTER_SUPER_ACK for %s [%s]",
+                   macaddr_str(mac_buf, reg.edgeMac),
+                   sock_to_cstr(sockbuf, &(ack.sock)));
+    } else {
+        // this is an edge with valid authentication registering with another supernode, so ...
+        // 1- ... associate it with that other supernode
+        update_node_supernode_association(comm, &(reg.edgeMac), sender_sock, sock_size, now);
+        // 2- ... we can delete it from regular list if present (can happen)
+        HASH_FIND_PEER(comm->edges, reg.edgeMac, peer);
+        if(peer != NULL) {
+            remove_edge(sss, comm, peer);
+        }
+    }
+
+}
+
+
+/* MSG_TYPE_UNREGISTER_SUPER */
+static void sn_rx_unregister_super (struct n3n_runtime_data *sss, struct pdu_ctx *c) {
+
+    uint8_t *udp_buf = c->buf;
+    n2n_common_t cmn = c->cmn;
+    size_t rem = c->rem;
+    size_t idx = c->idx;
+    bool from_supernode = c->from_supernode;
+    struct peer_info *sn = c->sn;
+    struct sn_community *comm = c->comm;
+    macstr_t mac_buf;
+    uint64_t stamp = c->stamp;
+
+    n2n_UNREGISTER_SUPER_t unreg;
+    struct peer_info       *peer;
+    int auth;
+
+
+    if(!comm) {
+        traceEvent(TRACE_DEBUG, "dropped UNREGISTER_SUPER with unknown community %s", cmn.community);
+        return;
+    }
+
+    if((from_supernode) || (comm->is_federation)) {
+        traceEvent(TRACE_DEBUG, "dropped UNREGISTER_SUPER: should not come from a supernode or federation.");
+        return;
+    }
+
+    if(decode_UNREGISTER_SUPER(&unreg, &cmn, udp_buf, &rem, &idx) < 0) {
+        traceEvent(TRACE_INFO, "UNREGISTER_SUPER section too short");
+        return;
+    }
+    if(rem != 0) {
+        traceEvent(TRACE_INFO, "UNREGISTER_SUPER section too long");
+        return;
+    }
+
+    if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
+        if(!find_peer_time_stamp_and_verify(
+               comm->edges,
+               NULL,
+               sn,
+               unreg.srcMac,
+               stamp,
+               TIME_STAMP_NO_JITTER)) {
+            traceEvent(TRACE_DEBUG, "dropped UNREGISTER_SUPER due to time stamp error");
+            return;
+        }
+    }
+
+    traceEvent(TRACE_DEBUG, "Rx UNREGISTER_SUPER from %s",
+               macaddr_str(mac_buf, unreg.srcMac));
+
+    HASH_FIND_PEER(comm->edges, unreg.srcMac, peer);
+    if(peer != NULL) {
+        if((auth = auth_edge(&(peer->auth), &unreg.auth, NULL, comm)) == 0) {
+            remove_edge(sss, comm, peer);
+        }
+    }
+}
+
+
+/* MSG_TYPE_REGISTER_SUPER_ACK */
+static void sn_rx_register_super_ack (struct n3n_runtime_data *sss, struct pdu_ctx *c) {
+
+    uint8_t *udp_buf = c->buf;
+    time_t now = c->now;
+    n2n_common_t cmn = c->cmn;
+    size_t rem = c->rem;
+    size_t idx = c->idx;
+    bool from_supernode = c->from_supernode;
+    struct peer_info *sn = c->sn;
+    struct sn_community *comm = c->comm;
+    n3n_sock_t sender = c->sender;
+    n3n_sock_t *orig_sender = &sender;
+    uint64_t stamp = c->stamp;
+    int skip_add;
+    time_t any_time = 0;
+
+    n2n_REGISTER_SUPER_ACK_t ack;
+    struct peer_info                 *scan, *tmp;
+    n3n_sock_str_t sockbuf1;
+    n3n_sock_str_t sockbuf2;
+    macstr_t mac_buf1;
+    int i;
+    uint8_t dec_tmpbuf[REG_SUPER_ACK_PAYLOAD_SPACE];
+    n2n_REGISTER_SUPER_ACK_payload_t *payload;
+    n3n_sock_t payload_sock;
+
+    if(!comm) {
+        traceEvent(TRACE_DEBUG, "REGISTER_SUPER_ACK with unknown community %s", cmn.community);
+        return;
+    }
+
+    if((!from_supernode) || (!comm->is_federation)) {
+        traceEvent(TRACE_DEBUG, "dropped REGISTER_SUPER_ACK, should not come from an edge or regular community");
+        return;
+    }
+
+    if(decode_REGISTER_SUPER_ACK(&ack, &cmn, udp_buf, &rem, &idx, dec_tmpbuf) < 0) {
+        traceEvent(TRACE_INFO, "REGISTER_SUPER_ACK section too short");
+        return;
+    }
+    // with user/password and header encryption, a hash follows,
+    // which the decoder leaves unread
+    if(rem != (community_appends_hash(comm) ? N2N_REG_SUP_HASH_CHECK_LEN : 0)) {
+        traceEvent(TRACE_INFO, "REGISTER_SUPER_ACK section of wrong size");
+        return;
+    }
+    orig_sender = &(ack.sock);
+
+    if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
+        if(!find_peer_time_stamp_and_verify(
+               comm->edges,
+               NULL,
+               sn,
+               ack.srcMac,
+               stamp,
+               TIME_STAMP_NO_JITTER)) {
+            traceEvent(TRACE_DEBUG, "dropped REGISTER_SUPER_ACK due to time stamp error");
+            return;
+        }
+    }
+
+    traceEvent(TRACE_INFO, "Rx REGISTER_SUPER_ACK from MAC %s [%s] (external %s)",
+               macaddr_str(mac_buf1, ack.srcMac),
+               sock_to_cstr(sockbuf1, &sender),
+               sock_to_cstr(sockbuf2, orig_sender));
+
+    skip_add = SN_ADD_SKIP;
+    scan = add_sn_to_list_by_mac_or_sock(&(sss->relay.federation->edges), &sender, ack.srcMac, &skip_add);
+    if(scan != NULL) {
+        scan->last_seen = now;
+    } else {
+        traceEvent(TRACE_DEBUG, "dropped REGISTER_SUPER_ACK due to an unknown supernode");
+        return;
+    }
+
+    if(ack.cookie == scan->last_cookie) {
+
+        payload = (n2n_REGISTER_SUPER_ACK_payload_t *)dec_tmpbuf;
+        for(i = 0; i < ack.num_sn; i++) {
+            skip_add = SN_ADD;
+
+            // bugfix for https://github.com/ntop/n2n/issues/1029
+            // REVISIT: best to be removed with 4.0
+            idx = 0;
+            rem = sizeof(payload->sock);
+            decode_sock_payload(&payload_sock, payload->sock, &rem, &idx);
+
+            tmp = add_sn_to_list_by_mac_or_sock(&(sss->relay.federation->edges), &(payload_sock), payload->mac, &skip_add);
+            // not come in yet: reached from an address fit for its family
+            tmp->socket_fd = -1;
+
+            if(skip_add == SN_ADD_ADDED) {
+                tmp->last_seen = now - LAST_SEEN_SN_NEW;
+                sock_to_cstr(sockbuf1, &(tmp->sock));
+                tmp->hostname = strdup(sockbuf1);
+            }
+
+            // shift to next payload entry
+            payload++;
+        }
+
+        if(ack.key_time > sss->relay.dynamic_key_time) {
+            traceEvent(TRACE_DEBUG, "setting new key time");
+            // have all edges re_register (using old dynamic key)
+            send_re_register_super(sss);
+            // set new key time
+            sss->relay.dynamic_key_time = ack.key_time;
+            // calculate new dynamic keys for all communities
+            calculate_dynamic_keys(sss);
+            // force re-register with all supernodes
+            re_register_and_purge_supernodes(sss, sss->relay.federation, &any_time, now, 1 /* forced */);
+        }
+
+    } else {
+        traceEvent(TRACE_INFO, "Rx REGISTER_SUPER_ACK with wrong or old cookie");
+        traceEvent(
+            TRACE_DEBUG,
+            "got %u, expected %u",
+            ack.cookie,
+            scan->last_cookie
+        );
+    }
+}
+
+
+/* MSG_TYPE_REGISTER_SUPER_NAK */
+static void sn_rx_register_super_nak (struct n3n_runtime_data *sss, struct pdu_ctx *c) {
+
+    uint8_t *udp_buf = c->buf;
+    n2n_common_t cmn = c->cmn;
+    size_t rem = c->rem;
+    size_t idx = c->idx;
+    bool from_supernode = c->from_supernode;
+    struct peer_info *sn = c->sn;
+    struct sn_community *comm = c->comm;
+    n3n_sock_t sender = c->sender;
+    uint8_t *hash_buf = c->hash_buf;
+    uint64_t stamp = c->stamp;
+
+    n2n_REGISTER_SUPER_NAK_t nak;
+    uint8_t nakbuf[N2N_SN_PKTBUF_SIZE];
+    size_t encx = 0;
+    struct peer_info          *peer;
+    n3n_sock_str_t sockbuf;
+    macstr_t mac_buf;
+
+    memset(&nak, 0, sizeof(n2n_REGISTER_SUPER_NAK_t));
+
+    if(!comm) {
+        traceEvent(TRACE_DEBUG, "REGISTER_SUPER_NAK with unknown community %s", cmn.community);
+        return;
+    }
+
+    if(decode_REGISTER_SUPER_NAK(&nak, &cmn, udp_buf, &rem, &idx) < 0) {
+        traceEvent(TRACE_INFO, "REGISTER_SUPER_NAK section too short");
+        return;
+    }
+    // with user/password and header encryption, a hash follows,
+    // which the decoder leaves unread
+    if(rem != (community_appends_hash(comm) ? N2N_REG_SUP_HASH_CHECK_LEN : 0)) {
+        traceEvent(TRACE_INFO, "REGISTER_SUPER_NAK section of wrong size");
+        return;
+    }
+
+    if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
+        if(!find_peer_time_stamp_and_verify(
+               comm->edges,
+               NULL,
+               sn,
+               nak.srcMac,
+               stamp,
+               TIME_STAMP_NO_JITTER)) {
+            traceEvent(TRACE_DEBUG, "process_pdu dropped REGISTER_SUPER_NAK due to time stamp error");
+            return;
+        }
+    }
+
+    traceEvent(TRACE_INFO, "Rx REGISTER_SUPER_NAK from %s [%s]",
+               macaddr_str(mac_buf, nak.srcMac),
+               sock_to_cstr(sockbuf, &sender));
+
+    // Only another supernode of the federation passes a NAK on, for
+    // an edge in a regular community: from anyone else it could
+    // throw out any edge
+    HASH_FIND_PEER(comm->edges, nak.srcMac, peer);
+    if(from_supernode && !comm->is_federation) {
+        if(peer != NULL) {
+            // this is a NAK for one of the edges conencted to this supernode, forward,
+            // i.e. re-assemble (memcpy from udpbuf to nakbuf could be sufficient as well)
+
+            // use incoming cmn (with already decreased TTL)
+            // NAK (cookie, srcMac, auth) remains unchanged
+
+            encode_REGISTER_SUPER_NAK(nakbuf, &encx, &cmn, &nak);
+
+            if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
+                packet_header_encrypt(nakbuf, encx, encx,
+                                      comm->header_encryption_ctx_static, comm->header_iv_ctx_static,
+                                      time_stamp());
+                // if user-password-auth
+                if(comm->allowed_users) {
+                    encode_buf(nakbuf, &encx, hash_buf /* no matter what content */, N2N_REG_SUP_HASH_CHECK_LEN);
+                }
+            }
+
+            sendto_peer(sss, peer, nakbuf, encx);
+
+            remove_edge(sss, comm, peer);
+        }
+    }
+}
+
+
+/* MSG_TYPE_QUERY_PEER */
+static void sn_rx_query_peer (struct n3n_runtime_data *sss, struct pdu_ctx *c) {
+
+    const struct sockaddr *sender_sock = c->sender_sock;
+    const SOCKET socket_fd = c->socket_fd;
+    uint8_t *udp_buf = c->buf;
+    time_t now = c->now;
+    n2n_common_t cmn = c->cmn;
+    size_t rem = c->rem;
+    size_t idx = c->idx;
+    bool from_supernode = c->from_supernode;
+    struct peer_info *sn = c->sn;
+    struct sn_community *comm = c->comm;
+    n3n_sock_t sender = c->sender;
+    macstr_t mac_buf;
+    macstr_t mac_buf2;
+    uint64_t stamp = c->stamp;
+
+    n2n_QUERY_PEER_t query;
+    uint8_t encbuf[N2N_SN_PKTBUF_SIZE];
+    size_t encx = 0;
+    n2n_common_t cmn2 = {0};
+    n2n_PEER_INFO_t pi = {0};
+    struct sn_community_regular_expression *re, *tmp_re;
+    int8_t allowed_match = -1;
+    uint8_t match = 0;
+    int match_length = 0;
+
+    if(!comm && sss->relay.lock_communities) {
+        HASH_ITER(hh, sss->relay.rules, re, tmp_re) {
+            allowed_match = re_matchp(re->rule, (const char *)cmn.community, &match_length);
+
+            if((allowed_match != -1)
+               && (match_length == strlen((const char *)cmn.community)) // --- only full matches allowed (remove, if also partial matches wanted)
+               && (allowed_match == 0)) {                               // --- only full matches allowed (remove, if also partial matches wanted)
+                match = 1;
+                break;
+            }
+        }
+        if(match != 1) {
+            traceEvent(TRACE_DEBUG, "QUERY_PEER from unknown community %s", cmn.community);
+            return;
+        }
+    }
+
+    if(!comm && sss->relay.lock_communities && (match == 0)) {
+        traceEvent(TRACE_DEBUG, "QUERY_PEER from not allowed community %s", cmn.community);
+        return;
+    }
+
+    if(decode_QUERY_PEER(&query, &cmn, udp_buf, &rem, &idx) < 0) {
+        traceEvent(TRACE_INFO, "QUERY_PEER section too short");
+        return;
+    }
+    if(rem != 0) {
+        traceEvent(TRACE_INFO, "QUERY_PEER section too long");
+        return;
+    }
+
+    // to answer a PING, it is sufficient if the provided communtiy would be a valid one, there does not
+    // neccessarily need to be a comm entry present, e.g. because there locally are no edges of the
+    // community connected (several supernodes in a federation setup)
+    if(comm) {
+        if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
+            if(!find_peer_time_stamp_and_verify(
+                   comm->edges,
+                   NULL,
+                   sn,
+                   query.srcMac,
+                   stamp,
+                   TIME_STAMP_ALLOW_JITTER)) {
+                traceEvent(TRACE_DEBUG, "dropped QUERY_PEER due to time stamp error");
+                return;
+            }
+        }
+    }
+
+    if(is_null_mac(query.targetMac)) {
+        traceEvent(TRACE_DEBUG, "Rx PING from %s",
+                   macaddr_str(mac_buf, query.srcMac));
+
+        cmn2.ttl = N2N_DEFAULT_TTL;
+        cmn2.pc = MSG_TYPE_PEER_INFO;
+        cmn2.flags = N2N_FLAGS_FROM_SUPERNODE;
+        memcpy(cmn2.community, cmn.community, sizeof(n2n_community_t));
+
+        pi.aflags = 0;
+        memcpy(pi.mac, query.targetMac, sizeof(n2n_mac_t));
+        memcpy(pi.srcMac, sss->conf.relay.sn_mac_addr, sizeof(n2n_mac_t));
+
+        memcpy(&pi.sock, &sender, sizeof(sender));
+
+        pi.load = sn_selection_criterion_gather_data(sss);
+
+        snprintf(pi.version, sizeof(pi.version), "%s", sss->conf.relay.version);
+        pi.uptime = now - sss->start_time;
+
+        encode_PEER_INFO(encbuf, &encx, &cmn2, &pi);
+
+        if(comm) {
+            if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
+                packet_header_encrypt(encbuf, encx, encx, comm->header_encryption_ctx_dynamic,
+                                      comm->header_iv_ctx_dynamic,
+                                      time_stamp());
+            }
+        }
+
+        sendto_sock(sss, socket_fd, sender_sock, encbuf, encx);
+
+        traceEvent(TRACE_DEBUG, "Tx PONG to %s",
+                   macaddr_str(mac_buf, query.srcMac));
+
+    } else {
+        traceEvent(TRACE_DEBUG, "Rx QUERY_PEER from %s for %s",
+                   macaddr_str(mac_buf, query.srcMac),
+                   macaddr_str(mac_buf2, query.targetMac));
+
+        struct peer_info *scan;
+
+        // as opposed to the special case 'PING', proper QUERY_PEER processing requires a locally actually present community entry
+        if(!comm) {
+            traceEvent(TRACE_DEBUG, "QUERY_PEER with unknown community %s", cmn.community);
+            return;
+        }
+
+        HASH_FIND_PEER(comm->edges, query.targetMac, scan);
+        if(scan) {
+            cmn2.ttl = N2N_DEFAULT_TTL;
+            cmn2.pc = MSG_TYPE_PEER_INFO;
+            cmn2.flags = N2N_FLAGS_FROM_SUPERNODE;
+            memcpy(cmn2.community, cmn.community, sizeof(n2n_community_t));
+
+            pi.aflags = 0;
+            memcpy(pi.srcMac, query.srcMac, sizeof(n2n_mac_t));
+            memcpy(pi.mac, query.targetMac, sizeof(n2n_mac_t));
+            pi.sock = scan->sock;
+            if(scan->preferred_sock.family != (uint8_t)AF_INVALID) {
+                cmn2.flags |= N2N_FLAGS_SOCKET;
+                pi.preferred_sock = scan->preferred_sock;
+            }
+
+            // FIXME:
+            // If we get the request on TCP, the reply should indicate
+            // our prefered sock is TCP ??
+
+            encode_PEER_INFO(encbuf, &encx, &cmn2, &pi);
+
+            if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
+                packet_header_encrypt(encbuf, encx, encx, comm->header_encryption_ctx_dynamic,
+                                      comm->header_iv_ctx_dynamic,
+                                      time_stamp());
+            }
+            // back to sender, be it edge or supernode (which will forward to edge)
+            sendto_sock(sss, socket_fd, sender_sock, encbuf, encx);
+
+            traceEvent(TRACE_DEBUG, "Tx PEER_INFO to %s",
+                       macaddr_str(mac_buf, query.srcMac));
+
+        } else {
+
+            if(from_supernode) {
+                traceEvent(TRACE_DEBUG, "QUERY_PEER on unknown edge from supernode %s, dropping the packet",
+                           macaddr_str(mac_buf, query.srcMac));
+            } else {
+                traceEvent(TRACE_DEBUG, "QUERY_PEER from unknown edge %s, forwarding to all other supernodes",
+                           macaddr_str(mac_buf, query.srcMac));
+
+                memcpy(&cmn2, &cmn, sizeof(n2n_common_t));
+                cmn2.flags |= N2N_FLAGS_FROM_SUPERNODE;
+
+                encode_QUERY_PEER(encbuf, &encx, &cmn2, &query);
+
+                if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
+                    packet_header_encrypt(encbuf, encx, encx, comm->header_encryption_ctx_dynamic,
+                                          comm->header_iv_ctx_dynamic,
+                                          time_stamp());
+                }
+
+                try_broadcast(sss, NULL, &cmn, query.srcMac, from_supernode, encbuf, encx, now);
+            }
+        }
+    }
+}
+
+
+/* MSG_TYPE_PEER_INFO */
+static void sn_rx_peer_info (struct n3n_runtime_data *sss, struct pdu_ctx *c) {
+
+    const struct sockaddr *sender_sock = c->sender_sock;
+    socklen_t sock_size = c->sock_size;
+    uint8_t *udp_buf = c->buf;
+    time_t now = c->now;
+    n2n_common_t cmn = c->cmn;
+    size_t rem = c->rem;
+    size_t idx = c->idx;
+    bool from_supernode = c->from_supernode;
+    struct peer_info *sn = c->sn;
+    struct sn_community *comm = c->comm;
+    n3n_sock_t sender = c->sender;
+    macstr_t mac_buf;
+    n3n_sock_str_t sockbuf;
+    uint64_t stamp = c->stamp;
+
+    n2n_PEER_INFO_t pi;
+    uint8_t encbuf[N2N_SN_PKTBUF_SIZE];
+    size_t encx = 0;
+    struct peer_info                       *peer;
+
+    if(!comm) {
+        traceEvent(TRACE_DEBUG, "PEER_INFO with unknown community %s", cmn.community);
+        return;
+    }
+
+    if(decode_PEER_INFO(&pi, &cmn, udp_buf, &rem, &idx) < 0) {
+        traceEvent(TRACE_INFO, "PEER_INFO section too short");
+        return;
+    }
+    if(rem != 0) {
+        traceEvent(TRACE_INFO, "PEER_INFO section too long");
+        return;
+    }
+
+    if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
+        if(!find_peer_time_stamp_and_verify(
+               comm->edges,
+               NULL,
+               sn,
+               pi.srcMac,
+               stamp,
+               TIME_STAMP_NO_JITTER)) {
+            traceEvent(TRACE_DEBUG, "dropped PEER_INFO due to time stamp error");
+            return;
+        }
+    }
+
+    traceEvent(TRACE_INFO, "Rx PEER_INFO from %s [%s]",
+               macaddr_str(mac_buf, pi.srcMac),
+               sock_to_cstr(sockbuf, &sender));
+
+    // The answer of another supernode of the federation to a
+    // QUERY_PEER that one of our edges sent to all of them. From
+    // anyone else it would tell the edge a wrong place for its peer,
+    // and us a wrong supernode for it.
+    HASH_FIND_PEER(comm->edges, pi.srcMac, peer);
+    if(peer != NULL) {
+        if(from_supernode && !comm->is_federation && !is_null_mac(pi.srcMac)) {
+            // snoop on the information to use for supernode forwarding (do not wait until first remote REGISTER_SUPER)
+            update_node_supernode_association(comm, &(pi.mac), sender_sock, sock_size, now);
+
+            // this is a PEER_INFO for one of the edges conencted to this supernode, forward,
+            // i.e. re-assemble (memcpy of udpbuf to encbuf could be sufficient as well)
+
+            // use incoming cmn (with already decreased TTL)
+            // PEER_INFO remains unchanged
+
+            encode_PEER_INFO(encbuf, &encx, &cmn, &pi);
+
+            if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
+                packet_header_encrypt(encbuf, encx, encx,
+                                      comm->header_encryption_ctx_dynamic, comm->header_iv_ctx_dynamic,
+                                      time_stamp());
+            }
+
+            sendto_peer(sss, peer, encbuf, encx);
+        }
+    }
+}
+
+
+// The PDUs a supernode takes
+static const pdu_handlers_t sn_pdu_handlers = {
+    [MSG_TYPE_REGISTER] = sn_rx_register,
+    [MSG_TYPE_PACKET] = sn_rx_packet,
+    [MSG_TYPE_REGISTER_ACK] = sn_rx_register_ack,
+    [MSG_TYPE_REGISTER_SUPER] = sn_rx_register_super,
+    [MSG_TYPE_UNREGISTER_SUPER] = sn_rx_unregister_super,
+    [MSG_TYPE_REGISTER_SUPER_ACK] = sn_rx_register_super_ack,
+    [MSG_TYPE_REGISTER_SUPER_NAK] = sn_rx_register_super_nak,
+    [MSG_TYPE_PEER_INFO] = sn_rx_peer_info,
+    [MSG_TYPE_QUERY_PEER] = sn_rx_query_peer,
+};
+
+
 static int process_pdu_body (struct n3n_runtime_data * sss,
                              struct pdu_ctx *h,
                              struct sn_community *comm) {
 
     const struct sockaddr *sender_sock = h->sender_sock;
-    socklen_t sock_size = h->sock_size;
-    const SOCKET socket_fd = h->socket_fd;
     uint8_t *udp_buf = h->buf;
     size_t udp_size = h->size;
-    time_t now = h->now;
 
     n2n_common_t cmn;        /* common fields in the packet header */
     size_t rem;
@@ -2103,18 +3225,11 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
     bool from_supernode;
     struct peer_info *sn = NULL;
     n3n_sock_t sender;
-    n3n_sock_t          *orig_sender;
-    macstr_t mac_buf;
-    macstr_t mac_buf2;
     n3n_sock_str_t sockbuf;
-    uint8_t *hash_buf = h->hash_buf;
     uint32_t header_enc = h->header_enc;
-    uint64_t stamp = h->stamp;
     int skip_add;
-    time_t any_time = 0;
 
     fill_n3nsock(&sender, sender_sock);
-    orig_sender = &sender;
 
     traceEvent(TRACE_DEBUG, "processing incoming UDP packet [len: %lu][sender: %s]",
                udp_size, sock_to_cstr(sockbuf, &sender));
@@ -2185,986 +3300,9 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
         return 0;
     }
 
-    switch(msg_type) {
-        case MSG_TYPE_PACKET: {
-            /* PACKET from one edge to another edge via supernode. */
-
-            /* pkt will be modified in place and recoded to an output of potentially
-             * different size due to addition of the socket.*/
-            n2n_PACKET_t pkt;
-            n2n_common_t cmn2;
-            uint8_t encbuf[N2N_SN_PKTBUF_SIZE];
-            size_t encx = 0;
-            int unicast;           /* non-zero if unicast */
-            uint8_t *     rec_buf; /* either udp_buf or encbuf */
-
-            if(!comm) {
-                traceEvent(TRACE_DEBUG, "PACKET with unknown community %s", cmn.community);
-                return -1;
-            }
-
-            // every packet thread stores this, so only if it changed
-            if(SHARED_LOAD(sss->relay.last_sn_fwd) != now) {
-                SHARED_STORE(sss->relay.last_sn_fwd, now);
-            }
-            // whatever follows the header is the payload
-            if(decode_PACKET(&pkt, &cmn, udp_buf, &rem, &idx) < 0) {
-                traceEvent(TRACE_INFO, "PACKET section too short");
-                return -1;
-            }
-
-            // already checked for valid comm
-            if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
-                if(!find_peer_time_stamp_and_verify(
-                       comm->edges,
-                       NULL,
-                       sn,
-                       pkt.srcMac,
-                       stamp,
-                       TIME_STAMP_ALLOW_JITTER)) {
-                    traceEvent(TRACE_DEBUG, "dropped PACKET due to time stamp error");
-                    return -1;
-                }
-            }
-
-            unicast = (0 == is_multi_broadcast(pkt.dstMac));
-
-            traceEvent(TRACE_DEBUG, "RX PACKET (%s) %s -> %s %s",
-                       (unicast ? "unicast" : "multicast"),
-                       macaddr_str(mac_buf, pkt.srcMac),
-                       macaddr_str(mac_buf2, pkt.dstMac),
-                       (from_supernode ? "from sn" : "local"));
-
-            if(!from_supernode) {
-                memcpy(&cmn2, &cmn, sizeof(n2n_common_t));
-
-                /* We are going to add socket even if it was not there before */
-                cmn2.flags |= N2N_FLAGS_SOCKET | N2N_FLAGS_FROM_SUPERNODE;
-
-                memcpy(&pkt.sock, &sender, sizeof(sender));
-
-                rec_buf = encbuf;
-                /* Re-encode the header. */
-                encode_PACKET(encbuf, &encx, &cmn2, &pkt);
-
-                uint16_t oldEncx = encx;
-
-                /* Copy the original payload unchanged */
-                encode_buf(encbuf, &encx, (udp_buf + idx), (udp_size - idx));
-
-                if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
-                    // in case of user-password auth, also encrypt the iv of payload assuming ChaCha20 and SPECK having the same iv size
-                    packet_header_encrypt(rec_buf, oldEncx + (NULL != comm->allowed_users) * MIN(encx - oldEncx, N2N_SPECK_IVEC_SIZE), encx,
-                                          comm->header_encryption_ctx_dynamic, comm->header_iv_ctx_dynamic,
-                                          time_stamp());
-                }
-            } else {
-                /* Already from a supernode. Nothing to modify, just pass to
-                 * destination. */
-
-                traceEvent(TRACE_DEBUG, "Rx PACKET fwd unmodified");
-
-                rec_buf = udp_buf;
-                encx = udp_size;
-
-                if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
-                    // in case of user-password auth, also encrypt the iv of payload assuming ChaCha20 and SPECK having the same iv size
-                    packet_header_encrypt(rec_buf, idx + (NULL != comm->allowed_users) * MIN(encx - idx, N2N_SPECK_IVEC_SIZE), encx,
-                                          comm->header_encryption_ctx_dynamic, comm->header_iv_ctx_dynamic,
-                                          time_stamp());
-                }
-            }
-
-            /* Common section to forward the final product. */
-            if(unicast) {
-                try_forward(sss, comm, &cmn, pkt.dstMac, from_supernode, rec_buf, encx, now);
-            } else {
-                try_broadcast(sss, comm, &cmn, pkt.srcMac, from_supernode, rec_buf, encx, now);
-            }
-            return 0;
-        }
-
-        case MSG_TYPE_REGISTER: {
-            /* Forwarding a REGISTER from one edge to the next */
-
-            n2n_REGISTER_t reg;
-            n2n_common_t cmn2;
-            uint8_t encbuf[N2N_SN_PKTBUF_SIZE];
-            size_t encx = 0;
-            int unicast;             /* non-zero if unicast */
-            uint8_t *       rec_buf; /* either udp_buf or encbuf */
-
-            if(!comm) {
-                traceEvent(TRACE_DEBUG, "REGISTER from unknown community %s", cmn.community);
-                return -1;
-            }
-
-            sss->relay.last_sn_fwd = now;
-            if(decode_REGISTER(&reg, &cmn, udp_buf, &rem, &idx) < 0) {
-                traceEvent(TRACE_INFO, "REGISTER section too short");
-                return -1;
-            }
-            if(rem != 0) {
-                traceEvent(TRACE_INFO, "REGISTER section too long");
-                return -1;
-            }
-
-            // already checked for valid comm
-            if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
-                if(!find_peer_time_stamp_and_verify(
-                       comm->edges,
-                       NULL,
-                       sn,
-                       reg.srcMac,
-                       stamp,
-                       TIME_STAMP_NO_JITTER)) {
-                    traceEvent(TRACE_DEBUG, "dropped REGISTER due to time stamp error");
-                    return -1;
-                }
-            }
-
-            unicast = (0 == is_multi_broadcast(reg.dstMac));
-
-            if(unicast) {
-                traceEvent(TRACE_DEBUG, "Rx REGISTER %s -> %s %s",
-                           macaddr_str(mac_buf, reg.srcMac),
-                           macaddr_str(mac_buf2, reg.dstMac),
-                           ((cmn.flags & N2N_FLAGS_FROM_SUPERNODE) ? "from sn" : "local"));
-
-                if(0 == (cmn.flags & N2N_FLAGS_FROM_SUPERNODE)) {
-                    memcpy(&cmn2, &cmn, sizeof(n2n_common_t));
-
-                    /* We are going to add socket even if it was not there before */
-                    cmn2.flags |= N2N_FLAGS_SOCKET | N2N_FLAGS_FROM_SUPERNODE;
-
-                    memcpy(&reg.sock, &sender, sizeof(sender));
-
-                    /* Re-encode the header. */
-                    encode_REGISTER(encbuf, &encx, &cmn2, &reg);
-
-                    rec_buf = encbuf;
-                } else {
-                    /* Already from a supernode. Nothing to modify, just pass to
-                     * destination. */
-
-                    rec_buf = udp_buf;
-                    encx = udp_size;
-                }
-
-                if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
-                    packet_header_encrypt(rec_buf, encx, encx,
-                                          comm->header_encryption_ctx_dynamic, comm->header_iv_ctx_dynamic,
-                                          time_stamp());
-                }
-                try_forward(sss, comm, &cmn, reg.dstMac, from_supernode, rec_buf, encx, now); /* unicast only */
-            } else {
-                traceEvent(TRACE_ERROR, "Rx REGISTER with multicast destination");
-            }
-            return 0;
-        }
-
-        case MSG_TYPE_REGISTER_ACK: {
-            traceEvent(TRACE_DEBUG, "Rx REGISTER_ACK (not implemented) should not be via supernode");
-            return 0;
-        }
-
-        case MSG_TYPE_REGISTER_SUPER: {
-            n2n_REGISTER_SUPER_t reg;
-            n2n_REGISTER_SUPER_ACK_t ack;
-            n2n_REGISTER_SUPER_NAK_t nak;
-            n2n_common_t cmn2;
-            uint8_t ackbuf[N2N_SN_PKTBUF_SIZE];
-            uint8_t payload_buf[REG_SUPER_ACK_PAYLOAD_SPACE];
-            n2n_REGISTER_SUPER_ACK_payload_t       *payload;
-            size_t encx = 0;
-            struct sn_community_regular_expression *re, *tmp_re;
-            struct peer_info                       *peer, *tmp_peer, *p;
-            int8_t allowed_match = -1;
-            uint8_t match = 0;
-            int match_length = 0;
-            n2n_ip_subnet_t ipaddr;
-            int num = 0;
-            int skip;
-            int ret_value;
-            sn_user_t                              *user = NULL;
-
-            /*
-             * ack.dev_addr is only set when the edge needs an IP assigned
-             * (lines below); zero the whole struct so the encoded dev_addr
-             * is zero rather than garbage when that branch is not taken
-             */
-            // TODO: refactor code to avoid needing memset
-            memset(&ack, 0, sizeof(n2n_REGISTER_SUPER_ACK_t));
-
-            /* Edge/supernode requesting registration with us.    */
-            sss->relay.last_sn_reg=now;
-            STATS_INC(sss, sn_reg);
-            if(decode_REGISTER_SUPER(&reg, &cmn, udp_buf, &rem, &idx) < 0) {
-                traceEvent(TRACE_INFO, "REGISTER_SUPER section too short");
-                return -1;
-            }
-            // the length of the rest is checked once the community is known
-
-            if(comm) {
-                if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
-                    if(!find_peer_time_stamp_and_verify(
-                           comm->edges,
-                           NULL,
-                           sn,
-                           reg.edgeMac,
-                           stamp,
-                           TIME_STAMP_NO_JITTER)) {
-                        traceEvent(TRACE_DEBUG, "dropped REGISTER_SUPER due to time stamp error");
-                        return -1;
-                    }
-                }
-            }
-
-            /*
-                Before we move any further, we need to check if the requested
-                community is allowed by the supernode. In case it is not we do
-                not report any message back to the edge to hide the supernode
-                existance (better from the security standpoint)
-             */
-
-            if(!comm && sss->relay.lock_communities) {
-                HASH_ITER(hh, sss->relay.rules, re, tmp_re) {
-                    allowed_match = re_matchp(re->rule, (const char *)cmn.community, &match_length);
-
-                    if((allowed_match != -1)
-                       && (match_length == strlen((const char *)cmn.community)) // --- only full matches allowed (remove, if also partial matches wanted)
-                       && (allowed_match == 0)) { // --- only full matches allowed (remove, if also partial matches wanted)
-                        match = 1;
-                        break;
-                    }
-                }
-                if(match != 1) {
-                    traceEvent(TRACE_INFO, "discarded registration with unallowed community '%s'",
-                               (char*)cmn.community);
-                    return -1;
-                }
-            }
-
-            if(!comm && (!sss->relay.lock_communities || (match == 1))) {
-                comm = (struct sn_community*)calloc(1, sizeof(struct sn_community));
-
-                if(comm) {
-                    comm_init(comm, (char *)cmn.community);
-                    /* new communities introduced by REGISTERs could not have had encrypted header... */
-                    comm->header_encryption = HEADER_ENCRYPTION_NONE;
-                    free(comm->header_encryption_ctx_static);
-                    comm->header_encryption_ctx_static = NULL;
-                    free(comm->header_encryption_ctx_dynamic);
-                    comm->header_encryption_ctx_dynamic = NULL;
-                    /* ... and also are purgeable during periodic purge */
-                    comm->purgeable = true;
-                    memset(comm->number_enc_packets, 0, sizeof(comm->number_enc_packets));
-                    HASH_ADD_STR(sss->relay.communities, community, comm);
-
-                    traceEvent(TRACE_INFO, "new community: %s", comm->community);
-                    assign_one_ip_subnet(sss, comm);
-                }
-            }
-
-            if(!comm) {
-                traceEvent(TRACE_INFO, "discarded registration with unallowed community '%s'",
-                           (char*)cmn.community);
-                return -1;
-            }
-
-            // with user/password and header encryption, a hash follows,
-            // which the decoder leaves unread
-            if(rem != (community_appends_hash(comm) ? N2N_REG_SUP_HASH_CHECK_LEN : 0)) {
-                traceEvent(TRACE_INFO, "REGISTER_SUPER section of wrong size");
-                return -1;
-            }
-
-            // hash check (user/pw auth only)
-            if(comm->allowed_users) {
-                // check if submitted public key is in list of allowed users
-                HASH_FIND(hh, comm->allowed_users, &reg.auth.token, sizeof(n2n_private_public_key_t), user);
-                if(user) {
-                    speck_128_encrypt(hash_buf, (speck_context_t*)user->shared_secret_ctx);
-                    if(memcmp(hash_buf, udp_buf + udp_size - N2N_REG_SUP_HASH_CHECK_LEN /* length has already been checked */, N2N_REG_SUP_HASH_CHECK_LEN)) {
-                        traceEvent(TRACE_INFO, "Rx REGISTER_SUPER with wrong hash");
-                        return -1;
-                    }
-                } else {
-                    traceEvent(TRACE_INFO, "Rx REGISTER_SUPER from unknown user");
-                    // continue and let auth check do the rest (otherwise, no NAK is sent)
-                }
-            }
-
-            if(!memcmp(reg.edgeMac, sss->conf.relay.sn_mac_addr, sizeof(n2n_mac_t))) {
-                traceEvent(TRACE_DEBUG, "Rx REGISTER_SUPER from self, ignoring");
-                return -1;
-            }
-
-            cmn2.ttl = N2N_DEFAULT_TTL;
-            cmn2.pc = MSG_TYPE_REGISTER_SUPER_ACK;
-            cmn2.flags = N2N_FLAGS_SOCKET | N2N_FLAGS_FROM_SUPERNODE;
-            memcpy(cmn2.community, cmn.community, sizeof(n2n_community_t));
-
-            ack.cookie = reg.cookie;
-            memcpy(ack.srcMac, sss->conf.relay.sn_mac_addr, sizeof(n2n_mac_t));
-
-            if(!comm->is_federation) { /* alternatively, do not send zero tap ip address in federation REGISTER_SUPER */
-                if((reg.dev_addr.net_addr == 0) || (reg.dev_addr.net_addr == 0xFFFFFFFF) || (reg.dev_addr.net_bitlen == 0) ||
-                   ((reg.dev_addr.net_addr & 0xFFFF0000) == 0xA9FE0000 /* 169.254.0.0 */)) {
-                    memset(&ipaddr, 0, sizeof(n2n_ip_subnet_t));
-                    assign_one_ip_addr(comm, reg.dev_desc, &ipaddr);
-                    ack.dev_addr.net_addr = ipaddr.net_addr;
-                    ack.dev_addr.net_bitlen = ipaddr.net_bitlen;
-                }
-            }
-
-            ack.lifetime = reg_lifetime(sss);
-
-            memcpy(&ack.sock, &sender, sizeof(sender));
-
-            /* Add sender's data to federation (or update it) */
-            if(comm->is_federation) {
-                skip_add = SN_ADD;
-                p = add_sn_to_list_by_mac_or_sock(&(sss->relay.federation->edges), &(ack.sock), reg.edgeMac, &skip_add);
-                p->last_seen = now;
-                // answered where it came in
-                p->socket_fd = socket_fd;
-                if(skip_add == SN_ADD_ADDED) {
-                    sock_to_cstr(sockbuf, &(p->sock));
-                    p->hostname = strdup(sockbuf);
-                }
-            }
-
-            /* Skip random numbers of supernodes before payload assembling, calculating an appropriate random_number.
-             * That way, all supernodes have a chance to be propagated with REGISTER_SUPER_ACK. */
-            skip = HASH_COUNT(sss->relay.federation->edges) - (int)(REG_SUPER_ACK_PAYLOAD_ENTRY_SIZE / REG_SUPER_ACK_PAYLOAD_ENTRY_SIZE);
-            skip = (skip < 0) ? 0 : n3n_rand_sqr(skip);
-
-            /* Assembling supernode list for REGISTER_SUPER_ACK payload */
-            payload = (n2n_REGISTER_SUPER_ACK_payload_t*)payload_buf;
-            HASH_ITER(hh, sss->relay.federation->edges, peer, tmp_peer) {
-                if(skip) {
-                    skip--;
-                    continue;
-                }
-                if(peer->sock.family == (uint8_t)AF_INVALID)
-                    continue; /* do not add unresolved supernodes to payload */
-                if(memcmp(&(peer->sock), &(ack.sock), sizeof(n3n_sock_t)) == 0) continue; /* a supernode doesn't add itself to the payload */
-                if((now - peer->last_seen) >= LAST_SEEN_SN_NEW) continue;  /* skip long-time-not-seen supernodes.
-                                                                            * We need to allow for a little extra time because supernodes sometimes exceed
-                                                                            * their SN_ACTIVE time before they get re-registred to. */
-                if(((++num)*REG_SUPER_ACK_PAYLOAD_ENTRY_SIZE) > REG_SUPER_ACK_PAYLOAD_SPACE) break; /* no more space available in REGISTER_SUPER_ACK payload */
-
-                // bugfix for https://github.com/ntop/n2n/issues/1029
-                // REVISIT: best to be removed with 4.0 (replace with encode_sock)
-                idx = 0;
-                encode_sock_payload(payload->sock, &idx, &(peer->sock));
-
-                memcpy(payload->mac, peer->mac_addr, sizeof(n2n_mac_t));
-                // shift to next payload entry
-                payload++;
-            }
-            ack.num_sn = num;
-
-            traceEvent(TRACE_DEBUG, "Rx REGISTER_SUPER for %s [%s]",
-                       macaddr_str(mac_buf, reg.edgeMac),
-                       sock_to_cstr(sockbuf, &(ack.sock)));
-
-            // check authentication
-            ret_value = update_edge_no_change;
-            if(!comm->is_federation) { /* REVISIT: auth among supernodes is not implemented yet */
-                if(cmn.flags & N2N_FLAGS_FROM_SUPERNODE) {
-                    ret_value = update_edge(sss, &cmn, &reg, comm, &(ack.sock), socket_fd, &(ack.auth), SN_ADD_SKIP, now);
-                } else {
-                    // do not add in case of null mac (edge asking for ip address)
-                    ret_value = update_edge(sss, &cmn, &reg, comm, &(ack.sock), socket_fd, &(ack.auth), is_null_mac(reg.edgeMac) ? SN_ADD_SKIP : SN_ADD, now);
-                }
-            }
-
-            if(ret_value == update_edge_auth_fail) {
-                // send REGISTER_SUPER_NAK
-                cmn2.pc = MSG_TYPE_REGISTER_SUPER_NAK;
-                nak.cookie = reg.cookie;
-                memcpy(nak.srcMac, reg.edgeMac, sizeof(n2n_mac_t));
-
-                encode_REGISTER_SUPER_NAK(ackbuf, &encx, &cmn2, &nak);
-
-                if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
-                    packet_header_encrypt(ackbuf, encx, encx,
-                                          comm->header_encryption_ctx_static, comm->header_iv_ctx_static,
-                                          time_stamp());
-                    // if user-password-auth
-                    if(comm->allowed_users) {
-                        encode_buf(ackbuf, &encx, hash_buf /* no matter what content */, N2N_REG_SUP_HASH_CHECK_LEN);
-                    }
-                }
-                sendto_sock(sss, socket_fd, sender_sock, ackbuf, encx);
-
-                traceEvent(TRACE_DEBUG, "Tx REGISTER_SUPER_NAK for %s",
-                           macaddr_str(mac_buf, reg.edgeMac));
-
-                return 0;
-            }
-
-            // if this is not already from a supernode ...
-            // and not from federation, ...
-            if((!(cmn.flags & N2N_FLAGS_FROM_SUPERNODE)) || (!(cmn.flags & N2N_FLAGS_SOCKET))) {
-                // ... forward to all other supernodes (note try_broadcast()'s behavior with
-                //     NULL comm and from_supernode parameter)
-                // exception: do not forward auto ip draw
-                if(!is_null_mac(reg.edgeMac)) {
-                    memcpy(&reg.sock, &sender, sizeof(sender));
-
-                    cmn2.pc = MSG_TYPE_REGISTER_SUPER;
-                    encode_REGISTER_SUPER(ackbuf, &encx, &cmn2, &reg);
-
-                    if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
-                        packet_header_encrypt(ackbuf, encx, encx,
-                                              comm->header_encryption_ctx_static, comm->header_iv_ctx_static,
-                                              time_stamp());
-                        // if user-password-auth
-                        if(comm->allowed_users) {
-                            // append an encrypted packet hash
-                            pearson_hash_128(hash_buf, ackbuf, encx);
-                            // same 'user' as above
-                            speck_128_encrypt(hash_buf, (speck_context_t*)user->shared_secret_ctx);
-                            encode_buf(ackbuf, &encx, hash_buf, N2N_REG_SUP_HASH_CHECK_LEN);
-                        }
-                    }
-
-                    try_broadcast(sss, NULL, &cmn, reg.edgeMac, from_supernode, ackbuf, encx, now);
-                }
-
-                // dynamic key time handling if appropriate
-                ack.key_time = 0;
-                if(comm->is_federation) {
-                    if(reg.key_time > sss->relay.dynamic_key_time) {
-                        traceEvent(TRACE_DEBUG, "setting new key time");
-                        // have all edges re_register (using old dynamic key)
-                        send_re_register_super(sss);
-                        // set new key time
-                        sss->relay.dynamic_key_time = reg.key_time;
-                        // calculate new dynamic keys for all communities
-                        calculate_dynamic_keys(sss);
-                        // force re-register with all supernodes
-                        re_register_and_purge_supernodes(sss, sss->relay.federation, &any_time, now, 1 /* forced */);
-                    }
-                    ack.key_time = sss->relay.dynamic_key_time;
-                }
-
-                // send REGISTER_SUPER_ACK
-                encx = 0;
-                cmn2.pc = MSG_TYPE_REGISTER_SUPER_ACK;
-
-                encode_REGISTER_SUPER_ACK(ackbuf, &encx, &cmn2, &ack, payload_buf);
-
-                if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
-                    packet_header_encrypt(ackbuf, encx, encx,
-                                          comm->header_encryption_ctx_static, comm->header_iv_ctx_static,
-                                          time_stamp());
-                    // if user-password-auth
-                    if(comm->allowed_users) {
-                        // append an encrypted packet hash
-                        pearson_hash_128(hash_buf, ackbuf, encx);
-                        // same 'user' as above
-                        speck_128_encrypt(hash_buf, (speck_context_t*)user->shared_secret_ctx);
-                        encode_buf(ackbuf, &encx, hash_buf, N2N_REG_SUP_HASH_CHECK_LEN);
-                    }
-                }
-
-                sendto_sock(sss, socket_fd, sender_sock, ackbuf, encx);
-
-                traceEvent(TRACE_DEBUG, "Tx REGISTER_SUPER_ACK for %s [%s]",
-                           macaddr_str(mac_buf, reg.edgeMac),
-                           sock_to_cstr(sockbuf, &(ack.sock)));
-            } else {
-                // this is an edge with valid authentication registering with another supernode, so ...
-                // 1- ... associate it with that other supernode
-                update_node_supernode_association(comm, &(reg.edgeMac), sender_sock, sock_size, now);
-                // 2- ... we can delete it from regular list if present (can happen)
-                HASH_FIND_PEER(comm->edges, reg.edgeMac, peer);
-                if(peer != NULL) {
-                    remove_edge(sss, comm, peer);
-                }
-            }
-
-            return 0;
-        }
-
-        case MSG_TYPE_UNREGISTER_SUPER: {
-            n2n_UNREGISTER_SUPER_t unreg;
-            struct peer_info       *peer;
-            int auth;
-
-
-            if(!comm) {
-                traceEvent(TRACE_DEBUG, "dropped UNREGISTER_SUPER with unknown community %s", cmn.community);
-                return -1;
-            }
-
-            if((from_supernode) || (comm->is_federation)) {
-                traceEvent(TRACE_DEBUG, "dropped UNREGISTER_SUPER: should not come from a supernode or federation.");
-                return -1;
-            }
-
-            if(decode_UNREGISTER_SUPER(&unreg, &cmn, udp_buf, &rem, &idx) < 0) {
-                traceEvent(TRACE_INFO, "UNREGISTER_SUPER section too short");
-                return -1;
-            }
-            if(rem != 0) {
-                traceEvent(TRACE_INFO, "UNREGISTER_SUPER section too long");
-                return -1;
-            }
-
-            if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
-                if(!find_peer_time_stamp_and_verify(
-                       comm->edges,
-                       NULL,
-                       sn,
-                       unreg.srcMac,
-                       stamp,
-                       TIME_STAMP_NO_JITTER)) {
-                    traceEvent(TRACE_DEBUG, "dropped UNREGISTER_SUPER due to time stamp error");
-                    return -1;
-                }
-            }
-
-            traceEvent(TRACE_DEBUG, "Rx UNREGISTER_SUPER from %s",
-                       macaddr_str(mac_buf, unreg.srcMac));
-
-            HASH_FIND_PEER(comm->edges, unreg.srcMac, peer);
-            if(peer != NULL) {
-                if((auth = auth_edge(&(peer->auth), &unreg.auth, NULL, comm)) == 0) {
-                    remove_edge(sss, comm, peer);
-                }
-            }
-            return 0;
-        }
-
-        case MSG_TYPE_REGISTER_SUPER_ACK: {
-            n2n_REGISTER_SUPER_ACK_t ack;
-            struct peer_info                 *scan, *tmp;
-            n3n_sock_str_t sockbuf1;
-            n3n_sock_str_t sockbuf2;
-            macstr_t mac_buf1;
-            int i;
-            uint8_t dec_tmpbuf[REG_SUPER_ACK_PAYLOAD_SPACE];
-            n2n_REGISTER_SUPER_ACK_payload_t *payload;
-            n3n_sock_t payload_sock;
-
-            if(!comm) {
-                traceEvent(TRACE_DEBUG, "REGISTER_SUPER_ACK with unknown community %s", cmn.community);
-                return -1;
-            }
-
-            if((!from_supernode) || (!comm->is_federation)) {
-                traceEvent(TRACE_DEBUG, "dropped REGISTER_SUPER_ACK, should not come from an edge or regular community");
-                return -1;
-            }
-
-            if(decode_REGISTER_SUPER_ACK(&ack, &cmn, udp_buf, &rem, &idx, dec_tmpbuf) < 0) {
-                traceEvent(TRACE_INFO, "REGISTER_SUPER_ACK section too short");
-                return -1;
-            }
-            // with user/password and header encryption, a hash follows,
-            // which the decoder leaves unread
-            if(rem != (community_appends_hash(comm) ? N2N_REG_SUP_HASH_CHECK_LEN : 0)) {
-                traceEvent(TRACE_INFO, "REGISTER_SUPER_ACK section of wrong size");
-                return -1;
-            }
-            orig_sender = &(ack.sock);
-
-            if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
-                if(!find_peer_time_stamp_and_verify(
-                       comm->edges,
-                       NULL,
-                       sn,
-                       ack.srcMac,
-                       stamp,
-                       TIME_STAMP_NO_JITTER)) {
-                    traceEvent(TRACE_DEBUG, "dropped REGISTER_SUPER_ACK due to time stamp error");
-                    return -1;
-                }
-            }
-
-            traceEvent(TRACE_INFO, "Rx REGISTER_SUPER_ACK from MAC %s [%s] (external %s)",
-                       macaddr_str(mac_buf1, ack.srcMac),
-                       sock_to_cstr(sockbuf1, &sender),
-                       sock_to_cstr(sockbuf2, orig_sender));
-
-            skip_add = SN_ADD_SKIP;
-            scan = add_sn_to_list_by_mac_or_sock(&(sss->relay.federation->edges), &sender, ack.srcMac, &skip_add);
-            if(scan != NULL) {
-                scan->last_seen = now;
-            } else {
-                traceEvent(TRACE_DEBUG, "dropped REGISTER_SUPER_ACK due to an unknown supernode");
-                return 0;
-            }
-
-            if(ack.cookie == scan->last_cookie) {
-
-                payload = (n2n_REGISTER_SUPER_ACK_payload_t *)dec_tmpbuf;
-                for(i = 0; i < ack.num_sn; i++) {
-                    skip_add = SN_ADD;
-
-                    // bugfix for https://github.com/ntop/n2n/issues/1029
-                    // REVISIT: best to be removed with 4.0
-                    idx = 0;
-                    rem = sizeof(payload->sock);
-                    decode_sock_payload(&payload_sock, payload->sock, &rem, &idx);
-
-                    tmp = add_sn_to_list_by_mac_or_sock(&(sss->relay.federation->edges), &(payload_sock), payload->mac, &skip_add);
-                    // not come in yet: reached from an address fit for its family
-                    tmp->socket_fd = -1;
-
-                    if(skip_add == SN_ADD_ADDED) {
-                        tmp->last_seen = now - LAST_SEEN_SN_NEW;
-                        sock_to_cstr(sockbuf1, &(tmp->sock));
-                        tmp->hostname = strdup(sockbuf1);
-                    }
-
-                    // shift to next payload entry
-                    payload++;
-                }
-
-                if(ack.key_time > sss->relay.dynamic_key_time) {
-                    traceEvent(TRACE_DEBUG, "setting new key time");
-                    // have all edges re_register (using old dynamic key)
-                    send_re_register_super(sss);
-                    // set new key time
-                    sss->relay.dynamic_key_time = ack.key_time;
-                    // calculate new dynamic keys for all communities
-                    calculate_dynamic_keys(sss);
-                    // force re-register with all supernodes
-                    re_register_and_purge_supernodes(sss, sss->relay.federation, &any_time, now, 1 /* forced */);
-                }
-
-            } else {
-                traceEvent(TRACE_INFO, "Rx REGISTER_SUPER_ACK with wrong or old cookie");
-                traceEvent(
-                    TRACE_DEBUG,
-                    "got %u, expected %u",
-                    ack.cookie,
-                    scan->last_cookie
-                );
-            }
-            return 0;
-        }
-
-        case MSG_TYPE_REGISTER_SUPER_NAK: {
-            n2n_REGISTER_SUPER_NAK_t nak;
-            uint8_t nakbuf[N2N_SN_PKTBUF_SIZE];
-            size_t encx = 0;
-            struct peer_info          *peer;
-            n3n_sock_str_t sockbuf;
-            macstr_t mac_buf;
-
-            memset(&nak, 0, sizeof(n2n_REGISTER_SUPER_NAK_t));
-
-            if(!comm) {
-                traceEvent(TRACE_DEBUG, "REGISTER_SUPER_NAK with unknown community %s", cmn.community);
-                return -1;
-            }
-
-            if(decode_REGISTER_SUPER_NAK(&nak, &cmn, udp_buf, &rem, &idx) < 0) {
-                traceEvent(TRACE_INFO, "REGISTER_SUPER_NAK section too short");
-                return -1;
-            }
-            // with user/password and header encryption, a hash follows,
-            // which the decoder leaves unread
-            if(rem != (community_appends_hash(comm) ? N2N_REG_SUP_HASH_CHECK_LEN : 0)) {
-                traceEvent(TRACE_INFO, "REGISTER_SUPER_NAK section of wrong size");
-                return -1;
-            }
-
-            if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
-                if(!find_peer_time_stamp_and_verify(
-                       comm->edges,
-                       NULL,
-                       sn,
-                       nak.srcMac,
-                       stamp,
-                       TIME_STAMP_NO_JITTER)) {
-                    traceEvent(TRACE_DEBUG, "process_pdu dropped REGISTER_SUPER_NAK due to time stamp error");
-                    return -1;
-                }
-            }
-
-            traceEvent(TRACE_INFO, "Rx REGISTER_SUPER_NAK from %s [%s]",
-                       macaddr_str(mac_buf, nak.srcMac),
-                       sock_to_cstr(sockbuf, &sender));
-
-            // Only another supernode of the federation passes a NAK on, for
-            // an edge in a regular community: from anyone else it could
-            // throw out any edge
-            HASH_FIND_PEER(comm->edges, nak.srcMac, peer);
-            if(from_supernode && !comm->is_federation) {
-                if(peer != NULL) {
-                    // this is a NAK for one of the edges conencted to this supernode, forward,
-                    // i.e. re-assemble (memcpy from udpbuf to nakbuf could be sufficient as well)
-
-                    // use incoming cmn (with already decreased TTL)
-                    // NAK (cookie, srcMac, auth) remains unchanged
-
-                    encode_REGISTER_SUPER_NAK(nakbuf, &encx, &cmn, &nak);
-
-                    if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
-                        packet_header_encrypt(nakbuf, encx, encx,
-                                              comm->header_encryption_ctx_static, comm->header_iv_ctx_static,
-                                              time_stamp());
-                        // if user-password-auth
-                        if(comm->allowed_users) {
-                            encode_buf(nakbuf, &encx, hash_buf /* no matter what content */, N2N_REG_SUP_HASH_CHECK_LEN);
-                        }
-                    }
-
-                    sendto_peer(sss, peer, nakbuf, encx);
-
-                    remove_edge(sss, comm, peer);
-                }
-            }
-            return 0;
-        }
-
-        case MSG_TYPE_QUERY_PEER: {
-            n2n_QUERY_PEER_t query;
-            uint8_t encbuf[N2N_SN_PKTBUF_SIZE];
-            size_t encx = 0;
-            n2n_common_t cmn2 = {0};
-            n2n_PEER_INFO_t pi = {0};
-            struct sn_community_regular_expression *re, *tmp_re;
-            int8_t allowed_match = -1;
-            uint8_t match = 0;
-            int match_length = 0;
-
-            if(!comm && sss->relay.lock_communities) {
-                HASH_ITER(hh, sss->relay.rules, re, tmp_re) {
-                    allowed_match = re_matchp(re->rule, (const char *)cmn.community, &match_length);
-
-                    if((allowed_match != -1)
-                       && (match_length == strlen((const char *)cmn.community)) // --- only full matches allowed (remove, if also partial matches wanted)
-                       && (allowed_match == 0)) {                               // --- only full matches allowed (remove, if also partial matches wanted)
-                        match = 1;
-                        break;
-                    }
-                }
-                if(match != 1) {
-                    traceEvent(TRACE_DEBUG, "QUERY_PEER from unknown community %s", cmn.community);
-                    return -1;
-                }
-            }
-
-            if(!comm && sss->relay.lock_communities && (match == 0)) {
-                traceEvent(TRACE_DEBUG, "QUERY_PEER from not allowed community %s", cmn.community);
-                return -1;
-            }
-
-            if(decode_QUERY_PEER(&query, &cmn, udp_buf, &rem, &idx) < 0) {
-                traceEvent(TRACE_INFO, "QUERY_PEER section too short");
-                return -1;
-            }
-            if(rem != 0) {
-                traceEvent(TRACE_INFO, "QUERY_PEER section too long");
-                return -1;
-            }
-
-            // to answer a PING, it is sufficient if the provided communtiy would be a valid one, there does not
-            // neccessarily need to be a comm entry present, e.g. because there locally are no edges of the
-            // community connected (several supernodes in a federation setup)
-            if(comm) {
-                if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
-                    if(!find_peer_time_stamp_and_verify(
-                           comm->edges,
-                           NULL,
-                           sn,
-                           query.srcMac,
-                           stamp,
-                           TIME_STAMP_ALLOW_JITTER)) {
-                        traceEvent(TRACE_DEBUG, "dropped QUERY_PEER due to time stamp error");
-                        return -1;
-                    }
-                }
-            }
-
-            if(is_null_mac(query.targetMac)) {
-                traceEvent(TRACE_DEBUG, "Rx PING from %s",
-                           macaddr_str(mac_buf, query.srcMac));
-
-                cmn2.ttl = N2N_DEFAULT_TTL;
-                cmn2.pc = MSG_TYPE_PEER_INFO;
-                cmn2.flags = N2N_FLAGS_FROM_SUPERNODE;
-                memcpy(cmn2.community, cmn.community, sizeof(n2n_community_t));
-
-                pi.aflags = 0;
-                memcpy(pi.mac, query.targetMac, sizeof(n2n_mac_t));
-                memcpy(pi.srcMac, sss->conf.relay.sn_mac_addr, sizeof(n2n_mac_t));
-
-                memcpy(&pi.sock, &sender, sizeof(sender));
-
-                pi.load = sn_selection_criterion_gather_data(sss);
-
-                snprintf(pi.version, sizeof(pi.version), "%s", sss->conf.relay.version);
-                pi.uptime = now - sss->start_time;
-
-                encode_PEER_INFO(encbuf, &encx, &cmn2, &pi);
-
-                if(comm) {
-                    if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
-                        packet_header_encrypt(encbuf, encx, encx, comm->header_encryption_ctx_dynamic,
-                                              comm->header_iv_ctx_dynamic,
-                                              time_stamp());
-                    }
-                }
-
-                sendto_sock(sss, socket_fd, sender_sock, encbuf, encx);
-
-                traceEvent(TRACE_DEBUG, "Tx PONG to %s",
-                           macaddr_str(mac_buf, query.srcMac));
-
-            } else {
-                traceEvent(TRACE_DEBUG, "Rx QUERY_PEER from %s for %s",
-                           macaddr_str(mac_buf, query.srcMac),
-                           macaddr_str(mac_buf2, query.targetMac));
-
-                struct peer_info *scan;
-
-                // as opposed to the special case 'PING', proper QUERY_PEER processing requires a locally actually present community entry
-                if(!comm) {
-                    traceEvent(TRACE_DEBUG, "QUERY_PEER with unknown community %s", cmn.community);
-                    return -1;
-                }
-
-                HASH_FIND_PEER(comm->edges, query.targetMac, scan);
-                if(scan) {
-                    cmn2.ttl = N2N_DEFAULT_TTL;
-                    cmn2.pc = MSG_TYPE_PEER_INFO;
-                    cmn2.flags = N2N_FLAGS_FROM_SUPERNODE;
-                    memcpy(cmn2.community, cmn.community, sizeof(n2n_community_t));
-
-                    pi.aflags = 0;
-                    memcpy(pi.srcMac, query.srcMac, sizeof(n2n_mac_t));
-                    memcpy(pi.mac, query.targetMac, sizeof(n2n_mac_t));
-                    pi.sock = scan->sock;
-                    if(scan->preferred_sock.family != (uint8_t)AF_INVALID) {
-                        cmn2.flags |= N2N_FLAGS_SOCKET;
-                        pi.preferred_sock = scan->preferred_sock;
-                    }
-
-                    // FIXME:
-                    // If we get the request on TCP, the reply should indicate
-                    // our prefered sock is TCP ??
-
-                    encode_PEER_INFO(encbuf, &encx, &cmn2, &pi);
-
-                    if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
-                        packet_header_encrypt(encbuf, encx, encx, comm->header_encryption_ctx_dynamic,
-                                              comm->header_iv_ctx_dynamic,
-                                              time_stamp());
-                    }
-                    // back to sender, be it edge or supernode (which will forward to edge)
-                    sendto_sock(sss, socket_fd, sender_sock, encbuf, encx);
-
-                    traceEvent(TRACE_DEBUG, "Tx PEER_INFO to %s",
-                               macaddr_str(mac_buf, query.srcMac));
-
-                } else {
-
-                    if(from_supernode) {
-                        traceEvent(TRACE_DEBUG, "QUERY_PEER on unknown edge from supernode %s, dropping the packet",
-                                   macaddr_str(mac_buf, query.srcMac));
-                    } else {
-                        traceEvent(TRACE_DEBUG, "QUERY_PEER from unknown edge %s, forwarding to all other supernodes",
-                                   macaddr_str(mac_buf, query.srcMac));
-
-                        memcpy(&cmn2, &cmn, sizeof(n2n_common_t));
-                        cmn2.flags |= N2N_FLAGS_FROM_SUPERNODE;
-
-                        encode_QUERY_PEER(encbuf, &encx, &cmn2, &query);
-
-                        if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
-                            packet_header_encrypt(encbuf, encx, encx, comm->header_encryption_ctx_dynamic,
-                                                  comm->header_iv_ctx_dynamic,
-                                                  time_stamp());
-                        }
-
-                        try_broadcast(sss, NULL, &cmn, query.srcMac, from_supernode, encbuf, encx, now);
-                    }
-                }
-            }
-            return 0;
-        }
-
-        case MSG_TYPE_PEER_INFO: {
-            n2n_PEER_INFO_t pi;
-            uint8_t encbuf[N2N_SN_PKTBUF_SIZE];
-            size_t encx = 0;
-            struct peer_info                       *peer;
-
-            if(!comm) {
-                traceEvent(TRACE_DEBUG, "PEER_INFO with unknown community %s", cmn.community);
-                return -1;
-            }
-
-            if(decode_PEER_INFO(&pi, &cmn, udp_buf, &rem, &idx) < 0) {
-                traceEvent(TRACE_INFO, "PEER_INFO section too short");
-                return -1;
-            }
-            if(rem != 0) {
-                traceEvent(TRACE_INFO, "PEER_INFO section too long");
-                return -1;
-            }
-
-            if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
-                if(!find_peer_time_stamp_and_verify(
-                       comm->edges,
-                       NULL,
-                       sn,
-                       pi.srcMac,
-                       stamp,
-                       TIME_STAMP_NO_JITTER)) {
-                    traceEvent(TRACE_DEBUG, "dropped PEER_INFO due to time stamp error");
-                    return -1;
-                }
-            }
-
-            traceEvent(TRACE_INFO, "Rx PEER_INFO from %s [%s]",
-                       macaddr_str(mac_buf, pi.srcMac),
-                       sock_to_cstr(sockbuf, &sender));
-
-            // The answer of another supernode of the federation to a
-            // QUERY_PEER that one of our edges sent to all of them. From
-            // anyone else it would tell the edge a wrong place for its peer,
-            // and us a wrong supernode for it.
-            HASH_FIND_PEER(comm->edges, pi.srcMac, peer);
-            if(peer != NULL) {
-                if(from_supernode && !comm->is_federation && !is_null_mac(pi.srcMac)) {
-                    // snoop on the information to use for supernode forwarding (do not wait until first remote REGISTER_SUPER)
-                    update_node_supernode_association(comm, &(pi.mac), sender_sock, sock_size, now);
-
-                    // this is a PEER_INFO for one of the edges conencted to this supernode, forward,
-                    // i.e. re-assemble (memcpy of udpbuf to encbuf could be sufficient as well)
-
-                    // use incoming cmn (with already decreased TTL)
-                    // PEER_INFO remains unchanged
-
-                    encode_PEER_INFO(encbuf, &encx, &cmn, &pi);
-
-                    if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
-                        packet_header_encrypt(encbuf, encx, encx,
-                                              comm->header_encryption_ctx_dynamic, comm->header_iv_ctx_dynamic,
-                                              time_stamp());
-                    }
-
-                    sendto_peer(sss, peer, encbuf, encx);
-                }
-            }
-            return 0;
-        }
-
-        default:
-            /* Not a known message type */
-            traceEvent(TRACE_WARNING, "unable to handle packet type %d: ignored", (signed int)msg_type);
-    } /* switch(msg_type) */
+    h->sn = sn;
+    h->comm = comm;
+    pdu_dispatch(sss, sn_pdu_handlers, h);
 
     return 0;
 }
