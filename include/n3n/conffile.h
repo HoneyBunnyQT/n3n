@@ -35,7 +35,16 @@ enum n3n_conf_type {
     n3n_conf_macaddr,       // TODO: conf has another macaddr string type
     n3n_conf_hostname_str,
     n3n_conf_str2id,        // TODO: refactor some other types to use this
+    n3n_conf_strlist,       // repeatable, each value appended to a list
 };
+
+// The values of an n3n_conf_strlist option, in the order given
+struct n3n_conf_strlist {
+    struct n3n_conf_strlist *next;
+    char str[];
+};
+
+void n3n_conf_strlist_free (struct n3n_conf_strlist **list);
 
 struct n3n_conf_str2id_data {
     const int id;
@@ -54,14 +63,24 @@ struct n3n_conf_option {
     const enum n3n_conf_type type;    // Which parser/validator to use
 };
 
+// A section with instances, like "[community home]", has its options
+// relative to what instance() returns: for name NULL the unnamed one, else
+// the named one, made if need be.  instance_nth() lists the named ones.
+typedef void *(*n3n_conf_instance_fn)(void *conf, const char *name);
+typedef void *(*n3n_conf_instance_nth_fn)(void *conf, int n, const char **name);
+
 struct n3n_conf_section {
     struct n3n_conf_section *next;
     const char *name;                 // The name of this config section
     const char *help;                 // A description for this section
     struct n3n_conf_option *options;
+    n3n_conf_instance_fn instance;          // NULL for a section without
+    n3n_conf_instance_nth_fn instance_nth;  // instances
 };
 
 void n3n_config_register_section (char *, char *, struct n3n_conf_option[]);
+void n3n_config_register_section_instanced(char *, char *, struct n3n_conf_option[],
+                                           n3n_conf_instance_fn, n3n_conf_instance_nth_fn);
 
 int n3n_config_set_option (void *, char *, char *, char *);
 
@@ -120,4 +139,5 @@ void n3n_config_help_options (const struct n3n_config_getopt *map, const struct 
 
 typedef struct n2n_edge_conf n2n_edge_conf_t;
 int n3n_config_setup_sessiondir (n2n_edge_conf_t *conf);
+void n3n_config_free_communities (n2n_edge_conf_t *conf);
 #endif

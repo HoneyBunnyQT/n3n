@@ -25,7 +25,7 @@
 #include <connslot/connslot.h>
 #include <errno.h>                   // for errno, EAFNOSUPPORT, EINPROGRESS
 #include <fcntl.h>                   // for fcntl, F_SETFL, O_NONBLOCK
-#include <n3n/conffile.h>            // for n3n_config_load_env
+#include <n3n/conffile.h>            // for n3n_config_load_env, n3n_config_free_...
 #include <n3n/edge.h>                // for edge_init_conf_defaults
 #include <n3n/ethernet.h>            // for is_null_mac
 #include <n3n/initfuncs.h>           // for n3n_deinitfuncs
@@ -4531,6 +4531,7 @@ void edge_term_conf (n2n_edge_conf_t *conf) {
 
     free(conf->relay.community_file);
     free(conf->community.encrypt_key);
+    n3n_config_free_communities(conf);
     free(conf->federation_public_key);
     free(conf->mgmt_password);
     free(conf->public_key);

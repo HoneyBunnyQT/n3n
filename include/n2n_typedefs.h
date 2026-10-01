@@ -475,6 +475,8 @@ struct n3n_conf_relay {
 /* The settings of a community: of the one an edge joins, and of each one
  * a supernode knows by a section of the configuration */
 struct n3n_conf_community {
+    UT_hash_handle hh;                               /**< in conf.communities, by instance */
+    char instance[N2N_COMMUNITY_SIZE];               /**< "home" of a [community home] section, "" for [community] */
     n2n_community_t community_name;                  /**< The community. 16 full octets. */
     uint8_t header_encryption;                       /**< Header encryption indicator. */
     uint8_t transop_id;                              /**< The transop to use. */
@@ -484,6 +486,7 @@ struct n3n_conf_community {
 
 typedef struct n2n_edge_conf {
     struct n3n_conf_community community;             /**< The community joined, or the unnamed one */
+    struct n3n_conf_community *communities;          /**< The named ones */
     n2n_desc_t dev_desc;                             /**< The device description (hint) */
     n2n_private_public_key_t *public_key;            /**< edge's public key (for user/password based authentication) */
     n2n_private_public_key_t *shared_secret;         /**< shared secret derived from federation public key, username and password */

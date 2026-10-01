@@ -9,6 +9,8 @@
 #include <n3n/conffile.h>
 #include <n3n/resolve.h>        // for RESOLVE_LIST_SUPERNODE, RESOLVE_LIST...
 #include <stddef.h>
+#include <stdlib.h>             // for calloc, free
+#include <string.h>             // for strlen, strcpy
 
 #include "n2n_define.h"
 
@@ -37,7 +39,7 @@ static struct n3n_conf_option section_community[] = {
     {
         .name = "cipher",
         .type = n3n_conf_transform,
-        .offset = offsetof(n2n_edge_conf_t, community.transop_id),
+        .offset = offsetof(struct n3n_conf_community, transop_id),
         .desc = "The name of the cipher to use",
         .help = "Choose from any of the registered ciphers for payload "
                 "encryption (requires a key). "
@@ -46,14 +48,14 @@ static struct n3n_conf_option section_community[] = {
     {
         .name = "compression",
         .type = n3n_conf_compression,
-        .offset = offsetof(n2n_edge_conf_t, community.compression),
+        .offset = offsetof(struct n3n_conf_community, compression),
         .desc = "Compress outgoing data packets",
         .help = "0=none, 1=lzo1x, 2=zstd (only if supported)",
     },
     {
         .name = "header_encryption",
         .type = n3n_conf_headerenc,
-        .offset = offsetof(n2n_edge_conf_t, community.header_encryption),
+        .offset = offsetof(struct n3n_conf_community, header_encryption),
         .desc = "Enable header encryption",
         .help = "All edges within the same community must this set the same "
                 "and the supernode needs to have the community defined",
@@ -61,7 +63,7 @@ static struct n3n_conf_option section_community[] = {
     {
         .name = "key",
         .type = n3n_conf_strdup,
-        .offset = offsetof(n2n_edge_conf_t, community.encrypt_key),
+        .offset = offsetof(struct n3n_conf_community, encrypt_key),
         .desc = "The encryption key (ASCII)",
         .help = "All edges within the same community must use the same key. "
                 "If no key is specified then the edge uses cleartext mode "
@@ -71,7 +73,7 @@ static struct n3n_conf_option section_community[] = {
         .name = "name",
         .type = n3n_conf_strncpy,
         .length = N2N_COMMUNITY_SIZE,
-        .offset = offsetof(n2n_edge_conf_t, community.community_name),
+        .offset = offsetof(struct n3n_conf_community, community_name),
         .desc = "The name of the community to join",
         .help = "All edges within the same community appear on the same LAN "
                 "(layer 2 network segment).  Community name is "
@@ -86,7 +88,8 @@ static struct n3n_conf_option section_community[] = {
         .desc = "Add a supernode",
         .help = "Multiple supernodes can be specified, each one as a "
                 "host:port string, which will be resolved if needed. "
-                "If no port is provided, a default of 7654 will be used.",
+                "If no port is provided, a default of 7654 will be used.  "
+                "The supernodes of all community sections form one list.",
     },
     {.name = NULL},
 };
@@ -593,6 +596,61 @@ static struct n3n_conf_option section_tuntap[] = {
     {.name = NULL},
 };
 
+// The options of [community] are those of conf.community, of
+// [community NAME] those of the named entry, which is made at its first use
+static void *community_instance (void *conf, const char *name) {
+    n2n_edge_conf_t *c = conf;
+    struct n3n_conf_community *comm;
+
+    if(!name) {
+        return &c->community;
+    }
+    if(strlen(name) >= sizeof(comm->instance)) {
+        return NULL;
+    }
+    HASH_FIND_STR(c->communities, name, comm);
+    if(comm) {
+        return comm;
+    }
+
+    comm = calloc(1, sizeof(*comm));
+    if(!comm) {
+        return NULL;
+    }
+    strcpy(comm->instance, name);
+    // the community has the name of the section unless it says otherwise
+    strcpy((char *)comm->community_name, name);
+    // the defaults of conf.community, see edge_init_conf_defaults()
+    comm->transop_id = N2N_TRANSFORM_ID_NULL;
+    comm->header_encryption = HEADER_ENCRYPTION_NONE;
+    comm->compression = N2N_COMPRESSION_ID_NONE;
+    HASH_ADD_STR(c->communities, instance, comm);
+    return comm;
+}
+
+static void *community_instance_nth (void *conf, int n, const char **name) {
+    n2n_edge_conf_t *c = conf;
+    struct n3n_conf_community *comm, *tmp;
+
+    HASH_ITER(hh, c->communities, comm, tmp) {
+        if(n-- == 0) {
+            *name = comm->instance;
+            return comm;
+        }
+    }
+    return NULL;
+}
+
+void n3n_config_free_communities (n2n_edge_conf_t *conf) {
+    struct n3n_conf_community *comm, *tmp;
+
+    HASH_ITER(hh, conf->communities, comm, tmp) {
+        HASH_DEL(conf->communities, comm);
+        free(comm->encrypt_key);
+        free(comm);
+    }
+}
+
 void n3n_initfuncs_conffile_defs () {
     // Note that by registering these in reverse sort order, the generated
     // dump output is in sorted order
@@ -636,10 +694,13 @@ void n3n_initfuncs_conffile_defs () {
         "VPN overlay traffic options",
         section_connection
     );
-    n3n_config_register_section(
+    n3n_config_register_section_instanced(
         "community",
-        "Settings that affect connecting to the network",
-        section_community
+        "Settings that affect connecting to the network.  A supernode "
+        "also knows each community of a [community NAME] section.",
+        section_community,
+        community_instance,
+        community_instance_nth
     );
     n3n_config_register_section(
         "auth",

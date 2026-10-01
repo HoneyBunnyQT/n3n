@@ -46,7 +46,9 @@
 
 static struct n3n_conf_section *registered_sections = NULL;
 
-void n3n_config_register_section (char *name, char *help, struct n3n_conf_option options[]) {
+void n3n_config_register_section_instanced (char *name, char *help, struct n3n_conf_option options[],
+                                            n3n_conf_instance_fn instance,
+                                            n3n_conf_instance_nth_fn instance_nth) {
     struct n3n_conf_section *section;
     section = malloc(sizeof(*section));
     if(!section) {
@@ -59,7 +61,21 @@ void n3n_config_register_section (char *name, char *help, struct n3n_conf_option
     section->name = name;
     section->help = help;
     section->options = options;
+    section->instance = instance;
+    section->instance_nth = instance_nth;
     registered_sections = section;
+}
+
+void n3n_config_register_section (char *name, char *help, struct n3n_conf_option options[]) {
+    n3n_config_register_section_instanced(name, help, options, NULL, NULL);
+}
+
+void n3n_conf_strlist_free (struct n3n_conf_strlist **list) {
+    while(*list) {
+        struct n3n_conf_strlist *next = (*list)->next;
+        free(*list);
+        *list = next;
+    }
 }
 
 void n3n_deinitfuncs_config () {
@@ -98,15 +114,39 @@ const int str2id_by_name (const struct n3n_conf_str2id_data data[], const char *
     return -1;
 }
 
-static struct n3n_conf_option *lookup_section (char *section) {
+// The section of a "name" or "name instance" string, and the instance
+// name, or NULL if there is none
+static struct n3n_conf_section *lookup_section_instance (const char *section, const char **instance) {
+    size_t len = strcspn(section, " ");
     struct n3n_conf_section *p = registered_sections;
+
+    *instance = section[len] ? &section[len + 1] : NULL;
     while(p) {
-        if(0==strcmp(p->name, section)) {
-            return p->options;
+        if((strlen(p->name) == len) && (0==strncmp(p->name, section, len))) {
+            return p;
         }
         p = p->next;
     }
     return NULL;
+}
+
+static struct n3n_conf_option *lookup_section (char *section) {
+    const char *instance = NULL;
+    struct n3n_conf_section *p = lookup_section_instance(section, &instance);
+    return p ? p->options : NULL;
+}
+
+// Where the values of the options of a section, or of an instance of it,
+// are kept
+static void *section_base (void *conf, struct n3n_conf_section *section, const char *instance) {
+    if(section->instance) {
+        return section->instance(conf, instance);
+    }
+    if(instance) {
+        // a section without instances
+        return NULL;
+    }
+    return conf;
 }
 
 static struct n3n_conf_option *lookup_option (char *section, char *option) {
@@ -197,6 +237,13 @@ int n3n_config_set_option (void *conf, char *section, char *option, char *value)
 
     struct n3n_conf_option *p = lookup_option(section, option);
     if(!p) {
+        return -1;
+    }
+
+    const char *instance = NULL;
+    struct n3n_conf_section *sec = lookup_section_instance(section, &instance);
+    conf = section_base(conf, sec, instance);
+    if(!conf) {
         return -1;
     }
 
@@ -525,6 +572,20 @@ try_uint32:
             }
             return 0;
         }
+        case n3n_conf_strlist: {
+            struct n3n_conf_strlist **val = (struct n3n_conf_strlist **)valvoid;
+            struct n3n_conf_strlist *item = malloc(sizeof(*item) + strlen(value) + 1);
+            if(!item) {
+                return -1;
+            }
+            item->next = NULL;
+            strcpy(item->str, value);
+            while(*val) {
+                val = &(*val)->next;
+            }
+            *val = item;
+            return 0;
+        }
     }
     return -1;
 }
@@ -748,7 +809,8 @@ static const char * stringify_option (void *conf, struct n3n_conf_option option,
             macaddr_str(buf, *val);
             return buf;
         }
-        case n3n_conf_hostname_str: {
+        case n3n_conf_hostname_str:
+        case n3n_conf_strlist: {
             // This is a multi-value item, so needs special handling to dump
             return NULL;
         }
@@ -834,6 +896,9 @@ static int option_storagesize (const struct n3n_conf_option option) {
         case n3n_conf_hostname_str: {
             return -1;
         }
+        case n3n_conf_strlist: {
+            return sizeof(struct n3n_conf_strlist *);
+        }
         case n3n_conf_str2id: {
             int *val = (int *)valvoid;
             return sizeof(*val);
@@ -901,6 +966,16 @@ static void dump_option (FILE *f, void *conf, int level, const struct n3n_conf_o
             fprintf(f, "\n");
             return;
         }
+        if(option.type == n3n_conf_strlist) {
+            struct n3n_conf_strlist *item = *(struct n3n_conf_strlist **)((char *)conf + option.offset);
+            if(!item && level >= 2) {
+                fprintf(f, "#%s=\n", option.name);
+            }
+            for(; item; item = item->next) {
+                fprintf(f, "%s=%s\n", option.name, item->str);
+            }
+            return;
+        }
         // TODO: if type == n3n_conf_filter_rule ...
 
         // enough for the longest value, a list of N3N_BIND_MAX addresses
@@ -926,27 +1001,46 @@ static void dump_option (FILE *f, void *conf, int level, const struct n3n_conf_o
     fprintf(f, "%s=\n", option.name);
 }
 
+static void dump_section (FILE *f, void *base, int level, struct n3n_conf_section *section, const char *instance) {
+    const struct n3n_conf_option *option = section->options;
+
+    fprintf(f, "\n");
+    if(level >= 2) {
+        fprintf(f, "####################\n");
+
+        if(section->help) {
+            dump_wordwrap(f, "#", section->help, 78);
+        }
+    }
+    if(instance) {
+        fprintf(f, "[%s %s]\n", section->name, instance);
+    } else {
+        fprintf(f, "[%s]\n", section->name);
+    }
+
+    int i = 0;
+    while(option[i].name) {
+        // the values of such an option are not kept per instance
+        if(!instance || option[i].type != n3n_conf_hostname_str) {
+            dump_option(f, base, level, option[i]);
+        }
+        i++;
+    }
+}
+
 void n3n_config_dump (void *conf, FILE *f, int level) {
     struct n3n_conf_section *section = registered_sections;
-    const struct n3n_conf_option *option;
 
     fprintf(f, "# Autogenerated config dump\n");
     while(section) {
-        fprintf(f, "\n");
-        if(level >= 2) {
-            fprintf(f, "####################\n");
+        dump_section(f, section_base(conf, section, NULL), level, section, NULL);
 
-            if(section->help) {
-                dump_wordwrap(f, "#", section->help, 78);
+        if(section->instance_nth) {
+            const char *instance = NULL;
+            void *base;
+            for(int n = 0; (base = section->instance_nth(conf, n, &instance)); n++) {
+                dump_section(f, base, level, section, instance);
             }
-        }
-        fprintf(f, "[%s]\n", section->name);
-
-        option = section->options;
-        int i = 0;
-        while(option[i].name) {
-            dump_option(f, conf, level, option[i]);
-            i++;
         }
 
         section = section->next;
@@ -959,6 +1053,7 @@ void n3n_config_debug_addr (void *conf, FILE *f) {
 
     fprintf(f, "# Internal Address consistancy checks\n");
     while(section) {
+        void *base = section_base(conf, section, NULL);
         option = section->options;
         int i = 0;
         while(option[i].name) {
@@ -972,7 +1067,7 @@ void n3n_config_debug_addr (void *conf, FILE *f) {
             // Entries that cannot be set via a pointer are marked with
             // a negative offset
             if(option[i].offset >= 0) {
-                first = (char *)conf + option[i].offset;
+                first = (char *)base + option[i].offset;
             }
 
             int size = option_storagesize(option[i]);
@@ -1103,18 +1198,23 @@ static char *find_config (char *name) {
 }
 
 // Input a line containing a section header definition.
-// return just the string with the section name
+// return just the string with the section name, and if there is one, a
+// space and the instance name: "[ community  home ]" gives "community home"
 char *extract_section (char *line) {
     // Skip the open bracket
     line++;
     char *section = line;
+    char *dst = line;
     bool closed = false;
+    int words = 0;
+    bool in_word = false;
 
     while(*line) {
         if(isspace((unsigned char)*line)) {
             // Any space terminates the section name and introduces
-            // the (unused in this parser) instance name
-            *line++ = 0;
+            // the instance name
+            in_word = false;
+            line++;
             continue;
         }
         if(closed) {
@@ -1127,13 +1227,26 @@ char *extract_section (char *line) {
         }
         if(*line == ']') {
             // Found the close bracket
-            *line++ = 0;
+            line++;
+            *dst = 0;
             closed = true;
             continue;
         }
-        if(isalnum((unsigned char)*line)) {
-            // These are valid chars for a name
-            line++;
+        if(isalnum((unsigned char)*line) || (words == 2 && in_word && strchr("_-.", *line))) {
+            // These are valid chars for a name, an instance name may also
+            // have some punctuation after its first char
+            if(!in_word) {
+                words++;
+                if(words > 2) {
+                    printf("Error: more than an instance name after the section name\n");
+                    return NULL;
+                }
+                if(words == 2) {
+                    *dst++ = ' ';
+                }
+                in_word = true;
+            }
+            *dst++ = *line++;
             continue;
         }
         printf("Error: unexpected characters in section name\n");
@@ -1198,8 +1311,18 @@ int n3n_config_load_file (void *conf, char *name) {
                 goto out;
             }
             section = strdup(tmp_section);
-            if(!lookup_section(section)) {
+            const char *instance = NULL;
+            struct n3n_conf_section *p = lookup_section_instance(section, &instance);
+            if(!p) {
                 printf("Warning: unknown section %s\n", section);
+            } else if(instance && !p->instance) {
+                printf(
+                    "Error:%s:%i: section %s has no instances\n",
+                    filename,
+                    linenr,
+                    p->name
+                );
+                goto out;
             }
             continue;
         }

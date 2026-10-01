@@ -21,6 +21,7 @@
 
 #include <connslot/connslot.h>
 #include <errno.h>              // for errno, EAFNOSUPPORT
+#include <n3n/conffile.h>       // for n3n_config_free_communities
 #include <n3n/ethernet.h>       // for is_null_mac
 #include <n3n/initfuncs.h>      // for n3n_deinitfuncs
 #include <n3n/logging.h>        // for traceEvent
@@ -1072,6 +1073,7 @@ void sn_term (struct n3n_runtime_data *sss) {
     free(sss->conf.bind_address);
 
     free(sss->conf.relay.community_file);
+    n3n_config_free_communities(&sss->conf);
 
     free(sss->conf.mgmt_password);
 
