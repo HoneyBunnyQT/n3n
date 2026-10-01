@@ -193,6 +193,12 @@ while `peer` keeps getting what does not touch the wire, merged into
       something only edges get.  (v3 today: TCP only from edge to
       supernode, the federation over UDP, and the federation's supernode
       list carries no transport - its entry has a spare byte for it.)
+- [ ] Learned relays survive: keep the relays a peer has learned (with
+      all their transports) on disk, so that a laptop woken up behind a
+      network that blocks its usual relay - an airport abroad - still knows
+      others to try; records age, but are not purged just for being old.
+      Until relays announce their TCP addresses, a guess for a learned one
+      is the TCP port the configured ones use
 - [ ] Vivaldi network coordinates to estimate RTTs without probing
 - [ ] Nested NAT (VM in a laptop in a home network): scopes plus a "parent
       relay" chosen like any other relay
