@@ -42,6 +42,7 @@
 #include <unistd.h>                  // for gethostname, sleep
 #include <stddef.h>
 
+#include "auth.h"                    // for generate_private_key, generate_shared_secret, ...
 #include "config.h"                  // for HAVE_LIBZSTD
 #include "edge_utils.h"
 #include "header_encryption.h"       // for packet_header_encrypt, packet_he...
@@ -232,6 +233,55 @@ int edge_conf_one_community (n2n_edge_conf_t *conf) {
     traceEvent(TRACE_INFO, "joining community '%s' of section [community %s]",
                conf->community.community_name, conf->community.instance);
     return 0;
+}
+
+
+/* What follows from the settings of the community and of the user/password
+ * authentication: the default cipher, the keys of the user, header
+ * encryption.  Before edge_verify_conf() and edge_init(). */
+void edge_conf_prepare (n2n_edge_conf_t *conf) {
+
+    // payload
+    if(conf->community.transop_id == N2N_TRANSFORM_ID_NULL) {
+        if(conf->community.encrypt_key) {
+            // make sure that AES is default cipher if key only (and no cipher) is specified
+            traceEvent(TRACE_WARNING, "switching to AES as key was provided and no cipher set");
+            conf->community.transop_id = N2N_TRANSFORM_ID_AES;
+        }
+    }
+    // user auth
+    if(conf->shared_secret /* containing private key only so far*/) {
+        // if user-password auth and no federation public key provided, use default
+        if(!conf->federation_public_key) {
+            conf->federation_public_key = calloc(1, sizeof(n2n_private_public_key_t));
+            if(conf->federation_public_key) {
+                traceEvent(
+                    TRACE_WARNING,
+                    "using default federation public key; "
+                    "FOR TESTING ONLY, usage of a custom federation name and "
+                    "key (auth.pubkey) is highly recommended!"
+                );
+                generate_private_key(*(conf->federation_public_key), FEDERATION_NAME_DEFAULT);
+                generate_public_key(*(conf->federation_public_key), *(conf->federation_public_key));
+            }
+        }
+        // calculate public key and shared secret
+        if(conf->federation_public_key) {
+            traceEvent(TRACE_NORMAL, "using username and password for edge authentication");
+            bind_private_key_to_username(*(conf->shared_secret), (char *)conf->dev_desc);
+            conf->public_key = calloc(1, sizeof(n2n_private_public_key_t));
+            if(conf->public_key)
+                generate_public_key(*conf->public_key, *(conf->shared_secret));
+            generate_shared_secret(*(conf->shared_secret), *(conf->shared_secret), *(conf->federation_public_key));
+            // prepare (first 128 bit) for use as key
+            speck_init(&conf->shared_secret_ctx, *(conf->shared_secret), 128);
+        }
+        // force header encryption
+        if(conf->community.header_encryption != HEADER_ENCRYPTION_ENABLED) {
+            traceEvent(TRACE_NORMAL, "enabling header encryption for edge authentication");
+            conf->community.header_encryption = HEADER_ENCRYPTION_ENABLED;
+        }
+    }
 }
 
 
