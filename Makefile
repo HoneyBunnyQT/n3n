@@ -113,6 +113,7 @@ OBJS=\
 	src/crypto/aes_sse2.o \
 	src/crypto/cc20_avx2.o \
 	src/crypto/cc20_avx512.o \
+	src/crypto/cc20_neon.o \
 	src/crypto/cc20_openssl.o \
 	src/crypto/cc20_plainc.o \
 	src/crypto/cc20_sse2.o \
