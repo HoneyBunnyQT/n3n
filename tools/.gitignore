@@ -17,8 +17,10 @@ tests-compress
 tests-elliptic
 tests-transform
 tests-wire
+tests-peers
 tests-auth.exe
 tests-compress.exe
 tests-elliptic.exe
 tests-transform.exe
 tests-wire.exe
+tests-peers.exe
