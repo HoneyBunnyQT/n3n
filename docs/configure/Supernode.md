@@ -31,6 +31,13 @@ destination to a port of its own (see [NAT Traversal](../advanced/NatTraversal.m
 A port alone, or `[::]`, stands for IPv6 and IPv4; a given address only for
 its own family.
 
+Each address is for UDP and TCP, unless `udp://` or `tcp://` comes in front:
+`bind=udp://[::]:7654 tcp://[::]:443` takes UDP on port 7654 and TCP on 443,
+a port most firewalls let out.  The supernode needs at least one address for
+UDP.  Tell the edges about the TCP port with a second line for the same host,
+`supernode=tcp://sn.example.org:443`, next to `supernode=sn.example.org:7654`:
+they then fall back to TCP on 443 when UDP does not get through.
+
 ## A Supernode That Is an Edge Too
 
 A supernode can also be a member of one community, with a TAP device of its

@@ -27,3 +27,21 @@ option) in order to prevent unexpected users from connecting to your computer.
 The n3n project runs the public supernode in the above config for testing
 purposes - is it suggested that you setup your own
 [supernode](../configure/Supernode.md) for longer term use.
+
+## Networks that block UDP
+
+Nothing to configure: the edge uses UDP, and when no supernode answers over
+it, as on some airport or hotel networks, it switches to TCP by itself, and
+back to UDP once that gets through again (`connection.tcp_fallback`).  If
+your supernode takes TCP on another port, such as 443, which most firewalls
+let out, tell the edge with a second line for the same host:
+
+```
+[community]
+name=mynetwork
+key=mypassword
+supernode=sn.example.org:7654
+supernode=tcp://sn.example.org:443
+```
+
+See [the FAQ](../FAQ.md#udp-is-blocked-where-i-am-can-the-edge-still-connect).

@@ -106,13 +106,18 @@ router behind a carrier NAT.  The block of hard-range ends at a multiple of
 | tcp-fallback | easy-kept without UDP (`block_udp`) / public | relayed, a over TCP by `tcp_fallback` |
 | tcp-fallback-back | as tcp-fallback, then UDP let through again (`unblock_udp`) | direct, a back on UDP |
 | tcp-fallback-userpw | as tcp-fallback-back, with user/password authentication | direct, a back on UDP |
+| tcp-port | as tcp-fallback-back, the supernodes with UDP on 7654 and TCP on 4443 only (`sn_tcp_port`) | direct, after a over TCP to 4443 |
+| tcp-only | easy-kept with its supernodes as `tcp://` only (`tcp_only`) / public | relayed, a over TCP from the start |
 
 An edge connected over TCP does not learn how its NAT maps it, so the NAT
 class of tcp-tcp and tcp-udp is not checked for those edges (`expect_nat` of
 a `Site`).  A `Site(block_udp=True)` drops the UDP its edge sends out of
 `eth0` (but DNS), as some airport networks do: the scenario then checks that
 the edge is on TCP (`transport` of `get_info`), and with `unblock_udp` of
-the `Scenario` lets UDP through again and waits for the edge to go back.  `sn_conf` of a `Scenario` sets options of the supernodes.
+the `Scenario` lets UDP through again and waits for the edge to go back.
+`sn_tcp_port` of a `Scenario` has the supernodes take TCP on that port only
+(`bind = udp://... tcp://...`) and gives the edges `tcp://` entries for it;
+`Site(tcp_only=True)` gives that edge only `tcp://` entries.  `sn_conf` of a `Scenario` sets options of the supernodes.
 `auth` of a `Scenario` turns on header encryption (`"header"`), or that
 and user/password authentication (`"userpw"`): the supernodes then get a
 community file, with a user for each edge whose public key comes from

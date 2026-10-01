@@ -289,6 +289,23 @@ UDP as soon as one is answered.  \fBconnection.connect_tcp\fR=true uses TCP
 from the start, and only TCP.  \fBn3nctl get_info\fR shows the transport in
 use.
 
+A supernode given with \fBudp://\fR or \fBtcp://\fR in front is used over that
+transport only.  Given both ways with the same host, it is one supernode,
+reached over TCP at the \fBtcp://\fR address, for one that takes TCP on
+another port:
+
+.nf
+.RS
+[community]
+supernode = sn.example.org:7654
+supernode = tcp://sn.example.org:443
+.RE
+.fi
+
+With \fBtcp://\fR on every supernode, the edge uses TCP only.  In
+\fBconnection.bind\fR, \fBtcp://\fR picks the address of the TCP connection,
+\fBudp://\fR those of the UDP sockets.
+
 .SH THREADS
 With \fBdaemon.threads\fR the edge encrypts and decrypts packets on several
 threads.  This needs Linux and a build with \fB--enable-pthread\fR, see

@@ -87,7 +87,7 @@ Those marked with a key need the password (see Authentication below):
 | `help.events` | yes | yes | the event topics, see Events Stream |
 | `get_info` | yes | yes | version, build date, `is_edge`/`is_supernode`, the edge's MAC and address, how its NAT maps it (`nat4`, `nat6`: `unknown`, `easy (port kept)`, `easy (port changed)`, `hard (ports 40100-40180)`, `several addresses`), and `transport`, how it reaches its supernode now (`udp` or `tcp`, see `connection.tcp_fallback`; empty on a supernode) |
 | `get_edges` | yes | yes | the edge: its peers; the supernode: the edges registered at it, with community, address, MAC, `mode` (`p2p`, `pSp` or `sn`), `nat`, `sockaddr`, `last_seen` |
-| `get_supernodes` | yes | yes | the edge: its supernodes, `current` the one it is registered at, `selection` the criterion; the supernode: the other supernodes of the federation |
+| `get_supernodes` | yes | yes | the edge: its supernodes, `current` the one it is registered at, `selection` the criterion, `transports` (`udp`, `tcp` or `udp tcp`) and `tcp_sockaddr`, where it is reached over TCP; the supernode: the other supernodes of the federation |
 | `get_communities` | yes | yes | the edge: its community; the supernode: its communities with their address range of the auto ip service, the federation shown as `-/-` |
 | `get_packetstats` | yes | yes | counters of received and sent packets by kind: `transop`, `p2p`, `super`, `super_broadcast`, `tuntap_error`, `multicast_drop`, and on a supernode `sn_fwd`, `sn_broadcast`, `sn_reg` (with `nak`), `sn_errors` |
 | `get_timestamps` | yes | yes | when things last happened, as Unix times: `start_time`, `last_register_req`, `last_rx_p2p`, `last_rx_super`, `last_sn_fwd`, `last_sn_reg`, `last_sweep` |

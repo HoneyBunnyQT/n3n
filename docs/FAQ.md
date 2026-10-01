@@ -129,10 +129,22 @@ leaving the airport, say.  `n3nctl get_info` shows the transport in use
 (`transport`: `udp` or `tcp`), and the log says when it changes.  With the
 default settings the switch to TCP takes about half a minute.
 
-To use TCP from the start, set `connection.connect_tcp = true`; the edge
-then stays on TCP.  Every supernode listens on TCP on the ports of its
-`connection.bind` (apart from one built for Windows); one on port 443 gets
-through most firewalls that only let web traffic out.  The fallback does
+To use TCP from the start, set `connection.connect_tcp = true`, or give all
+supernodes with `tcp://` in front; the edge then stays on TCP.  Every
+supernode listens on TCP on the ports of its `connection.bind` (apart from
+one built for Windows).  Port 443 gets through most firewalls that only let
+web traffic out; a supernode can take TCP there and UDP on its usual port,
+with `bind = udp://[::]:7654 tcp://[::]:443`, and its edges learn it from
+two lines for that host:
+
+```
+[community]
+supernode = sn.example.org:7654
+supernode = tcp://sn.example.org:443
+```
+
+`n3nctl get_supernodes` shows each supernode's `transports` and
+`tcp_sockaddr`.  The fallback does
 not work with several packet threads (`daemon.threads`), which need UDP.
 
 

@@ -115,6 +115,12 @@ tests and `make lint` pass after each.
 - [x] Automatic transport: UDP, TCP when no supernode answers over UDP,
       back to UDP once a probe gets through (`connection.tcp_fallback`,
       netns scenarios `tcp-fallback*`).  Open: with packet threads
+- [x] `udp://` and `tcp://` in front of addresses of `connection.bind` and
+      `community.supernode`: UDP and TCP on different ports (netns
+      scenarios `tcp-port`, `tcp-only`).  Not planned for now: `udp4://`,
+      `tcp6://` and the like, which would only matter for names to resolve.
+      Open: supernodes the federation tells about are tried over TCP at
+      their UDP port
 - [ ] TUN mode (layer 3 device), see [Mobile and TUN](MobileAndTun.md)
 - [ ] Android app (`VpnService`, configuration by QR code), see
       [Mobile and TUN](MobileAndTun.md)
