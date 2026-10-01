@@ -560,13 +560,13 @@ static void tf_avx512_setup (tf_avx512_sbox_t *s, const tf_context_t *ctx) {
         __mmask64 hi_ = _mm512_movepi8_mask(X); \
         __m512i r0_, r1_, r2_, r3_, r4_, r5_, r6_, r7_; \
         r0_ = _mm512_maskz_permutex2var_epi8(POS_MASK(0) & ~hi_, (s)->sb[0][0], X, (s)->sb[0][1]); \
-        r1_ = _mm512_maskz_permutex2var_epi8(POS_MASK(0) &  hi_, (s)->sb[0][2], X, (s)->sb[0][3]); \
+        r1_ = _mm512_maskz_permutex2var_epi8(POS_MASK(0) & (hi_), (s)->sb[0][2], X, (s)->sb[0][3]); \
         r2_ = _mm512_maskz_permutex2var_epi8(POS_MASK(1) & ~hi_, (s)->sb[1][0], X, (s)->sb[1][1]); \
-        r3_ = _mm512_maskz_permutex2var_epi8(POS_MASK(1) &  hi_, (s)->sb[1][2], X, (s)->sb[1][3]); \
+        r3_ = _mm512_maskz_permutex2var_epi8(POS_MASK(1) & (hi_), (s)->sb[1][2], X, (s)->sb[1][3]); \
         r4_ = _mm512_maskz_permutex2var_epi8(POS_MASK(2) & ~hi_, (s)->sb[2][0], X, (s)->sb[2][1]); \
-        r5_ = _mm512_maskz_permutex2var_epi8(POS_MASK(2) &  hi_, (s)->sb[2][2], X, (s)->sb[2][3]); \
+        r5_ = _mm512_maskz_permutex2var_epi8(POS_MASK(2) & (hi_), (s)->sb[2][2], X, (s)->sb[2][3]); \
         r6_ = _mm512_maskz_permutex2var_epi8(POS_MASK(3) & ~hi_, (s)->sb[3][0], X, (s)->sb[3][1]); \
-        r7_ = _mm512_maskz_permutex2var_epi8(POS_MASK(3) &  hi_, (s)->sb[3][2], X, (s)->sb[3][3]); \
+        r7_ = _mm512_maskz_permutex2var_epi8(POS_MASK(3) & (hi_), (s)->sb[3][2], X, (s)->sb[3][3]); \
         r0_ = _mm512_ternarylogic_epi32(r0_, r1_, r2_, 0xFE); /* a | b | c */ \
         r3_ = _mm512_ternarylogic_epi32(r3_, r4_, r5_, 0xFE); \
         (dst) = _mm512_ternarylogic_epi32(r0_, r3_, _mm512_or_si512(r6_, r7_), 0xFE); } while(0)

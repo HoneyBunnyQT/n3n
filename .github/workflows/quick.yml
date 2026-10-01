@@ -116,6 +116,18 @@ jobs:
           sudo apt update
           make build-dep
 
+      # The C code is formatted as uncrustify 0.77.1 does it, see
+      # docs/develop/linting.md; the distribution's version differs
+      - name: Install uncrustify 0.77.1
+        run: |
+          git clone --depth 1 --branch uncrustify-0.77.1 \
+              https://github.com/uncrustify/uncrustify.git /tmp/uncrustify
+          cmake -S /tmp/uncrustify -B /tmp/uncrustify/build \
+              -DCMAKE_BUILD_TYPE=Release
+          make -C /tmp/uncrustify/build -j "$(nproc)"
+          sudo cp /tmp/uncrustify/build/uncrustify /usr/local/bin/
+          uncrustify --version
+
       - name: Run the lint tools
         run: |
           make lint

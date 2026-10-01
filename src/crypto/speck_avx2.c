@@ -123,7 +123,7 @@
         return 0;                                                                         \
     }                                                                                     \
                                                                                           \
-    /* Each size stores its blocks in its own branch, so that the compiler    \
+    /* Each size stores its blocks in its own branch, so that the compiler \
      * sees that only initialised X[] and Y[] get stored */                    \
     SET1(X[0], nonce[1]); SET4(Y[0], nonce[0]);                                           \
     nonce[0] += (numbytes >> 4);                                                          \
