@@ -456,6 +456,8 @@ typedef struct n2n_edge_conf {
     uint32_t register_interval;                      /**< Interval for supernode registration, also used for UDP NAT hole punching. */
     uint32_t register_ttl;                           /**< TTL for registration packet when UDP NAT hole punching through supernode. */
     uint32_t punch_ports;                            /**< ports to try per round towards a peer behind a hard NAT, 0: none */
+    uint32_t punch_sockets;                          /**< behind a hard NAT: extra sockets towards a peer that guesses, 0: none */
+    uint32_t punch_ttl;                              /**< the TTL of what those sockets send until one is reached, 0: the system's */
     union {
         struct sockaddr *bind_address;               /**< The address to bind to if provided; the first of an array ended by family 0 */
         struct sockaddr_storage *sas;
@@ -588,6 +590,33 @@ struct nat_peer {
     uint16_t stride;
 };
 
+/* Behind a hard NAT, the sockets opened towards one peer that guesses our
+ * port: each sends a REGISTER to the peer's public socket every round, so the
+ * NAT keeps a public port of its own for each, any of which the peer's guesses
+ * can meet. See punch_pool_round() in edge_utils.c. */
+#define NAT_PUNCH_POOLS 4
+#define NAT_PUNCH_POOL_MAX 64    /* sockets in all pools together */
+
+struct punch_pool {
+    n2n_mac_t mac;
+    n3n_sock_t dest;         /* the peer's public socket, as the supernode saw it */
+    time_t used;             /* the last round; 0: unused */
+    int ttl0;                /* the system's TTL, to give back to the one that is reached */
+    bool won;                /* one of them got through; the rest is to be closed */
+    int count;
+    int fd[NAT_PUNCH_POOL_MAX];      /* -1: closed, or taken over by a punch_bound (int, as eee->sock) */
+};
+
+/* A socket of a pool that the peer reached: everything to that peer leaves
+ * from it from then on, see sendto_sock() */
+#define NAT_PUNCH_BOUND 8
+
+struct punch_bound {
+    n3n_sock_t dest;         /* where the peer reached it from; family 0: unused */
+    int fd;
+    time_t last_rx;
+};
+
 struct n3n_runtime_data {
     n2n_edge_conf_t conf;
 
@@ -616,6 +645,11 @@ struct n3n_runtime_data {
     n3n_sock_t advertised_sock;                                          /**< local socket told to the supernode, from advertise_addr (AF_INVALID: none) */
     struct nat_view nat[2];                                              /**< the NAT of the IPv4 [0] and the IPv6 [1] socket */
     struct nat_peer nat_peers[NAT_PEERS];                                /**< the NATs of the peers, as they told */
+    struct punch_pool punch_pool[NAT_PUNCH_POOLS];                       /**< behind a hard NAT: sockets towards peers that guess */
+    struct punch_bound punch_bound[NAT_PUNCH_BOUND];                     /**< the ones of them that got through */
+    int punch_pool_fds;                                                  /**< how many sockets the pools hold */
+    int punch_bound_count;                                               /**< how many entries of punch_bound are used */
+    time_t punch_swept;                                                  /**< the last punch_sweep() */
 
 #ifndef SKIP_MULTICAST_PEERS_DISCOVERY
     int udp_multicast_sock_v4;                                           /**< socket for local IPv4 multicast registrations. */

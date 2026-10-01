@@ -86,7 +86,7 @@ shows the hint of a peer it does not reach directly yet as `nat` in
 | this edge | its peer | result |
 |-----------|----------|--------|
 | easy | easy | direct |
-| easy or unknown | hard, range up to 4096 ports | direct after some rounds of guessing, see below |
+| easy or unknown | hard, range up to 4096 ports | direct after some rounds of guessing, see below; a few with `punch_sockets` on the hard side |
 | hard, range up to 4096 ports | easy or unknown | the same, the peer guesses |
 | any | hard, wider range | through the supernode |
 | hard | hard | through the supernode |
@@ -132,6 +132,54 @@ out of tens of thousands this way would hardly ever succeed.
 
 Both edges need this version: the hard one to send its hint and keep its
 port, the easy one to guess.
+
+### More ports for the peer to meet
+
+With one public port to meet, the guessing takes long.  So the edge behind
+the hard NAT opens `connection.punch_sockets` more sockets towards a peer
+that guesses, 32 by default, and sends a REGISTER from each of them every
+round as well.  Its NAT gives each socket a public port of its own, in the
+same range, and the peer can meet any of them.  On average, until the first
+guess meets one, at 16 ports every 20 seconds:
+
+| range in the hint | `punch_sockets=0` | `punch_sockets=32` |
+|-------------------|-------------------|--------------------|
+| 1024 ports        | 32 rounds, 11 minutes | 2 rounds, under a minute |
+| 2048 ports        | 64 rounds, 21 minutes | 4 rounds, about a minute |
+| 4096 ports        | 128 rounds, 43 minutes | 8 rounds, under 3 minutes |
+
+The pool stays the same from round to round, so the peer's walk through
+the range meets each of its ports once.  The socket the peer gets through to
+carries everything to and from that peer from then on - its NAT lets the
+peer in on that one port only - and the rest of the pool is closed.  A pool
+is closed too when its peer has not been tried for two rounds, and a socket
+that got through when nothing came from the peer for two minutes.  All pools
+together hold at most 64 sockets: a NAT that gives every customer a block of
+ports is not to be emptied by one edge.  0 turns this off.
+
+Only the edge behind the hard NAT needs this version; the peer guesses as
+before.  It shows in the log:
+
+```
+02:00:00:00:0A:01 [192.0.2.1:40846] got through the NAT to socket 6 of 32 (local port 39609)
+```
+
+#### A TTL for the extra REGISTERs
+
+The REGISTERs from these sockets are only there to make the NAT open a port.
+They need not reach the peer, whose NAT drops them anyway.  With
+`connection.punch_ttl`, they leave with a TTL just big enough to get through
+the edge's own NATs, and the peer's network never sees a burst of packets
+from many ports.  The value is the number of routers up to and including the
+last NAT, plus one: 2 behind a home router, 3 behind a home router directly
+behind a carrier NAT.  A traceroute towards the supernode shows the routers;
+the last NAT is usually the last one with a private (10/8, 172.16/12,
+192.168/16) or shared (100.64/10) address.
+
+Too small, and the outer NAT never sees the REGISTERs: it opens no ports,
+the peer never gets through, and the traffic stays with the supernode, as
+without this.  0, the default, leaves the system's TTL.  The socket that
+gets through gets that back before it answers.
 
 ## Federation
 

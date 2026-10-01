@@ -76,4 +76,10 @@ bool nat_hint_range (n2n_cookie_t hint, unsigned int *lo, unsigned int *size);
 #define NAT_PUNCH_PORTS_DFL 16
 #define NAT_PUNCH_MAX_RANGE 4096
 
+// Behind a hard NAT, how many sockets to open towards a peer that guesses, by
+// default (connection.punch_sockets): each is one more port its guesses can
+// meet. With 32 of them in a range of 1024 ports, 16 guesses meet one in 40%
+// of the rounds; with the one socket of before, in 1.6%.
+#define NAT_PUNCH_SOCKETS_DFL 32
+
 #endif

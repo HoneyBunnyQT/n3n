@@ -251,8 +251,10 @@ tells how its NAT maps it: \fBn3nctl get_info\fR shows that as nat4 and nat6,
 and \fBn3nctl get_edges\fR shows it for peers not reached directly yet.
 Towards a peer behind a NAT that maps each destination to a port of its own,
 the edge tries a few more of the peer's ports in each round of registrations
-(\fBconnection.punch_ports\fR).  See docs/advanced/NatTraversal.md for
-details.
+(\fBconnection.punch_ports\fR).  Behind such a NAT itself, it opens more
+sockets towards a peer that guesses, so that a guess meets one of their
+ports sooner (\fBconnection.punch_sockets\fR, \fBconnection.punch_ttl\fR).
+See docs/advanced/NatTraversal.md for details.
 
 .SH MANAGEMENT INTERFACE
 Edge always provides JsonAPI listening on a Unix Domain socket in /run/n3n and

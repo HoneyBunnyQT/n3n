@@ -402,8 +402,9 @@ static int detect_local_ip_address (n3n_sock_t* out_sock, const struct n3n_runti
 }
 
 
-// TOS and path MTU discovery, for a socket of either family
-static void set_sock_options (struct n3n_runtime_data *eee, SOCKET sock, int family) {
+// TOS and path MTU discovery, for a socket of either family; quiet for the
+// many sockets opened behind a hard NAT
+static void set_sock_options (struct n3n_runtime_data *eee, SOCKET sock, int family, bool quiet) {
 
     int sockopt;
 
@@ -426,18 +427,20 @@ static void set_sock_options (struct n3n_runtime_data *eee, SOCKET sock, int fam
             r = setsockopt(sock, IPPROTO_IPV6, IPV6_TCLASS, (char *)&sockopt, sizeof(sockopt));
         }
 #endif
-        if(r == 0)
-            traceEvent(TRACE_INFO, "TOS set to 0x%x", eee->conf.tos);
-        else
+        if(r != 0)
             traceEvent(TRACE_WARNING, "could not set TOS 0x%x[%d]: %s", eee->conf.tos, errno, strerror(errno));
+        else if(!quiet)
+            traceEvent(TRACE_INFO, "TOS set to 0x%x", eee->conf.tos);
     }
 
 #ifdef IP_PMTUDISC_DO
-    traceEvent(
-        TRACE_INFO,
-        "Setting pmtu_discovery %s",
-        (eee->conf.pmtu_discovery) ? "true" : "false"
-    );
+    if(!quiet) {
+        traceEvent(
+            TRACE_INFO,
+            "Setting pmtu_discovery %s",
+            (eee->conf.pmtu_discovery) ? "true" : "false"
+        );
+    }
 
     int r = 0;
     if(family == AF_INET) {
@@ -459,7 +462,8 @@ static void set_sock_options (struct n3n_runtime_data *eee, SOCKET sock, int fam
         );
     }
 #else
-    traceEvent(TRACE_INFO, "No platform support for setting pmtu_discovery");
+    if(!quiet)
+        traceEvent(TRACE_INFO, "No platform support for setting pmtu_discovery");
 #endif
 }
 
@@ -490,7 +494,7 @@ static int open_udp_sockets (struct n3n_runtime_data *eee) {
     }
     for(int i = 0; i < eee->bind_count; i++) {
         mainloop_register_fd(eee->bind_sock[i], fd_info_proto_v3udp);
-        set_sock_options(eee, eee->bind_sock[i], eee->bind_family[i]);
+        set_sock_options(eee, eee->bind_sock[i], eee->bind_family[i], false);
     }
 
     // the NAT maps new sockets anew; each family's samples are about the
@@ -539,9 +543,185 @@ static n2n_cookie_t forwarded_reg_cookie (const struct n3n_runtime_data *eee) {
 }
 
 
+/* Behind a hard NAT, the sockets towards a peer that guesses our port (see
+ * punch_pool_round()). The main thread reads them as it reads its own. The
+ * first packet from the peer that one of them receives binds that one to the
+ * peer's address: the NAT lets the peer in to that public port only, so from
+ * then on everything to that address leaves from it, also from the packet
+ * threads, and the rest of the pool is closed. The tables change only on the
+ * main thread, while the packet threads wait, see edge_threads.h. */
+
+// how long a socket bound to a peer stays open without a packet from it
+#define NAT_PUNCH_BOUND_IDLE (2 * REGISTRATION_TIMEOUT)
+
+static const struct punch_bound *punch_bound_find (const struct n3n_runtime_data *eee, const n3n_sock_t *dest) {
+
+    for(int i = 0; i < NAT_PUNCH_BOUND; i++) {
+        const struct punch_bound *b = &eee->punch_bound[i];
+        if(b->dest.family && sock_equal(&b->dest, dest)) {
+            return b;
+        }
+    }
+    return NULL;
+}
+
+
+static void punch_bound_close (struct n3n_runtime_data *eee, struct punch_bound *b) {
+
+    mainloop_unregister_fd(b->fd);
+    closesocket(b->fd);
+    memset(b, 0, sizeof(*b));
+    eee->punch_bound_count--;
+}
+
+
+static void punch_pool_close (struct n3n_runtime_data *eee, struct punch_pool *p) {
+
+    for(int i = 0; i < p->count; i++) {
+        if(p->fd[i] >= 0) {
+            mainloop_unregister_fd(p->fd[i]);
+            closesocket(p->fd[i]);
+            eee->punch_pool_fds--;
+        }
+    }
+    memset(p, 0, sizeof(*p));
+}
+
+
+static void punch_close_all (struct n3n_runtime_data *eee) {
+
+    for(int i = 0; i < NAT_PUNCH_POOLS; i++) {
+        if(eee->punch_pool[i].used) {
+            punch_pool_close(eee, &eee->punch_pool[i]);
+        }
+    }
+    for(int i = 0; i < NAT_PUNCH_BOUND; i++) {
+        if(eee->punch_bound[i].dest.family) {
+            punch_bound_close(eee, &eee->punch_bound[i]);
+        }
+    }
+}
+
+
+// the option for the TTL (IPv4) or hop limit (IPv6) of a socket
+static void ttl_option (int family, int *level, int *name) {
+
+    *level = IPPROTO_IP;
+    *name = IP_TTL;
+#ifdef IPV6_UNICAST_HOPS
+    if(family == AF_INET6) {
+        *level = IPPROTO_IPV6;
+        *name = IPV6_UNICAST_HOPS;
+    }
+#endif
+}
+
+
+/* What arrived on sock, on the main thread: on a socket of a pool, the peer
+ * got through. The REGISTER it sent is answered right after, from the same
+ * socket, which therefore gets its usual TTL back first. */
+static void punch_note_rx (struct n3n_runtime_data *eee, SOCKET sock,
+                           const struct sockaddr *sender, time_t now) {
+
+    for(int i = 0; i < NAT_PUNCH_BOUND; i++) {
+        if(eee->punch_bound[i].dest.family && (eee->punch_bound[i].fd == sock)) {
+            eee->punch_bound[i].last_rx = now;
+            return;
+        }
+    }
+    if(!eee->punch_pool_fds) {
+        return;
+    }
+
+    for(int i = 0; i < NAT_PUNCH_POOLS; i++) {
+        struct punch_pool *p = &eee->punch_pool[i];
+        for(int j = 0; p->used && (j < p->count); j++) {
+            if(p->fd[j] != sock) {
+                continue;
+            }
+
+            n3n_sock_t from;
+            if(fill_n3nsock(&from, sender) || punch_bound_find(eee, &from)) {
+                // another socket of the pool got there first
+                return;
+            }
+            struct punch_bound *b = &eee->punch_bound[0];
+            for(int k = 0; k < NAT_PUNCH_BOUND; k++) {
+                if(!eee->punch_bound[k].dest.family) {
+                    b = &eee->punch_bound[k];
+                    break;
+                }
+                if(eee->punch_bound[k].last_rx < b->last_rx) {
+                    b = &eee->punch_bound[k];
+                }
+            }
+            if(b->dest.family) {
+                punch_bound_close(eee, b);
+            }
+            if(eee->conf.punch_ttl) {
+                int level, name;
+                ttl_option(p->dest.family, &level, &name);
+                setsockopt(sock, level, name, (char *)&p->ttl0, sizeof(p->ttl0));
+            }
+            b->dest = from;
+            b->fd = sock;
+            b->last_rx = now;
+            eee->punch_bound_count++;
+            p->fd[j] = -1;
+            eee->punch_pool_fds--;
+            // the rest of the pool is closed by punch_sweep(), outside the
+            // mainloop's walk through the fds
+            p->won = true;
+
+            struct sockaddr_storage local;
+            socklen_t len = sizeof(local);
+            uint16_t port = 0;
+            if(getsockname(sock, (struct sockaddr *)&local, &len) == 0) {
+                port = ntohs((local.ss_family == AF_INET6) ? ((struct sockaddr_in6 *)&local)->sin6_port
+                                                           : ((struct sockaddr_in *)&local)->sin_port);
+            }
+            macstr_t mac_buf;
+            n3n_sock_str_t sockbuf;
+            traceEvent(TRACE_NORMAL, "%s [%s] got through the NAT to socket %d of %d (local port %u)",
+                       macaddr_str(mac_buf, p->mac), sock_to_cstr(sockbuf, &from),
+                       j + 1, p->count, port);
+            return;
+        }
+    }
+}
+
+
+/* Once a second: close what is no longer needed - the rest of a pool once
+ * one of its sockets got through, a pool no round used for two intervals,
+ * and a bound socket the peer has not sent to for a while. */
+static void punch_sweep (struct n3n_runtime_data *eee, time_t now) {
+
+    if(now == eee->punch_swept) {
+        return;
+    }
+    eee->punch_swept = now;
+
+    for(int i = 0; i < NAT_PUNCH_POOLS; i++) {
+        struct punch_pool *p = &eee->punch_pool[i];
+        if(p->used && (p->won || (now - p->used > 2 * (time_t)eee->conf.register_interval + 1))) {
+            punch_pool_close(eee, p);
+        }
+    }
+    for(int i = 0; i < NAT_PUNCH_BOUND; i++) {
+        struct punch_bound *b = &eee->punch_bound[i];
+        if(b->dest.family && (now - b->last_rx > NAT_PUNCH_BOUND_IDLE)) {
+            n3n_sock_str_t sockbuf;
+            traceEvent(TRACE_INFO, "closing the socket bound to [%s], idle", sock_to_cstr(sockbuf, &b->dest));
+            punch_bound_close(eee, b);
+        }
+    }
+}
+
+
 // the UDP sockets, or the TCP connection to the supernode
 static void close_sockets (struct n3n_runtime_data *eee) {
 
+    punch_close_all(eee);
     if(eee->bind_count) {
         for(int i = 0; i < eee->bind_count; i++) {
             mainloop_unregister_fd(eee->bind_sock[i]);
@@ -670,7 +850,7 @@ void supernode_connect (struct n3n_runtime_data *eee) {
             return;
         }
 #endif
-        set_sock_options(eee, eee->sock, local.ss_family);
+        set_sock_options(eee, eee->sock, local.ss_family, false);
     }
 
     // What to tell the supernode about our local socket, from advertise_addr:
@@ -1429,6 +1609,17 @@ static void sendto_sock (struct n3n_runtime_data *eee, const void * buf,
         return;
     }
 
+    // behind a hard NAT, a peer that got through to a socket opened for it
+    // can only be reached from that one, see punch_note_rx()
+    if(eee->punch_bound_count) {
+        const struct punch_bound *b = punch_bound_find(eee, dest);
+        if(b) {
+            peer_addr_len = fill_sockaddr((struct sockaddr *)&dest_addr, sizeof(dest_addr), &b->dest);
+            sendto_fd(eee, b->fd, buf, len, (struct sockaddr *)&dest_addr, peer_addr_len);
+            return;
+        }
+    }
+
     int i = family_entry(eee, dest->family);
     if(i < 0) {
         // e.g. an IPv6 peer, and this edge bound to an IPv4 address only
@@ -1734,23 +1925,15 @@ static void sort_supernodes (struct n3n_runtime_data *eee, time_t now) {
     eee->sn_pong = 0;
 }
 
-/** Send a REGISTER packet to another edge. */
-static void send_register (struct n3n_runtime_data * eee,
-                           const n3n_sock_t * remote_peer,
-                           const n2n_mac_t peer_mac,
-                           const n2n_cookie_t cookie) {
+/** Encode a REGISTER packet to another edge into pktbuf, returns its size. */
+static size_t encode_register_pkt (struct n3n_runtime_data * eee,
+                                   uint8_t *pktbuf,
+                                   const n2n_mac_t peer_mac,
+                                   const n2n_cookie_t cookie) {
 
-    uint8_t pktbuf[N2N_PKT_BUF_SIZE];
     size_t idx;
-    /* ssize_t sent; */
     n2n_common_t cmn;
     n2n_REGISTER_t reg;
-    n3n_sock_str_t sockbuf;
-
-    if(!eee->conf.allow_p2p) {
-        traceEvent(TRACE_DEBUG, "skipping register as P2P is disabled");
-        return;
-    }
 
     /* reg.auth is not set by this caller; zero it so encode_REGISTER does not
      * emit garbage for that field */
@@ -1775,13 +1958,33 @@ static void send_register (struct n3n_runtime_data * eee,
     idx = 0;
     encode_REGISTER(pktbuf, &idx, &cmn, &reg);
 
-    traceEvent(TRACE_INFO, "send REGISTER to [%s]",
-               sock_to_cstr(sockbuf, remote_peer));
-
     if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED)
         packet_header_encrypt(pktbuf, idx, idx,
                               eee->conf.header_encryption_ctx_dynamic, eee->conf.header_iv_ctx_dynamic,
                               time_stamp());
+    return idx;
+}
+
+
+/** Send a REGISTER packet to another edge. */
+static void send_register (struct n3n_runtime_data * eee,
+                           const n3n_sock_t * remote_peer,
+                           const n2n_mac_t peer_mac,
+                           const n2n_cookie_t cookie) {
+
+    uint8_t pktbuf[N2N_PKT_BUF_SIZE];
+    size_t idx;
+    n3n_sock_str_t sockbuf;
+
+    if(!eee->conf.allow_p2p) {
+        traceEvent(TRACE_DEBUG, "skipping register as P2P is disabled");
+        return;
+    }
+
+    idx = encode_register_pkt(eee, pktbuf, peer_mac, cookie);
+
+    traceEvent(TRACE_INFO, "send REGISTER to [%s]",
+               sock_to_cstr(sockbuf, remote_peer));
 
     sendto_sock(eee, pktbuf, idx, remote_peer);
 }
@@ -1850,6 +2053,146 @@ static void punch_hard_peer (struct n3n_runtime_data *eee, struct peer_info *pee
 }
 
 
+/* A UDP socket for a pool: on the address the edge's own socket of that
+ * family is bound to, on a port the system picks, with the TTL of
+ * connection.punch_ttl if set - then *ttl0 is the one it had. */
+static int punch_open_sock (struct n3n_runtime_data *eee, int family, int *ttl0) {
+
+    struct sockaddr_storage sa;
+    socklen_t len = sizeof(sa);
+    int i = family_entry(eee, family);
+
+    int sock = socket(family, SOCK_DGRAM, IPPROTO_UDP);
+    if(sock < 0) {
+        return -1;
+    }
+    memset(&sa, 0, sizeof(sa));
+    if((i < 0) || (eee->bind_family[i] != family) ||
+       getsockname(eee->bind_sock[i], (struct sockaddr *)&sa, &len)) {
+        memset(&sa, 0, sizeof(sa));
+        sa.ss_family = family;
+    }
+    if(family == AF_INET6) {
+        int on = 1;
+        setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, (char *)&on, sizeof(on));
+        ((struct sockaddr_in6 *)&sa)->sin6_port = 0;
+        len = sizeof(struct sockaddr_in6);
+    } else {
+        ((struct sockaddr_in *)&sa)->sin_port = 0;
+        len = sizeof(struct sockaddr_in);
+    }
+    if(bind(sock, (struct sockaddr *)&sa, len) != 0) {
+        traceEvent(TRACE_WARNING, "could not bind a socket for punching: %s", strerror(errno));
+        closesocket(sock);
+        return -1;
+    }
+    set_sock_options(eee, sock, family, true);
+
+    if(eee->conf.punch_ttl) {
+        int level, name;
+        int ttl = eee->conf.punch_ttl;
+        socklen_t ttl_len = sizeof(*ttl0);
+        ttl_option(family, &level, &name);
+        getsockopt(sock, level, name, (char *)ttl0, &ttl_len);
+        setsockopt(sock, level, name, (char *)&ttl, sizeof(ttl));
+    }
+    return sock;
+}
+
+
+/* Behind a hard NAT, the round towards a peer that guesses our port. One
+ * REGISTER straight to its public socket makes one public port of ours that
+ * its NAT will let in; the peer has to meet just that one. So we open
+ * connection.punch_sockets more sockets for it and send a REGISTER from each
+ * every round: the NAT gives each a public port of its own, and any of them
+ * will do. The pool stays the same from round to round, so the peer's walk
+ * through the range meets each of its ports once. All the pools together
+ * hold at most NAT_PUNCH_POOL_MAX sockets: a NAT that gives every customer a
+ * block of ports is not to be emptied by one edge.
+ *
+ * With connection.punch_ttl, these REGISTERs leave with a TTL that takes them
+ * through our own NATs, but not to the peer's: they are only there to make
+ * the ports, and the peer's network never sees them. */
+static void punch_pool_round (struct n3n_runtime_data *eee, struct peer_info *peer, time_t now) {
+
+    const n3n_sock_t *dest = &peer->sock;
+    struct punch_pool *p = NULL;
+    struct sockaddr_storage sa;
+    socklen_t sa_len;
+    uint8_t pktbuf[N2N_PKT_BUF_SIZE];
+    size_t idx;
+    macstr_t mac_buf;
+    n3n_sock_str_t sockbuf;
+
+    if(!eee->conf.punch_sockets || (eee->punch_bound_count && punch_bound_find(eee, dest))) {
+        // the REGISTER straight to the peer already leaves from the socket
+        // it got through to before
+        return;
+    }
+
+    for(int i = 0; i < NAT_PUNCH_POOLS; i++) {
+        if(eee->punch_pool[i].used && !memcmp(eee->punch_pool[i].mac, peer->mac_addr, sizeof(n2n_mac_t))) {
+            p = &eee->punch_pool[i];
+            break;
+        }
+    }
+    if(p && (p->won || !sock_equal(&p->dest, dest))) {
+        // the peer moved, or the rest of a pool not swept yet
+        punch_pool_close(eee, p);
+        p = NULL;
+    }
+
+    if(!p) {
+        int want = MIN((int)eee->conf.punch_sockets, NAT_PUNCH_POOL_MAX - eee->punch_pool_fds);
+
+        for(int i = 0; i < NAT_PUNCH_POOLS; i++) {
+            if(!eee->punch_pool[i].used) {
+                p = &eee->punch_pool[i];
+                break;
+            }
+        }
+        if(!p || (want <= 0)) {
+            traceEvent(TRACE_INFO, "no sockets left to punch towards %s", macaddr_str(mac_buf, peer->mac_addr));
+            return;
+        }
+        memset(p, 0, sizeof(*p));
+        memcpy(p->mac, peer->mac_addr, sizeof(n2n_mac_t));
+        p->dest = *dest;
+        while(p->count < want) {
+            int sock = punch_open_sock(eee, dest->family, &p->ttl0);
+            if(sock < 0) {
+                break;
+            }
+            if(mainloop_register_fd(sock, fd_info_proto_v3udp) < 0) {
+                closesocket(sock);
+                break;
+            }
+            p->fd[p->count++] = sock;
+            eee->punch_pool_fds++;
+        }
+        if(!p->count) {
+            return;
+        }
+        traceEvent(TRACE_INFO, "opened %d sockets to punch towards %s [%s]",
+                   p->count, macaddr_str(mac_buf, peer->mac_addr), sock_to_cstr(sockbuf, dest));
+    }
+    p->used = now;
+
+    sa_len = fill_sockaddr((struct sockaddr *)&sa, sizeof(sa), dest);
+    if(sa_len == 0) {
+        return;
+    }
+    idx = encode_register_pkt(eee, pktbuf, peer->mac_addr, N2N_REGULAR_REG_COOKIE);
+    for(int i = 0; i < p->count; i++) {
+        if(p->fd[i] >= 0) {
+            sendto_fd(eee, p->fd[i], pktbuf, idx, (struct sockaddr *)&sa, sa_len);
+        }
+    }
+    traceEvent(TRACE_INFO, "sent REGISTERs from %d sockets to %s [%s]",
+               p->count, macaddr_str(mac_buf, peer->mac_addr), sock_to_cstr(sockbuf, dest));
+}
+
+
 /* A round towards a peer that cannot reach us directly yet: with it behind a
  * hard NAT, guess its port; with us behind one, send a REGISTER straight to
  * its public socket, which makes the port it guesses for, and keeps it for
@@ -1870,6 +2213,7 @@ static void punch_round (struct n3n_runtime_data *eee, struct peer_info *peer, t
               !is_empty_ip_address(&peer->sock) && (eee->nat[f == AF_INET6].nat_class == NAT_HARD) &&
               (now - np->punched >= eee->conf.register_interval)) {
         send_register(eee, &peer->sock, peer->mac_addr, N2N_REGULAR_REG_COOKIE);
+        punch_pool_round(eee, peer, now);
         np->punched = now;
     }
 }
@@ -3896,6 +4240,12 @@ int edge_read_proto3_udp (struct n3n_runtime_data *eee,
     // - detect when pktbuf is too small for the packet and add that to stats
     //   (could switch to using recvmsg() for that)
 
+    // behind a hard NAT, a peer may have got through to one of the sockets
+    // opened for it, which only the main thread reads
+    if((eee->punch_pool_fds || eee->punch_bound_count) && !n3n_thread_slot) {
+        punch_note_rx(eee, sock, sender_sock, now);
+    }
+
     // we have a datagram to process...
     // ...and the datagram has data (not just a header)
     //
@@ -4052,6 +4402,7 @@ int run_edge_loop (struct n3n_runtime_data *eee) {
 
         // finished processing select data
         update_supernode_reg(eee, now);
+        punch_sweep(eee, now);
 
         numPurged = 0;
         // keep, i.e. do not purge, the known peers while no supernode supernode connection
@@ -4419,6 +4770,7 @@ void edge_init_conf_defaults (n2n_edge_conf_t *conf, char *sessionname) {
     conf->threads = 1;
     conf->register_interval = REGISTER_SUPER_INTERVAL_DFL;
     conf->punch_ports = NAT_PUNCH_PORTS_DFL;
+    conf->punch_sockets = NAT_PUNCH_SOCKETS_DFL;
 
     // Ensure we can notice if the config has set a dev name
     conf->tuntap_dev_name[0] = '\0';

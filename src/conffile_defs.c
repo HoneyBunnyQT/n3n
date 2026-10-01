@@ -199,6 +199,32 @@ static struct n3n_conf_option section_connection[] = {
                 "this off.  See docs/advanced/NatTraversal.md",
     },
     {
+        .name = "punch_sockets",
+        .type = n3n_conf_uint32,
+        .offset = offsetof(n2n_edge_conf_t, punch_sockets),
+        .desc = "Sockets to open towards a peer that guesses our port",
+        .help = "Behind a NAT that maps a new public port for every "
+                "destination, the edge opens this many more sockets "
+                "towards a peer that guesses its port, and sends a "
+                "REGISTER from each every round: each gets a public port "
+                "of its own, and the peer has to meet just one of them.  "
+                "At most 64 sockets are open for all peers together.  0 "
+                "turns this off.  See docs/advanced/NatTraversal.md",
+    },
+    {
+        .name = "punch_ttl",
+        .type = n3n_conf_uint32,
+        .offset = offsetof(n2n_edge_conf_t, punch_ttl),
+        .desc = "The TTL of the REGISTERs from those sockets",
+        .help = "They are only there to make the NAT open a port, so they "
+                "need not reach the peer.  With a TTL just big enough to "
+                "get through our own NATs - the number of NATs plus one, "
+                "but take the carrier's into account - the peer's network "
+                "never sees them.  Too small, and the NAT never opens the "
+                "port at all.  0, the default, leaves the system's TTL.  "
+                "See docs/advanced/NatTraversal.md",
+    },
+    {
         .name = "register_interval",
         .type = n3n_conf_uint32,
         .offset = offsetof(n2n_edge_conf_t, register_interval),
