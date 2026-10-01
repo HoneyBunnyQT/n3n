@@ -18,9 +18,13 @@ tests-elliptic
 tests-transform
 tests-wire
 tests-peers
+tests-aes
+tests-cc20
 tests-auth.exe
 tests-compress.exe
 tests-elliptic.exe
 tests-transform.exe
 tests-wire.exe
 tests-peers.exe
+tests-aes.exe
+tests-cc20.exe

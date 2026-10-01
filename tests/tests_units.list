@@ -1,7 +1,9 @@
 #
 # The unit tests
 
+tests-aes
 tests-auth
+tests-cc20
 tests-compress
 tests-elliptic
 tests-peers
