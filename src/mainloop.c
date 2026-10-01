@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <stdlib.h>             // for calloc, realloc, free, abort
 #include <string.h>             // for memmove, memset, strerror
+#include <strings.h>            // for strncasecmp
 
 #ifndef _WIN32
 #include <sys/select.h>         // for select, FD_ZERO,
@@ -120,6 +121,7 @@ struct fd_info {
     int stats_reads;            // The number of ready to read events
     enum fd_info_proto proto;   // What protocol to use on a read event
     int8_t connnr;              // which connlist[] is being used as buffer
+    bool close_after;           // http: close once the reply is sent
     struct n3n_runtime_data *rt;    // whose it is, NULL: of mainloop_run()
 };
 
@@ -355,6 +357,7 @@ static void fdlist_clear (int from, int to) {
         fdlist[slot].fd = -1;
         fdlist[slot].proto = fd_info_proto_unknown;
         fdlist[slot].stats_reads = 0;
+        fdlist[slot].close_after = false;
     }
 }
 
@@ -415,6 +418,7 @@ static int fdlist_allocslot (int fd, enum fd_info_proto proto, struct n3n_runtim
             fdlist[slot].proto = proto;
             fdlist[slot].stats_reads = 0;
             fdlist[slot].connnr = connnr;
+            fdlist[slot].close_after = false;
             fdlist[slot].rt = rt;
 
             fdlist_next_search = slot + 1;
@@ -472,6 +476,38 @@ static void fdlist_freefd (int fd) {
 
 // Close the socket of a slot, and its connection if it has one, and forget
 // the slot
+// Whether an http client wants the connection closed after the reply:
+// HTTP/1.0 does unless it asks to keep it alive (lynx reads to the end of
+// the connection), and any with "Connection: close"
+static bool http_close_after (const char *req) {
+
+    const char *eol = strstr(req, "\r\n");
+    const char *end = strstr(req, "\r\n\r\n");
+    bool close = eol && (eol - req >= 8) && !strncmp(eol - 8, "HTTP/1.0", 8);
+
+    if(!strncmp(req, "GET /events/", 12)) {
+        // a subscription stays, see event_subscribe()
+        return false;
+    }
+
+    for(const char *p = eol; p && end && (p < end); p = strstr(p + 2, "\r\n")) {
+        if(strncasecmp(p + 2, "Connection:", 11)) {
+            continue;
+        }
+        const char *v = p + 13;
+        while(*v == ' ') {
+            v++;
+        }
+        if(!strncasecmp(v, "close", 5)) {
+            close = true;
+        } else if(!strncasecmp(v, "keep-alive", 10)) {
+            close = false;
+        }
+    }
+    return close;
+}
+
+
 static void fdlist_close_slot (int slot) {
     int fd = fdlist[slot].fd;
     int connnr = fdlist[slot].connnr;
@@ -772,13 +808,20 @@ static void handle_fd (const time_t now, int slot, struct n3n_runtime_data *eee)
                     // - handle reading/sending simultaneous?
                     return;
 
-                case CONN_READY:
+                case CONN_READY: {
+                    bool close_after = http_close_after(conn->request->str);
                     mgmt_api_handler(eee, conn);
                     if(conn->reply_sendpos == 0) {
                         // Looks like we have finished a write, so we can clean up
                         sb_zero(conn->request);
                     }
+                    if(close_after && !conn_iswriter(conn)) {
+                        fdlist_close_slot(slot);
+                    } else {
+                        fdlist[slot].close_after = close_after;
+                    }
                     return;
+                }
 
                 case CONN_ERROR:
                 case CONN_CLOSED:
@@ -861,6 +904,11 @@ static void fdlist_check_ready (fd_set *rd, fd_set *wr, const time_t now, struct
             if(conn->reply_sendpos == 0) {
                 // Looks like we have finished a write, so we can clean up
                 sb_zero(conn->request);
+            }
+            if(fdlist[slot].close_after && !conn_iswriter(conn)) {
+                fdlist_close_slot(slot);
+                slot++;
+                continue;
             }
         }
 
