@@ -298,25 +298,279 @@ void send_re_register_super (struct n3n_runtime_data *sss) {
 }
 
 
-/** Load the list of allowed communities. Existing/previous ones will be removed,
- *  return 0 on success, -1 if file not found, -2 if no valid entries found
- */
-int load_allowed_sn_community (struct n3n_runtime_data *sss) {
+/* Whether net/bitlen (network byte order) can be the address range of a
+ * community */
+static bool community_network_ok (in_addr_t net, uint8_t bitlen, const char *community) {
 
-    char buffer[4096], *line, *cmn_str, net_str[20], format[20];
+    struct in_addr addr = { .s_addr = net };
 
-    sn_user_t *user, *tmp_user;
+    if((bitlen > 30) || (bitlen == 0)) {
+        traceEvent(TRACE_WARNING, "bad prefix '%hhu' for community '%s', ignoring",
+                   bitlen, community);
+        return false;
+    }
+    if((net == (in_addr_t)(-1)) || (net == INADDR_NONE) || (net == INADDR_ANY)
+       || ((ntohl(net) & ~bitlen2mask(bitlen)) != 0)) {
+        traceEvent(TRACE_WARNING, "bad network '%s/%u' for community '%s', ignoring",
+                   inet_ntoa(addr), bitlen, community);
+        return false;
+    }
+    return true;
+}
+
+
+/* Add a community of fixed name, which is not purged; with the address
+ * range net/bitlen (network byte order), or if net is 0, one the auto ip
+ * address service chooses */
+static struct sn_community *add_fixed_community (struct n3n_runtime_data *sss, const char *name,
+                                                 in_addr_t net, uint8_t bitlen) {
+
+    struct sn_community *comm = calloc(1, sizeof(struct sn_community));
+
+    if(!comm) {
+        return NULL;
+    }
+    comm_init(comm, (char *)name);
+    comm->purgeable = false;
+    /* we do not know if header encryption is used in this community,
+     * first packet will show. just in case, setup the key. */
+    comm->header_encryption = HEADER_ENCRYPTION_UNKNOWN;
+    packet_header_setup_key(comm->community,
+                            &(comm->header_encryption_ctx_static),
+                            &(comm->header_encryption_ctx_dynamic),
+                            &(comm->header_iv_ctx_static),
+                            &(comm->header_iv_ctx_dynamic));
+    HASH_ADD_STR(sss->relay.communities, community, comm);
+
+    if(net) {
+        struct in_addr addr = { .s_addr = net };
+
+        comm->auto_ip_net.net_addr = ntohl(net);
+        comm->auto_ip_net.net_bitlen = bitlen;
+        traceEvent(TRACE_INFO, "assigned sub-network %s/%u to community '%s'",
+                   inet_ntoa(addr), bitlen, comm->community);
+    } else {
+        assign_one_ip_subnet(sss, comm);
+    }
+    return comm;
+}
+
+
+/* Allow a user, "NAME PUBLICKEY", in a community; which then needs header
+ * encryption */
+static int add_user (struct sn_community *comm, const char *line) {
+
+    char format[20];
     n2n_desc_t username;
-    n2n_private_public_key_t public_key;
     char ascii_public_key[(N2N_PRIVATE_PUBLIC_KEY_SIZE * 8 + 5) / 6 + 1];
+    sn_user_t *user;
 
+    snprintf(format, sizeof(format), "%%%ds %%%us",
+             N2N_DESC_SIZE - 1, (uint32_t)sizeof(ascii_public_key) - 1);
+    if(sscanf(line, format, username, ascii_public_key) != 2) {
+        traceEvent(TRACE_WARNING, "bad user '%s' for community '%s', ignoring",
+                   line, comm->community);
+        return -1;
+    }
+
+    user = (sn_user_t*)calloc(1, sizeof(sn_user_t));
+    if(!user) {
+        return -1;
+    }
+    memcpy(user->name, username, sizeof(username));
+    ascii_to_bin(user->public_key, ascii_public_key);
+
+    sn_user_t *known;
+    HASH_FIND(hh, comm->allowed_users, user->public_key, sizeof(n2n_private_public_key_t), known);
+    if(known) {
+        traceEvent(TRACE_WARNING, "user '%s' has the public key of user '%s' in community '%s', ignoring",
+                   user->name, known->name, comm->community);
+        free(user);
+        return -1;
+    }
+
+    // common shared secret will be calculated later
+    HASH_ADD(hh, comm->allowed_users, public_key, sizeof(n2n_private_public_key_t), user);
+    traceEvent(TRACE_INFO, "added user '%s' with public key '%s' to community '%s'",
+               user->name, ascii_public_key, comm->community);
+
+    // the keys are set up already, the dynamic one follows later
+    comm->header_encryption = HEADER_ENCRYPTION_ENABLED;
+    return 0;
+}
+
+
+/* Allow the communities whose whole name matches a regular expression */
+static int add_rule (struct n3n_runtime_data *sss, const char *pattern) {
+
+    struct sn_community_regular_expression *re = calloc(1, sizeof(*re));
+
+    if(!re) {
+        return -1;
+    }
+    re->rule = re_compile(pattern);
+    if(!re->rule) {
+        traceEvent(TRACE_WARNING, "bad regular expression '%s', ignoring", pattern);
+        free(re);
+        return -1;
+    }
+    HASH_ADD_PTR(sss->relay.rules, rule, re);
+    traceEvent(TRACE_INFO, "added regular expression for allowed communities '%s'", pattern);
+    return 0;
+}
+
+
+/* The communities and rules of the configuration: [community NAME] sections
+ * and supernode.community_regex */
+static void load_conf_communities (struct n3n_runtime_data *sss, uint32_t *num_communities, uint32_t *num_regex) {
+
+    struct n3n_conf_community *conf_comm, *tmp_conf_comm;
+    struct n3n_conf_strlist *item;
+
+    HASH_ITER(hh, sss->conf.communities, conf_comm, tmp_conf_comm) {
+        const char *name = (const char *)conf_comm->community_name;
+        in_addr_t net = conf_comm->network.net_addr;
+        uint8_t bitlen = conf_comm->network.net_bitlen;
+        struct sn_community *comm;
+
+        HASH_FIND_STR(sss->relay.communities, name, comm);
+        if(comm) {
+            traceEvent(TRACE_WARNING, "community '%s' of section [community %s] is there already, ignoring",
+                       name, conf_comm->instance);
+            continue;
+        }
+        if(net && !community_network_ok(net, bitlen, name)) {
+            net = 0;
+        }
+        comm = add_fixed_community(sss, name, net, bitlen);
+        if(!comm) {
+            continue;
+        }
+        (*num_communities)++;
+        traceEvent(TRACE_INFO, "added allowed community '%s' of section [community %s]",
+                   name, conf_comm->instance);
+
+        if(conf_comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
+            comm->header_encryption = HEADER_ENCRYPTION_ENABLED;
+        }
+        for(item = conf_comm->users; item; item = item->next) {
+            add_user(comm, item->str);
+        }
+    }
+
+    for(item = sss->conf.relay.community_regex; item; item = item->next) {
+        if(add_rule(sss, item->str) == 0) {
+            (*num_regex)++;
+        }
+    }
+}
+
+
+/* The communities and rules of the community file; one there is already,
+ * from a section of the configuration, stays as it is */
+static void load_file_communities (struct n3n_runtime_data *sss, FILE *fd, uint32_t *num_communities, uint32_t *num_regex) {
+
+    char buffer[4096], *line, *cmn_str, net_str[20];
     dec_ip_str_t ip_str = {'\0'};
     uint8_t bitlen;
     in_addr_t net;
-    uint32_t mask;
-    FILE *fd = fopen(sss->conf.relay.community_file, "r");
+    struct sn_community *comm, *last_added_comm = NULL;
+    int has_net;
 
-    struct sn_community *comm, *tmp_comm, *last_added_comm = NULL;
+    while((line = fgets(buffer, sizeof(buffer), fd)) != NULL) {
+        int len = strlen(line);
+
+        if((len < 2) || line[0] == '#') {
+            continue;
+        }
+
+        len--;
+        while(len > 0) {
+            if((line[len] == '\n') || (line[len] == '\r')) {
+                line[len] = '\0';
+                len--;
+            } else {
+                break;
+            }
+        }
+        // the loop above does not always determine correct 'len'
+        len = strlen(line);
+
+        // user-key line for edge authentication?
+        if(line[0] == N2N_USER_KEY_LINE_STARTER) { /* special first character */
+            if(last_added_comm) { /* is there a valid community to add users to */
+                add_user(last_added_comm, line + 1);
+            }
+            continue;
+        }
+
+        // --- community name or regular expression
+
+        // cut off any IP sub-network upfront
+        cmn_str = (char*)calloc(len + 1, sizeof(char));
+        if(!cmn_str) {
+            break;
+        }
+        has_net = (sscanf(line, "%s %19s", cmn_str, net_str) == 2);
+        last_added_comm = NULL;
+
+        // if it contains typical characters...
+        if(NULL != strpbrk(cmn_str, ".*+?[]\\")) {
+            // ...it is treated as regular expression
+            if(add_rule(sss, cmn_str) == 0) {
+                (*num_regex)++;
+            }
+            free(cmn_str);
+            continue;
+        }
+
+        HASH_FIND_STR(sss->relay.communities, cmn_str, comm);
+        if(comm) {
+            traceEvent(TRACE_NORMAL, "community '%s' of %s is there already, keeping that one",
+                       cmn_str, sss->conf.relay.community_file);
+            free(cmn_str);
+            continue;
+        }
+
+        // check for sub-network address
+        net = 0;
+        if(has_net) {
+            if(sscanf(net_str, "%15[^/]/%hhu", ip_str, &bitlen) != 2) {
+                traceEvent(TRACE_WARNING, "bad net/bit format '%s' for community '%s', ignoring; see comments inside community.list file",
+                           net_str, cmn_str);
+            } else {
+                net = inet_addr(ip_str);
+                if(!community_network_ok(net, bitlen, cmn_str)) {
+                    net = 0;
+                }
+            }
+        }
+
+        comm = add_fixed_community(sss, cmn_str, net, bitlen);
+        if(comm) {
+            last_added_comm = comm;
+            (*num_communities)++;
+            traceEvent(TRACE_INFO, "added allowed community '%s' [total: %u]",
+                       (char*)comm->community, *num_communities);
+        }
+        free(cmn_str);
+    }
+}
+
+
+/** Load the allowed communities: of the [community NAME] sections and
+ *  supernode.community_regex of the configuration, and of the community
+ *  file, which is read again.  Existing/previous ones will be removed.
+ *  return 0 on success, -1 if there is nothing to load or the file is not
+ *  found, -2 if no valid entries found
+ */
+int load_allowed_sn_community (struct n3n_runtime_data *sss) {
+
+    sn_user_t *user, *tmp_user;
+    FILE *fd = NULL;
+    int rc = 0;
+
+    struct sn_community *comm, *tmp_comm;
     struct peer_info *edge, *tmp_edge;
     node_supernode_association_t *assoc, *tmp_assoc;
     time_t any_time = 0;
@@ -325,10 +579,17 @@ int load_allowed_sn_community (struct n3n_runtime_data *sss) {
 
     struct sn_community_regular_expression *re, *tmp_re;
     uint32_t num_regex = 0;
-    int has_net;
 
-    if(fd == NULL) {
-        traceEvent(TRACE_WARNING, "File %s not found", sss->conf.relay.community_file);
+    bool in_conf = sss->conf.communities || sss->conf.relay.community_regex;
+
+    if(sss->conf.relay.community_file) {
+        fd = fopen(sss->conf.relay.community_file, "r");
+        if(fd == NULL) {
+            traceEvent(TRACE_WARNING, "File %s not found", sss->conf.relay.community_file);
+            rc = -1;
+        }
+    }
+    if(!fd && !in_conf) {
         return -1;
     }
 
@@ -389,154 +650,31 @@ int load_allowed_sn_community (struct n3n_runtime_data *sss) {
     // ... federated supernodes to re-register
     re_register_and_purge_supernodes(sss, sss->relay.federation, &any_time, any_time, 1 /* forced */);
 
-    // format definition for possible user-key entries
-    sprintf(
-        format,
-        "%c %%%ds %%%us",
-        N2N_USER_KEY_LINE_STARTER,
-        N2N_DESC_SIZE - 1,
-        (uint32_t)sizeof(ascii_public_key)-1
-    );
-
-    while((line = fgets(buffer, sizeof(buffer), fd)) != NULL) {
-        int len = strlen(line);
-
-        if((len < 2) || line[0] == '#') {
-            continue;
-        }
-
-        len--;
-        while(len > 0) {
-            if((line[len] == '\n') || (line[len] == '\r')) {
-                line[len] = '\0';
-                len--;
-            } else {
-                break;
-            }
-        }
-        // the loop above does not always determine correct 'len'
-        len = strlen(line);
-
-        // user-key line for edge authentication?
-        if(line[0] == N2N_USER_KEY_LINE_STARTER) { /* special first character */
-            if(sscanf(line, format, username, ascii_public_key) == 2) { /* correct format */
-                if(last_added_comm) { /* is there a valid community to add users to */
-                    user = (sn_user_t*)calloc(1, sizeof(sn_user_t));
-                    if(user) {
-                        // username
-                        memcpy(user->name, username, sizeof(username));
-                        // public key
-                        ascii_to_bin(public_key, ascii_public_key);
-                        memcpy(user->public_key, public_key, sizeof(public_key));
-                        // common shared secret will be calculated later
-                        // add to list
-                        HASH_ADD(hh, last_added_comm->allowed_users, public_key, sizeof(n2n_private_public_key_t), user);
-                        traceEvent(TRACE_INFO, "added user '%s' with public key '%s' to community '%s'",
-                                   user->name, ascii_public_key, last_added_comm->community);
-                        // enable header encryption
-                        last_added_comm->header_encryption = HEADER_ENCRYPTION_ENABLED;
-                        packet_header_setup_key(last_added_comm->community,
-                                                &(last_added_comm->header_encryption_ctx_static),
-                                                &(last_added_comm->header_encryption_ctx_dynamic),
-                                                &(last_added_comm->header_iv_ctx_static),
-                                                &(last_added_comm->header_iv_ctx_dynamic));
-                        // dynamic key setup follows at a later point in code
-                    }
-                    continue;
-                }
-            }
-        }
-
-        // --- community name or regular expression
-
-        // cut off any IP sub-network upfront
-        cmn_str = (char*)calloc(len + 1, sizeof(char));
-        has_net = (sscanf(line, "%s %s", cmn_str, net_str) == 2);
-
-        // if it contains typical characters...
-        if(NULL != strpbrk(cmn_str, ".*+?[]\\")) {
-            // ...it is treated as regular expression
-            re = (struct sn_community_regular_expression*)calloc(1, sizeof(struct sn_community_regular_expression));
-            if(re) {
-                re->rule = re_compile(cmn_str);
-                HASH_ADD_PTR(sss->relay.rules, rule, re);
-                num_regex++;
-                traceEvent(TRACE_INFO, "added regular expression for allowed communities '%s'", cmn_str);
-                free(cmn_str);
-                last_added_comm = NULL;
-                continue;
-            }
-        }
-
-        comm = (struct sn_community*)calloc(1,sizeof(struct sn_community));
-
-        if(comm != NULL) {
-            comm_init(comm, cmn_str);
-            /* loaded from file, this community is unpurgeable */
-            comm->purgeable = false;
-            /* we do not know if header encryption is used in this community,
-             * first packet will show. just in case, setup the key. */
-            comm->header_encryption = HEADER_ENCRYPTION_UNKNOWN;
-            packet_header_setup_key(comm->community,
-                                    &(comm->header_encryption_ctx_static),
-                                    &(comm->header_encryption_ctx_dynamic),
-                                    &(comm->header_iv_ctx_static),
-                                    &(comm->header_iv_ctx_dynamic));
-            HASH_ADD_STR(sss->relay.communities, community, comm);
-            last_added_comm = comm;
-
-            num_communities++;
-            traceEvent(TRACE_INFO, "added allowed community '%s' [total: %u]",
-                       (char*)comm->community, num_communities);
-
-            // check for sub-network address
-            if(has_net) {
-                if(sscanf(net_str, "%15[^/]/%hhu", ip_str, &bitlen) != 2) {
-                    traceEvent(TRACE_WARNING, "bad net/bit format '%s' for community '%c', ignoring; see comments inside community.list file",
-                               net_str, cmn_str);
-                    has_net = 0;
-                }
-                net = inet_addr(ip_str);
-                mask = bitlen2mask(bitlen);
-                if((net == (in_addr_t)(-1)) || (net == INADDR_NONE) || (net == INADDR_ANY)
-                   || ((ntohl(net) & ~mask) != 0)) {
-                    traceEvent(TRACE_WARNING, "bad network '%s/%u' in '%s' for community '%s', ignoring",
-                               ip_str, bitlen, net_str, cmn_str);
-                    has_net = 0;
-                }
-                if((bitlen > 30) || (bitlen == 0)) {
-                    traceEvent(TRACE_WARNING, "bad prefix '%hhu' in '%s' for community '%s', ignoring",
-                               bitlen, net_str, cmn_str);
-                    has_net = 0;
-                }
-            }
-            if(has_net) {
-                comm->auto_ip_net.net_addr = ntohl(net);
-                comm->auto_ip_net.net_bitlen = bitlen;
-                struct in_addr *tmp = (struct in_addr *)&net;
-                traceEvent(TRACE_INFO, "assigned sub-network %s/%u to community '%s'",
-                           inet_ntoa(*tmp),
-                           comm->auto_ip_net.net_bitlen,
-                           comm->community);
-            } else {
-                assign_one_ip_subnet(sss, comm);
-            }
-        }
-        free(cmn_str);
+    // the sections of the configuration first: they win over the file
+    load_conf_communities(sss, &num_communities, &num_regex);
+    if(in_conf) {
+        traceEvent(TRACE_NORMAL, "loaded %u fixed-name communities and %u regular expressions from the configuration",
+                   num_communities, num_regex);
     }
 
-    fclose(fd);
+    if(fd) {
+        uint32_t conf_communities = num_communities;
+        uint32_t conf_regex = num_regex;
+
+        load_file_communities(sss, fd, &num_communities, &num_regex);
+        fclose(fd);
+
+        traceEvent(TRACE_NORMAL, "loaded %u fixed-name communities from %s",
+                   num_communities - conf_communities, sss->conf.relay.community_file);
+
+        traceEvent(TRACE_NORMAL, "loaded %u regular expressions for community name matching from %s",
+                   num_regex - conf_regex, sss->conf.relay.community_file);
+    }
 
     if((num_regex + num_communities) == 0) {
-        traceEvent(TRACE_WARNING, "file %s does not contain any valid community names or regular expressions", sss->conf.relay.community_file);
+        traceEvent(TRACE_WARNING, "no valid community names or regular expressions found");
         return -2;
     }
-
-    traceEvent(TRACE_NORMAL, "loaded %u fixed-name communities from %s",
-               num_communities, sss->conf.relay.community_file);
-
-    traceEvent(TRACE_NORMAL, "loaded %u regular expressions for community name matching from %s",
-               num_regex, sss->conf.relay.community_file);
 
     // calculate allowed user's shared secrets (shared with federation)
     calculate_shared_secrets(sss);
@@ -547,7 +685,7 @@ int load_allowed_sn_community (struct n3n_runtime_data *sss) {
     // no new communities will be allowed
     sss->relay.lock_communities = true;
 
-    return 0;
+    return rc;
 }
 
 
@@ -1076,6 +1214,7 @@ void sn_term (struct n3n_runtime_data *sss) {
     free(sss->conf.bind_address);
 
     free(sss->conf.relay.community_file);
+    n3n_conf_strlist_free(&sss->conf.relay.community_regex);
     n3n_config_free_communities(&sss->conf);
 
     free(sss->conf.mgmt_password);

@@ -465,6 +465,7 @@ struct n3n_conf_relay {
     n2n_mac_t sn_mac_addr;
     bool spoofing_protection;                                /* false if overriding MAC/IP spoofing protection (cli option '-M') */
     char *community_file;
+    struct n3n_conf_strlist *community_regex;        /**< community names matching one of these are allowed */
     n2n_version_t version;                                  /* version string sent to edges along with PEER_INFO a.k.a. PONG */
     n2n_community_t sn_federation;
     struct peer_info *sn_edges;     // SN federation storage during configure
@@ -482,6 +483,9 @@ struct n3n_conf_community {
     uint8_t transop_id;                              /**< The transop to use. */
     uint8_t compression;                             /**< Compress outgoing data packets before encryption */
     char                     *encrypt_key;
+    // only on a supernode
+    n2n_ip_subnet_t network;                         /**< for the auto ip address service, network byte order; 0 to choose one */
+    struct n3n_conf_strlist *users;                  /**< "name public-key" of each user allowed, see community.user */
 };
 
 typedef struct n2n_edge_conf {

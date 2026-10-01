@@ -8,6 +8,7 @@ OK
 
 [community]
 header_encryption=unknown
+network=0.0.0.0/0
 #supernode=
 
 
@@ -60,6 +61,36 @@ address=0.0.0.0/0
 address_mode=auto
 metric=0
 mtu=0
+
+### test: load_dump tests/conf/communities.conf (community parts)
+[community]
+cipher=AES
+compression=none
+header_encryption=false
+key=secret1
+name=main
+network=0.0.0.0/0
+#supernode=
+
+[community home]
+cipher=null
+compression=none
+header_encryption=false
+key=secret2
+name=home
+network=10.77.0.0/16
+
+[community lab-2.x]
+cipher=null
+compression=none
+header_encryption=true
+name=my-lab.net
+network=0.0.0.0/0
+user=alice 07K7kHCix+RHQo609cIycRQB29ADj-EvKHReDiMGrMO
+user=bob nHWum+r42k1qDXdIeH-WFKeylK5UyLStRzxofRNAgpG
+
+community_regex=net[0-9]+
+community_regex=lab[a-z]+
 
 ### test: ./apps/n3n-edge tools keygen logan 007
 * logan nHWum+r42k1qDXdIeH-WFKeylK5UyLStRzxofRNAgpG

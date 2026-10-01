@@ -418,7 +418,8 @@ int main (int argc, char * argv[]) {
 
     n3n_sn_config(argc, argv, "supernode", &sss_node);
 
-    if(sss_node.conf.relay.community_file)
+    if(sss_node.conf.relay.community_file || sss_node.conf.communities
+       || sss_node.conf.relay.community_regex)
         load_allowed_sn_community(&sss_node);
 
 #ifndef _WIN32

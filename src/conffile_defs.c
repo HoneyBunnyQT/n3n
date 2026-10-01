@@ -82,6 +82,16 @@ static struct n3n_conf_option section_community[] = {
                 "this is truncated to fit.",
     },
     {
+        .name = "network",
+        .type = n3n_conf_ip_subnet,
+        .offset = offsetof(struct n3n_conf_community, network),
+        .desc = "The address range of this community",
+        .help = "Only on a supernode, in a [community NAME] section: the "
+                "range (eg: 10.1.2.0/24) its auto ip address service hands "
+                "out addresses from.  Without it the supernode chooses one "
+                "within supernode.auto_ip_min and auto_ip_max.",
+    },
+    {
         .name = "supernode",
         .type = n3n_conf_hostname_str,
         .offset = RESOLVE_LIST_SUPERNODE,
@@ -90,6 +100,17 @@ static struct n3n_conf_option section_community[] = {
                 "host:port string, which will be resolved if needed. "
                 "If no port is provided, a default of 7654 will be used.  "
                 "The supernodes of all community sections form one list.",
+    },
+    {
+        .name = "user",
+        .type = n3n_conf_strlist,
+        .offset = offsetof(struct n3n_conf_community, users),
+        .desc = "Allow a user, by name and public key",
+        .help = "Only on a supernode, in a [community NAME] section: "
+                "\"NAME PUBLICKEY\" as the \"tools keygen\" command prints it, "
+                "without its leading '*'.  May be given more than once.  A "
+                "community with users needs user/password authentication and "
+                "header encryption of all its edges.",
     },
     {.name = NULL},
 };
@@ -429,7 +450,20 @@ static struct n3n_conf_option section_supernode[] = {
         .help = "Optionally, the supernode can be configured with a list of "
                 "allowed communities, defined ip address ranges for each one "
                 "and User/Password based authentication details. "
-                "See the documentation for the file format description.",
+                "See the documentation for the file format description.  "
+                "The communities of [community NAME] sections and "
+                "community_regex are allowed as well; a section wins over "
+                "the same community in the file.  Only the file is read "
+                "again on a reload.",
+    },
+    {
+        .name = "community_regex",
+        .type = n3n_conf_strlist,
+        .offset = offsetof(n2n_edge_conf_t, relay.community_regex),
+        .desc = "Allow the communities matching a regular expression",
+        .help = "May be given more than once.  A community whose whole name "
+                "matches one of them is allowed, as with a regular expression "
+                "in the community file.",
     },
     {
         .name = "federation",
@@ -644,9 +678,12 @@ static void *community_instance_nth (void *conf, int n, const char **name) {
 void n3n_config_free_communities (n2n_edge_conf_t *conf) {
     struct n3n_conf_community *comm, *tmp;
 
+    n3n_conf_strlist_free(&conf->community.users);
+
     HASH_ITER(hh, conf->communities, comm, tmp) {
         HASH_DEL(conf->communities, comm);
         free(comm->encrypt_key);
+        n3n_conf_strlist_free(&comm->users);
         free(comm);
     }
 }
