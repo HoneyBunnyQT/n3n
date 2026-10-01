@@ -22,12 +22,14 @@ tests-aes
 tests-cc20
 tests-wire-fuzz
 tests-wire-numsn
+tests-regex
 tests-auth.exe
 tests-compress.exe
 tests-elliptic.exe
 tests-transform.exe
 tests-wire.exe
 tests-peers.exe
+tests-regex.exe
 tests-aes.exe
 tests-cc20.exe
 tests-wire-fuzz.exe
