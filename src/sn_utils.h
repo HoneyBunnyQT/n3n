@@ -18,6 +18,8 @@
 #include <sys/socket.h>      // for sockaddr, socklen_t
 #endif
 
+#define HASH_FIND_COMMUNITY(head, name, out) HASH_FIND_STR(head, name, out)
+
 // Take one PDU off a UDP socket and handle it: 1 if there was one, 0 if not
 int sn_read_proto3_udp (struct n3n_runtime_data *sss, SOCKET sock,
                         struct n3n_pktbuf *pktbuf, time_t now);
@@ -30,5 +32,20 @@ void sn_read_proto3_tcp (struct n3n_runtime_data *sss, SOCKET sock,
 // A TCP connection was accepted from addr
 void sn_accepted_proto3_tcp (struct n3n_runtime_data *sss, SOCKET sock,
                              const struct sockaddr *addr, socklen_t addr_len);
+
+// Forget an edge, and close its TCP connection, if any
+void remove_edge (struct n3n_runtime_data *sss, struct sn_community *comm, struct peer_info *edge);
+// Sending: from the socket for the family of an address, to an address, to
+// a peer by its socket or address
+SOCKET family_sock (struct n3n_runtime_data *sss, int family);
+ssize_t sn_sendto_sock (struct n3n_runtime_data *sss,
+                        SOCKET socket_fd,
+                        const struct sockaddr *socket,
+                        const uint8_t *pktbuf,
+                        size_t pktsize);
+ssize_t sn_sendto_peer (struct n3n_runtime_data *sss,
+                        const struct peer_info *peer,
+                        const uint8_t *pktbuf,
+                        size_t pktsize);
 
 #endif

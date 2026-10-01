@@ -148,7 +148,10 @@ OBJS=\
 	src/resolve.o \
 	src/role_client.o \
 	src/role_tap.o \
+	src/role_federate.o \
+	src/role_relay.o \
 	src/sn_selection.o \
+	src/sn_communities.o \
 	src/sn_utils.o \
 	src/sock.o \
 	src/thread_local.o \
