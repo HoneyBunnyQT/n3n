@@ -102,17 +102,22 @@ tests and `make lint` pass after each.
   - [ ] Windows (the TAP reader thread)
   - [ ] the supernode's edge on packet threads; for now its PACKETs are
         handled by the main thread
-  - [ ] after step 9: ask whether to stay on 9 for a while (failover tests
-        with user/password, see Next) or move on more quickly
-- [ ] `./configure --disable-relay` for small builds that only need an edge;
-      the `#ifdef` only where the roles are registered
+  - [x] after step 9: asked; we stay on v3 for now, with compatible work
+        only (--disable-relay, tests, docs, the TCP fallback)
+- [x] `./configure --disable-relay` for small builds that only need an edge;
+      the `#ifdef` only where the roles are registered (c55ed77)
 
 ### Next
 
 - [x] Communities configured the same way for both roles (see Scratchpad)
-- [ ] netns scenarios where a supernode fails over with user/password
-      authentication (and more failover cases).  Once step 9 is done: ask
-      whether to stay on 9 for a while with this, or move on more quickly
+- [x] netns scenarios where a supernode fails over with user/password
+      authentication, header encryption, TCP and `supernode.tap` (db91c09)
+- [x] Automatic transport: UDP, TCP when no supernode answers over UDP,
+      back to UDP once a probe gets through (`connection.tcp_fallback`,
+      netns scenarios `tcp-fallback*`).  Open: with packet threads
+- [ ] TUN mode (layer 3 device), see [Mobile and TUN](MobileAndTun.md)
+- [ ] Android app (`VpnService`, configuration by QR code), see
+      [Mobile and TUN](MobileAndTun.md)
 - [ ] `n3n-edge help transform`: list the ciphers and compressions built in,
       with the implementation of each (says "Not implemented" so far)
 - [ ] `-O` on the command line for an instance (`-O "community home.key=x"`)
@@ -284,8 +289,12 @@ git push origin --delete phase-a phase-b
 
 ### Flaky netns scenarios (NAT work)
 
-Now about one or two per full run with four scenarios at a time, more than a
-chance of 1 in 256 explains; worth a closer look (TODO).
+Was about one or two per full run with four scenarios at a time, more than a
+chance of 1 in 256 explains; worth a closer look (TODO).  Not seen in three
+full runs in a row (34 of 34 each) after the failover work.
+Then once each in a full run with the TCP fallback: `easy-wide` and
+`userpw-relayed` (hard-range / hard-range) went direct; both passed three
+re-runs.
 
 Seen once each in a few full runs, passing on re-runs:
 

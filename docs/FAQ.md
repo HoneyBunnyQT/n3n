@@ -118,11 +118,22 @@ to specify a TCP port, and any web browser can be used to inspect the status.
 
 ### UDP is blocked where I am. Can the edge still connect?
 
-Yes, if the supernode is reachable over TCP: with `connection.connect_tcp =
-true` the edge talks to its supernode over one TCP connection, and all its
-traffic goes through the supernode then.  Every supernode also listens on
-TCP on the ports of its `connection.bind`; one on port 443 gets through most
-firewalls that only let web traffic out.
+Yes, if the supernode is reachable over TCP, and without changing anything:
+when no supernode answers over UDP, for a round over all of them (twice
+with one supernode), the edge connects to them over TCP instead
+(`connection.tcp_fallback`, on by default).  Over TCP all its traffic goes
+through the supernode, as peer-to-peer connections need UDP.  Every three
+`connection.register_interval`s (a minute by default) it sends a UDP ping
+to its supernode, and goes back to UDP as soon as one gets an answer - after
+leaving the airport, say.  `n3nctl get_info` shows the transport in use
+(`transport`: `udp` or `tcp`), and the log says when it changes.  With the
+default settings the switch to TCP takes about half a minute.
+
+To use TCP from the start, set `connection.connect_tcp = true`; the edge
+then stays on TCP.  Every supernode listens on TCP on the ports of its
+`connection.bind` (apart from one built for Windows); one on port 443 gets
+through most firewalls that only let web traffic out.  The fallback does
+not work with several packet threads (`daemon.threads`), which need UDP.
 
 
 ### Does n3n work together with n2n?

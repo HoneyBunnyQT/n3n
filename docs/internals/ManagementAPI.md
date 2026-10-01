@@ -85,7 +85,7 @@ Those marked with a key need the password (see Authentication below):
 |--------|------|-----------|------|
 | `help` | yes | yes | the methods, each with a short description |
 | `help.events` | yes | yes | the event topics, see Events Stream |
-| `get_info` | yes | yes | version, build date, `is_edge`/`is_supernode`, the edge's MAC and address, and how its NAT maps it (`nat4`, `nat6`: `unknown`, `easy (port kept)`, `easy (port changed)`, `hard (ports 40100-40180)`, `several addresses`) |
+| `get_info` | yes | yes | version, build date, `is_edge`/`is_supernode`, the edge's MAC and address, how its NAT maps it (`nat4`, `nat6`: `unknown`, `easy (port kept)`, `easy (port changed)`, `hard (ports 40100-40180)`, `several addresses`), and `transport`, how it reaches its supernode now (`udp` or `tcp`, see `connection.tcp_fallback`; empty on a supernode) |
 | `get_edges` | yes | yes | the edge: its peers; the supernode: the edges registered at it, with community, address, MAC, `mode` (`p2p`, `pSp` or `sn`), `nat`, `sockaddr`, `last_seen` |
 | `get_supernodes` | yes | yes | the edge: its supernodes, `current` the one it is registered at, `selection` the criterion; the supernode: the other supernodes of the federation |
 | `get_communities` | yes | yes | the edge: its community; the supernode: its communities with their address range of the auto ip service, the federation shown as `-/-` |

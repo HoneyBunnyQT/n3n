@@ -103,10 +103,16 @@ router behind a carrier NAT.  The block of hard-range ends at a multiple of
 | sn-tap-fed | easy-kept at sn1 / the TAP device of sn2 | relayed, across the federation |
 | sn-tap-userpw | as sn-tap-fed, with user/password authentication | relayed, across the federation |
 | sn-tap-failover | easy-kept at sn1 (`supernode_selection=mac`) / the TAP device of sn2, sn1 killed | relayed, a moves to sn2 |
+| tcp-fallback | easy-kept without UDP (`block_udp`) / public | relayed, a over TCP by `tcp_fallback` |
+| tcp-fallback-back | as tcp-fallback, then UDP let through again (`unblock_udp`) | direct, a back on UDP |
+| tcp-fallback-userpw | as tcp-fallback-back, with user/password authentication | direct, a back on UDP |
 
 An edge connected over TCP does not learn how its NAT maps it, so the NAT
 class of tcp-tcp and tcp-udp is not checked for those edges (`expect_nat` of
-a `Site`).  `sn_conf` of a `Scenario` sets options of the supernodes.
+a `Site`).  A `Site(block_udp=True)` drops the UDP its edge sends out of
+`eth0` (but DNS), as some airport networks do: the scenario then checks that
+the edge is on TCP (`transport` of `get_info`), and with `unblock_udp` of
+the `Scenario` lets UDP through again and waits for the edge to go back.  `sn_conf` of a `Scenario` sets options of the supernodes.
 `auth` of a `Scenario` turns on header encryption (`"header"`), or that
 and user/password authentication (`"userpw"`): the supernodes then get a
 community file, with a user for each edge whose public key comes from

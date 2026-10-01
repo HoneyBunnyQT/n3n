@@ -279,6 +279,16 @@ sockets towards a peer that guesses, so that a guess meets one of their
 ports sooner (\fBconnection.punch_sockets\fR, \fBconnection.punch_ttl\fR).
 See docs/advanced/NatTraversal.md for details.
 
+.SH TRANSPORT
+The edge reaches its supernodes over UDP.  When none of them answers, for a
+round over all of them, it connects to them over TCP instead
+(\fBconnection.tcp_fallback\fR, on by default), and all its traffic goes
+through the supernode then.  While on TCP, it tries a UDP ping to its
+supernode every three \fBconnection.register_interval\fRs and goes back to
+UDP as soon as one is answered.  \fBconnection.connect_tcp\fR=true uses TCP
+from the start, and only TCP.  \fBn3nctl get_info\fR shows the transport in
+use.
+
 .SH THREADS
 With \fBdaemon.threads\fR the edge encrypts and decrypts packets on several
 threads.  This needs Linux and a build with \fB--enable-pthread\fR, see
