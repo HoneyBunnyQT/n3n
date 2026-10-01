@@ -14,6 +14,7 @@
 
 #include <connslot/strbuf.h>    // for strbuf_t
 #include <n2n_typedefs.h>   // for n3n_runtime_data
+#include <time.h>           // for time_t
 
 #ifndef _WIN32
 #include <sys/select.h>     // for fd_set
@@ -48,6 +49,18 @@ void mainloop_unregister_fd (int);
 
 // Close a socket and, if it is registered, its connection, and unregister it
 void mainloop_close_fd (int);
+
+// Regular work of a daemon, done after the fds of a round are handled
+typedef void (*mainloop_tick_fn)(struct n3n_runtime_data *, time_t now);
+
+// Call fn about every interval seconds, 0 for every time round the loop.
+// Ticks run in the order they were registered; registering the same fn
+// again only changes its interval.  -1 if there is no room for another.
+int mainloop_register_tick (mainloop_tick_fn fn, int interval);
+
+// Go round the loop - fds, what packet threads handed over, ticks - until
+// *keep_running turns false
+void mainloop_run (struct n3n_runtime_data *);
 
 
 #endif

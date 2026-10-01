@@ -3109,11 +3109,41 @@ static const struct edge_thread_ops sn_thread_ops = {
 };
 
 
-int run_sn_loop (struct n3n_runtime_data *sss) {
+// The regular work of the supernode, done by the mainloop after each round,
+// see mainloop_register_tick().  Each of these keeps its own time; there is
+// one supernode in a process, as there is one mainloop.
+static void sn_tick (struct n3n_runtime_data *sss, time_t now) {
 
-    time_t last_purge_edges = 0;
-    time_t last_sort_communities = 0;
-    time_t last_re_reg_and_purge = 0;
+    static time_t last_purge_edges = 0;
+    static time_t last_sort_communities = 0;
+    static time_t last_re_reg_and_purge = 0;
+
+    re_register_and_purge_supernodes(
+        sss,
+        sss->federation,
+        &last_re_reg_and_purge,
+        now,
+        0 /* not forced */
+    );
+    purge_expired_communities(
+        sss,
+        &last_purge_edges,
+        now
+    );
+    sort_communities(
+        sss,
+        &last_sort_communities,
+        now
+    );
+    resolve_check(
+        sss->resolve_parameter,
+        false /* presumably, no special resolution requirement */,
+        now
+    );
+}
+
+
+int run_sn_loop (struct n3n_runtime_data *sss) {
 
     sss->start_time = time(NULL);
 
@@ -3130,41 +3160,8 @@ int run_sn_loop (struct n3n_runtime_data *sss) {
     // holds their lock whenever it is awake
     edge_threads_start(sss, edge_threads_wanted(&sss->conf), &sn_thread_ops);
 
-    while(*sss->keep_running) {
-        mainloop_runonce(sss);
-
-        // what the packet threads handed over, if there are any
-        edge_threads_drain(sss);
-
-        // If anything we recieved caused us to stop..
-        if(!(*sss->keep_running))
-            break;
-
-        time_t now = time(NULL);
-
-        re_register_and_purge_supernodes(
-            sss,
-            sss->federation,
-            &last_re_reg_and_purge,
-            now,
-            0 /* not forced */
-        );
-        purge_expired_communities(
-            sss,
-            &last_purge_edges,
-            now
-        );
-        sort_communities(
-            sss,
-            &last_sort_communities,
-            now
-        );
-        resolve_check(
-            sss->resolve_parameter,
-            false /* presumably, no special resolution requirement */,
-            now
-        );
-    } /* while */
+    mainloop_register_tick(sn_tick, 0);
+    mainloop_run(sss);
 
     edge_threads_stop(sss);
 

@@ -56,8 +56,10 @@ tests and `make lint` pass after each.
       (up to `FD_SETSIZE`), it accepts v3tcp connections, tells the upper
       layer which fd closed, and hands over every complete PDU in a TCP
       buffer.  Management connections of the supernode go through it too
-- [ ] Step 3: periodic work (registrations, purges, sorting, resolving)
-      registered as timers in the mainloop, for both
+- [x] Step 3: periodic work (registrations, purges, sorting, resolving)
+      registered as ticks in the mainloop (`mainloop_register_tick()`), for
+      both; `run_edge_loop()` and `run_sn_loop()` set up, register their
+      ticks and call `mainloop_run()`
 - [ ] Step 4: role sub-structs in `struct n3n_runtime_data` and
       `n2n_edge_conf_t` (`rt->tap`, `rt->client`, `rt->relay`, ...), NULL when
       the role is off
@@ -168,6 +170,16 @@ Idea: one way for both.  Options:
 Leaning towards 2 or 3: a single edge stays a few lines of config, a relay
 with many communities keeps its file.  To decide before step 4, since it
 shapes `rt->relay` and the community table of step 5.
+
+### Flaky netns scenarios (NAT work)
+
+Seen once each in a few full runs, passing on re-runs:
+
+- `no-punch` went direct although port guessing is off on the easy side: the
+  hard side's own REGISTERs may get through the easy NAT
+- `easy-hard-pool`, `hard-hard-threads`: an edge behind `hard-range` took its
+  NAT for "easy (port changed)" - perhaps both supernodes saw the same port
+  drawn from the range of 240
 
 ### ARM NEON
 

@@ -149,6 +149,15 @@ static int connlist_next_search;
 // management connections
 #define TCP_FD_HEADROOM 16
 
+// The regular work of the daemons, see mainloop_register_tick()
+#define MAX_TICKS 16
+static struct tick {
+    mainloop_tick_fn fn;
+    int interval;
+    time_t last;
+} ticks[MAX_TICKS];
+static int ticks_count;
+
 // accept() failed, most likely for want of file descriptors: the listening
 // sockets are left alone until then instead of spinning on the pending
 // connection
@@ -1015,6 +1024,50 @@ void mainloop_close_fd (int fd) {
         return;
     }
     fdlist_close_slot(slot);
+}
+
+int mainloop_register_tick (mainloop_tick_fn fn, int interval) {
+    for(int i = 0; i < ticks_count; i++) {
+        if(ticks[i].fn == fn) {
+            ticks[i].interval = interval;
+            return 0;
+        }
+    }
+    if(ticks_count == MAX_TICKS) {
+        return -1;
+    }
+    ticks[ticks_count].fn = fn;
+    ticks[ticks_count].interval = interval;
+    ticks[ticks_count].last = 0;
+    ticks_count++;
+    return 0;
+}
+
+static void run_ticks (struct n3n_runtime_data *rt, time_t now) {
+    for(int i = 0; i < ticks_count; i++) {
+        struct tick *t = &ticks[i];
+        if(t->interval && ((now - t->last) < t->interval)) {
+            continue;
+        }
+        t->last = now;
+        t->fn(rt, now);
+    }
+}
+
+void mainloop_run (struct n3n_runtime_data *rt) {
+    while(*rt->keep_running) {
+        mainloop_runonce(rt);
+
+        // what the packet threads handed over, if there are any
+        edge_threads_drain(rt);
+
+        // If anything we recieved caused us to stop..
+        if(!(*rt->keep_running)) {
+            break;
+        }
+
+        run_ticks(rt, time(NULL));
+    }
 }
 
 void n3n_initfuncs_mainloop () {

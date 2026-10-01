@@ -4287,15 +4287,108 @@ static void print_edge_stats (const struct n3n_runtime_data *eee) {
 /* ************************************** */
 
 
-int run_edge_loop (struct n3n_runtime_data *eee) {
+// The regular work of the edge, done by the mainloop after each round, see
+// mainloop_register_tick()
 
-    size_t numPurged;
-    time_t lastIfaceCheck = 0;
-    time_t last_purge_known = 0;
-    time_t last_purge_pending = 0;
+// a packet thread could not write to its queue of the tap device
+static void edge_tick_tap (struct n3n_runtime_data *eee, time_t now) {
+
+    if(edge_threads_tap_failed(eee)) {
+        edge_tap_reopen(eee);
+    }
+}
+
+static void edge_tick_registrations (struct n3n_runtime_data *eee, time_t now) {
+
+    update_supernode_reg(eee, now);
+    punch_sweep(eee, now);
+}
+
+// every PURGE_REGISTRATION_FREQUENCY seconds
+static void edge_tick_purge (struct n3n_runtime_data *eee, time_t now) {
+
+    size_t numPurged = 0;
+
+    // keep, i.e. do not purge, the known peers while no supernode supernode connection
+    if(!eee->sn_wait) {
+        numPurged = purge_peer_list(&eee->known_peers, eee->sock, NULL, now - REGISTRATION_TIMEOUT);
+    }
+    numPurged += purge_peer_list(&eee->pending_peers, eee->sock, NULL, now - REGISTRATION_TIMEOUT);
+
+    if(numPurged > 0) {
+        traceEvent(
+            TRACE_INFO,
+            "%u peers removed. now: pending=%u, operational=%u",
+            numPurged,
+            HASH_COUNT(eee->pending_peers),
+            HASH_COUNT(eee->known_peers)
+        );
+    }
+}
+
 #ifdef HAVE_BRIDGING_SUPPORT
-    time_t last_purge_host = 0;
+// every SWEEP_TIME seconds
+static void edge_tick_purge_hosts (struct n3n_runtime_data *eee, time_t now) {
+
+    struct host_info *host, *host_tmp;
+
+    if(!eee->conf.allow_routing) {
+        return;
+    }
+    HASH_ITER(hh, eee->known_hosts, host, host_tmp) {
+        if(now > host->last_seen + HOSTINFO_TIMEOUT) {
+            HASH_DEL(eee->known_hosts, host);
+            free(host);
+        }
+    }
+}
 #endif
+
+// every IFACE_UPDATE_INTERVAL seconds
+static void edge_tick_dhcp (struct n3n_runtime_data *eee, time_t now) {
+
+    // TODO:
+    // - a static ip address mode
+    // - a notifier so we dont need to poll for changes
+    // - ipv6 support
+    // - multi-homing support
+    if(eee->conf.tuntap_ip_mode == TUNTAP_IP_MODE_DHCP) {
+        traceEvent(TRACE_INFO, "re-checking dynamic IP address");
+        tuntap_get_address(&(eee->device));
+    }
+}
+
+static void edge_tick_supernodes (struct n3n_runtime_data *eee, time_t now) {
+
+    sort_supernodes(eee, now);
+
+    eee->resolution_request = resolve_check(
+        eee->resolve_parameter,
+        eee->resolution_request,
+        now
+    );
+
+    if(eee->resolution_request) {
+        // This currently gets signaled in update_supernode_reg when a
+        // supernode is not responding
+        //
+        // TODO: update this once we have the new async resolving
+        if(resolve_hostnames_str_to_peer_info(
+               RESOLVE_LIST_SUPERNODE,
+               &eee->supernodes)) {
+            traceEvent(
+                TRACE_WARNING,
+                "resolve_hostnames_str_to_peer_info returned errors"
+            );
+        } else {
+            // No errors, so clear the request
+            eee->resolution_request = false;
+        }
+    }
+}
+
+
+int run_edge_loop (struct n3n_runtime_data *eee) {
 
 #ifdef _WIN32
     struct tunread_arg arg;
@@ -4315,111 +4408,22 @@ int run_edge_loop (struct n3n_runtime_data *eee) {
     n3n_metrics_register(&edge_metrics_module1);
     n3n_metrics_register(&edge_metrics_module2);
 
+    mainloop_register_tick(edge_tick_tap, 0);
+    mainloop_register_tick(edge_tick_registrations, 0);
+    mainloop_register_tick(edge_tick_purge, PURGE_REGISTRATION_FREQUENCY);
+#ifdef HAVE_BRIDGING_SUPPORT
+    mainloop_register_tick(edge_tick_purge_hosts, SWEEP_TIME);
+#endif
+    mainloop_register_tick(edge_tick_dhcp, IFACE_UPDATE_INTERVAL);
+    mainloop_register_tick(edge_tick_supernodes, 0);
+
     /* Main loop
      *
      * select() is used to wait for input on either the TAP fd or the UDP/TCP
      * socket. When input is present the data is read and processed by either
      * readFromIPSocket() or edge_read_from_tap()
      */
-
-    while(*eee->keep_running) {
-        mainloop_runonce(eee);
-
-        // what the packet threads queued, if there are any
-        edge_threads_drain(eee);
-        if(edge_threads_tap_failed(eee)) {
-            edge_tap_reopen(eee);
-        }
-
-        // TODO:
-        // - migrate all the following regular actions into the
-        // mainloop_runonce() function
-
-        time_t now = time(NULL);
-
-        // If anything we recieved caused us to stop..
-        if(!(*eee->keep_running))
-            break;
-
-        // finished processing select data
-        update_supernode_reg(eee, now);
-        punch_sweep(eee, now);
-
-        numPurged = 0;
-        // keep, i.e. do not purge, the known peers while no supernode supernode connection
-        if(!eee->sn_wait)
-            numPurged = purge_expired_nodes(&eee->known_peers,
-                                            eee->sock, NULL,
-                                            &last_purge_known,
-                                            PURGE_REGISTRATION_FREQUENCY, REGISTRATION_TIMEOUT);
-        numPurged += purge_expired_nodes(&eee->pending_peers,
-                                         eee->sock, NULL,
-                                         &last_purge_pending,
-                                         PURGE_REGISTRATION_FREQUENCY, REGISTRATION_TIMEOUT);
-
-        if(numPurged > 0) {
-            traceEvent(
-                TRACE_INFO,
-                "%u peers removed. now: pending=%u, operational=%u",
-                numPurged,
-                HASH_COUNT(eee->pending_peers),
-                HASH_COUNT(eee->known_peers)
-            );
-        }
-
-#ifdef HAVE_BRIDGING_SUPPORT
-        if((eee->conf.allow_routing) && (now > last_purge_host + SWEEP_TIME)) {
-            struct host_info *host, *host_tmp;
-            HASH_ITER(hh, eee->known_hosts, host, host_tmp) {
-                if(now > host->last_seen + HOSTINFO_TIMEOUT) {
-                    HASH_DEL(eee->known_hosts, host);
-                    free(host);
-                }
-            }
-            last_purge_host = now;
-        }
-#endif
-
-        // TODO:
-        // - a static ip address mode
-        // - a notifier so we dont need to poll for changes
-        // - ipv6 support
-        // - multi-homing support
-        if((eee->conf.tuntap_ip_mode == TUNTAP_IP_MODE_DHCP) &&
-           ((now - lastIfaceCheck) > IFACE_UPDATE_INTERVAL)) {
-            traceEvent(TRACE_INFO, "re-checking dynamic IP address");
-            tuntap_get_address(&(eee->device));
-            lastIfaceCheck = now;
-        }
-
-        sort_supernodes(eee, now);
-
-        eee->resolution_request = resolve_check(
-            eee->resolve_parameter,
-            eee->resolution_request,
-            now
-        );
-
-        if(eee->resolution_request) {
-            // This currently gets signaled in update_supernode_reg when a
-            // supernode is not responding
-            //
-            // TODO: update this once we have the new async resolving
-            if(resolve_hostnames_str_to_peer_info(
-                   RESOLVE_LIST_SUPERNODE,
-                   &eee->supernodes)) {
-                traceEvent(
-                    TRACE_WARNING,
-                    "resolve_hostnames_str_to_peer_info returned errors"
-                );
-            } else {
-                // No errors, so clear the request
-                eee->resolution_request = false;
-            }
-        }
-
-
-    } /* while */
+    mainloop_run(eee);
 
     edge_threads_stop(eee);
 
