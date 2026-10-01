@@ -53,6 +53,19 @@ SCENARIOS = [
         Site(["easy-kept"]), Site(["hard-range"]),
         "direct", traffic="b2a"),
     Scenario(
+        "easy-hard-pool",
+        "16 guesses a round meet one of the ports of the hard side's sockets",
+        Site(["easy-kept"], conf={"connection": {"punch_ports": 16}}),
+        Site(["hard-range"]),
+        "direct"),
+    Scenario(
+        "cgnat-hard-ttl",
+        "the hard side behind a home router and a carrier NAT, its extra "
+        "REGISTERs with a TTL to get through both",
+        Site(["easy-kept"], conf={"connection": {"punch_ports": 16}}),
+        Site(["hard-range", "easy-kept"], conf={"connection": {"punch_ttl": 3}}),
+        "direct"),
+    Scenario(
         "hard-hard",
         "hard NAT on both sides stays relayed",
         Site(["hard-range"]), Site(["hard-range"]),

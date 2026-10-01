@@ -77,6 +77,8 @@ router behind a carrier NAT.  The block of hard-range ends at a multiple of
 | easy-hard | easy-kept / hard-range | direct, after guessing |
 | hard-easy | hard-range / easy-changed | direct, after guessing |
 | easy-hard-a2b, -b2a | as easy-hard, traffic one way only | direct |
+| easy-hard-pool | as easy-hard, a guessing 16 ports a round | direct, as one of b's 32 sockets is met |
+| cgnat-hard-ttl | as easy-hard-pool, b behind easy-kept and hard-range, punch_ttl=3 | direct |
 | hard-hard | hard-range / hard-range | relayed |
 | easy-wide | easy-kept / hard-wide | relayed |
 | no-punch | as easy-hard, with punch_ports=0 | relayed |
