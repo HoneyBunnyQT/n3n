@@ -229,6 +229,20 @@ SCENARIOS = [
         Site(["easy-kept"], block_udp=True),
         Site([]),
         "direct", unblock_udp=True, auth="userpw"),
+    Scenario(
+        "tcp-port",
+        "as tcp-fallback-back, the supernodes with UDP on 7654 and TCP on "
+        "4443 only, the edges told so by tcp:// entries",
+        Site(["easy-kept"], block_udp=True),
+        Site([]),
+        "direct", unblock_udp=True, sn_tcp_port=4443, tags=["quick"]),
+    Scenario(
+        "tcp-only",
+        "an edge given its supernodes as tcp:// only: over TCP from the "
+        "start",
+        Site(["easy-kept"], tcp_only=True, expect_nat="unknown"),
+        Site([]),
+        "relayed", sn_tcp_port=4443),
 ]
 
 BY_NAME = {s.name: s for s in SCENARIOS}

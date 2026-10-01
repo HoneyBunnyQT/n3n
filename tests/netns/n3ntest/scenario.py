@@ -83,9 +83,11 @@ class Site:
 
     def __init__(self, nat=(), lan=None, supernodes=("sn1", "sn2"),
                  conf=None, expect_nat=None, on_supernode=None,
-                 block_udp=False):
+                 block_udp=False, tcp_only=False):
         self.on_supernode = on_supernode
         self.block_udp = block_udp
+        # the edge gets its supernodes as tcp://, at their TCP port
+        self.tcp_only = tcp_only
         self.nat = list(nat)
         self.lan = lan                  # subnet of the innermost LAN
         self.supernodes = list(supernodes)
@@ -99,7 +101,7 @@ class Scenario:
     def __init__(self, name, desc, a, b, expect, traffic="both",
                  tags=(), conf=None, connect_timeout=None, failover=None,
                  sn_conf=None, auth=None, community_conf=False,
-                 unblock_udp=False):
+                 unblock_udp=False, sn_tcp_port=None):
         self.name = name
         self.desc = desc
         self.sites = {"a": a, "b": b}
@@ -123,6 +125,10 @@ class Scenario:
         # Once the edges of block_udp sites are on TCP, let UDP through
         # again and wait for them to go back to it
         self.unblock_udp = unblock_udp
+        # The supernodes take UDP on SN_PORT and TCP on this port
+        # (connection.bind udp:// and tcp://), and the edges know it
+        # (community.supernode tcp://)
+        self.sn_tcp_port = sn_tcp_port
 
     def directions(self):
         return {
@@ -345,7 +351,10 @@ class Run:
                                              SN_PORT))
                      for o in names if o != name]
             sections = {
-                "connection": [("bind", "[::]:{}".format(SN_PORT))],
+                "connection": [("bind", "[::]:{}".format(SN_PORT)
+                                if not self.sc.sn_tcp_port else
+                                "udp://[::]:{} tcp://[::]:{}".format(
+                                    SN_PORT, self.sc.sn_tcp_port))],
                 "supernode": [("federation", FEDERATION),
                               ("macaddr", "02:00:00:5e:00:{:02x}".format(i))]
                 + peers,
@@ -433,10 +442,15 @@ class Run:
             community = "community " + conf["community"].pop("name")
             conf[community] = conf.pop("community")
         sections = {s: list(o.items()) for s, o in conf.items()}
-        sections[community] += [
-            ("supernode", "{}:{}".format(self.supernodes[sn]["ip"], SN_PORT))
-            for sn in site.supernodes
-        ]
+        tcp_port = self.sc.sn_tcp_port or SN_PORT
+        for sn in site.supernodes:
+            ip = self.supernodes[sn]["ip"]
+            if not site.tcp_only:
+                sections[community].append(
+                    ("supernode", "{}:{}".format(ip, SN_PORT)))
+            if site.tcp_only or self.sc.sn_tcp_port:
+                sections[community].append(
+                    ("supernode", "tcp://{}:{}".format(ip, tcp_port)))
         return sections
 
     def start_edges(self):
@@ -464,7 +478,8 @@ class Run:
                 continue
             d = e["daemon"]
             # without UDP, over TCP once the edge fell back to it
-            tcp = self.sc.sites[sname].block_udp
+            tcp = self.sc.sites[sname].block_udp or \
+                self.sc.sites[sname].tcp_only
 
             def ready():
                 if not d.proc.alive():
@@ -621,17 +636,20 @@ class Run:
                 if "daemon" in e}
 
     def check_transport(self):
-        """The edges of block_udp sites on TCP, and with unblock_udp back
-        on UDP once it gets through"""
+        """The edges of block_udp and tcp_only sites on TCP, the others on
+        UDP, and with unblock_udp the block_udp ones back on UDP once it
+        gets through"""
+        tcp = [s for s, site in self.sc.sites.items()
+               if site.block_udp or site.tcp_only]
         blocked = [s for s, site in self.sc.sites.items() if site.block_udp]
-        if not blocked:
+        if not tcp:
             return
         now = self.transports()
         self.result["transport"] = now
-        ok = all(now.get(s) == "tcp" for s in blocked)
+        ok = all(now.get(s) == ("tcp" if s in tcp else "udp") for s in now)
         self.check("transport", ok, ", ".join(
             "{} {}".format(s, now.get(s)) for s in sorted(now)))
-        if not ok or not self.sc.unblock_udp:
+        if not ok or not self.sc.unblock_udp or not blocked:
             return
         for s in blocked:
             run(["nft", "delete", "table", "inet", "airport"],
