@@ -156,6 +156,7 @@ int edge_threads_wanted (const n2n_edge_conf_t *conf) {
 #include <unistd.h>          // for pipe, read, write, close
 
 #include "edge_utils.h"      // for edge_read_proto3_udp
+#include "role_tap.h"        // for edge_read_from_tap_batch
 
 
 #ifndef _WIN32

@@ -141,10 +141,13 @@ OBJS=\
 	src/natclass.o \
 	src/network_traffic_filter.o \
 	src/pdu_in.o \
+	src/punch.o \
 	src/peer_info.o \
 	src/pktbuf.o \
 	src/random_numbers.o \
 	src/resolve.o \
+	src/role_client.o \
+	src/role_tap.o \
 	src/sn_selection.o \
 	src/sn_utils.o \
 	src/sock.o \

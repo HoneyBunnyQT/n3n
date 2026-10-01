@@ -16,7 +16,7 @@
  * get_info shows the class and it is logged when it changes. The peers learn
  * it from a hint in the REGISTERs that go through the supernode (see
  * nat_view_hint()) and show it in get_edges, and towards a peer behind a hard
- * NAT, an edge guesses its port (see punch_hard_peer() in edge_utils.c).
+ * NAT, an edge guesses its port (see punch_hard_peer() in punch.c).
  */
 
 #ifndef N3N_NATCLASS_H

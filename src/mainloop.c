@@ -30,7 +30,8 @@
 #endif
 #endif
 
-#include "edge_utils.h"         // for edge_read_from_tap
+#include "edge_utils.h"         // for edge_read_proto3_udp
+#include "role_tap.h"           // for edge_read_from_tap_batch
 #include "edge_threads.h"       // for edge_threads_main_release, ...
 #include "management.h"         // for readFromMgmtSocket
 #include "minmax.h"             // for min, max

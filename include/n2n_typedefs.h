@@ -621,7 +621,7 @@ struct nat_peer {
 /* Behind a hard NAT, the sockets opened towards one peer that guesses our
  * port: each sends a REGISTER to the peer's public socket every round, so the
  * NAT keeps a public port of its own for each, any of which the peer's guesses
- * can meet. See punch_pool_round() in edge_utils.c. */
+ * can meet. See punch_pool_round() in punch.c. */
 #define NAT_PUNCH_POOLS 4
 #define NAT_PUNCH_POOL_MAX 64    /* sockets in all pools together */
 

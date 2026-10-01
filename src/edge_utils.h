@@ -61,11 +61,6 @@ void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_ctx *c);
 // The read functions return 1 if they consumed a packet, 0 if there was
 // nothing queued and -1 if the fd went bad
 
-int edge_read_from_tap (struct n3n_runtime_data *eee);
-
-// Reads up to max frames and returns how many it took off the tap queue
-int edge_read_from_tap_batch (struct n3n_runtime_data *eee, int max);
-
 int edge_read_proto3_udp (struct n3n_runtime_data *eee,
                           SOCKET sock,
                           struct n3n_pktbuf *pktbuf,
@@ -75,5 +70,28 @@ void edge_read_proto3_tcp (struct n3n_runtime_data *eee,
                            uint8_t *pktbuf,
                            ssize_t pktbuf_len,
                            time_t now);
+
+char* intoa (uint32_t /* host order */ addr, char* buf, uint16_t buf_len);
+
+// The tap device failed: open it again, after a pause
+void edge_tap_reopen (struct n3n_runtime_data *eee);
+
+// The sockets of the edge, see also punch.h
+void set_sock_options (struct n3n_runtime_data *eee, SOCKET sock, int family, bool quiet);
+int detect_local_ip_address (n3n_sock_t* out_sock, const struct n3n_runtime_data* eee);
+int open_udp_sockets (struct n3n_runtime_data *eee);
+void close_sockets (struct n3n_runtime_data *eee);
+void edge_sendto_sock (struct n3n_runtime_data *eee, const void * buf,
+                       size_t len, const n3n_sock_t * dest);
+
+// Changes of the peer tables, from any thread: on the main thread they are
+// made at once, a packet thread hands them to the main thread
+void edge_event_post (struct n3n_runtime_data *eee, const struct edge_event *ev);
+int peer_is_pending (struct n3n_runtime_data *eee, const n2n_mac_t mac);
+int peer_seen_fast (struct n3n_runtime_data *eee,
+                    uint8_t from_supernode,
+                    uint8_t via_multicast,
+                    const n2n_mac_t mac,
+                    const n2n_cookie_t cookie);
 
 #endif
