@@ -504,6 +504,17 @@ static struct n3n_conf_option section_supernode[] = {
                 "Defaults to enabled.",
     },
     {
+        .name = "tap",
+        .type = n3n_conf_bool,
+        .offset = offsetof(n2n_edge_conf_t, relay.tap),
+        .desc = "Also be an edge, with a TAP device",
+        .help = "The supernode joins community.name with a TAP device of "
+                "its own, set up by the [tuntap] options, as an edge would.  "
+                "It reaches the other edges of the community through itself, "
+                "without sockets of its own.  Needs the privileges to open "
+                "the TAP device at start.",
+    },
+    {
         .name = "version",
         .type = n3n_conf_strncpy,
         .length = sizeof(n2n_version_t),

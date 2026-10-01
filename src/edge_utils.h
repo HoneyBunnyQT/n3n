@@ -54,6 +54,14 @@ struct edge_event {
 void edge_event_apply (struct n3n_runtime_data *eee, const struct edge_event *ev);
 
 
+// handle a PDU that came in on in_sock from sender_sock
+void edge_process_pdu (struct n3n_runtime_data *eee,
+                       const struct sockaddr *sender_sock,
+                       const SOCKET in_sock,
+                       uint8_t *udp_buf,
+                       size_t udp_size,
+                       time_t now);
+
 // handle a control message - on the thread that owns the tables
 void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_ctx *c);
 

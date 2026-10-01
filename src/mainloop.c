@@ -30,6 +30,7 @@
 #endif
 #endif
 
+#include "local_link.h"         // for local_link_drain
 #include "edge_utils.h"         // for edge_read_proto3_udp
 #include "role_tap.h"           // for edge_read_from_tap_batch
 #include "edge_threads.h"       // for edge_threads_main_release, ...
@@ -1073,6 +1074,10 @@ static void run_ticks (struct n3n_runtime_data *rt, time_t now) {
 
 void mainloop_run (struct n3n_runtime_data *rt) {
     while(*rt->keep_running) {
+        // what the edge and the supernode of this process sent each other,
+        // if they are, before waiting for anything else
+        local_link_drain(time(NULL));
+
         mainloop_runonce(rt);
 
         // what the packet threads handed over, if there are any

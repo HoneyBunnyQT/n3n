@@ -433,6 +433,7 @@ typedef struct n2n_trans_op {
 
 /* How the edge reaches its supernodes and the other edges: the client role */
 struct n3n_conf_client {
+    bool local_link;                    /* the supernode is the one of this process, see local_link.h */
     bool allow_p2p;                                  /**< Allow P2P connection */
     bool local_discovery;                            /**< Look for peers on the local network by multicast */
     uint32_t register_interval;                      /**< Interval for supernode registration, also used for UDP NAT hole punching. */
@@ -462,6 +463,7 @@ struct n3n_conf_tap {
 
 /* The communities, the federation, the addresses handed out: the relay role */
 struct n3n_conf_relay {
+    bool tap;                           /* also an edge of community.name, see edge_start_local() */
     n2n_mac_t sn_mac_addr;
     bool spoofing_protection;                                /* false if overriding MAC/IP spoofing protection (cli option '-M') */
     char *community_file;
@@ -700,6 +702,7 @@ struct n3n_rt_tap {
 /* What the supernode keeps about its communities and the other supernodes:
  * the relay and federate roles of a peer */
 struct n3n_rt_relay {
+    struct n3n_runtime_data *local_edge;    /* that edge, if there is one */
     int tcp_sock;                                           /* auxiliary socket for optional TCP connections */
     n2n_mac_t mac_addr;
     uint32_t dynamic_key_time;                                /* UTC time of last dynamic key generation (second accuracy) */

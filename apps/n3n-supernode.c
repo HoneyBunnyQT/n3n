@@ -25,6 +25,7 @@
 #include <getopt.h>            // for required_argument, getopt_long, no_arg...
 #include <header_encryption.h> // for packet_header_setup_key
 #include <n3n/conffile.h>      // for n3n_config_set_option
+#include <n3n/edge.h>          // for edge_start_local
 #include <n3n/initfuncs.h>     // for n3n_initfuncs()
 #include <n3n/logging.h>       // for traceEvent
 #include <n3n/mainloop.h>      // for mainloop_register_fd
@@ -600,6 +601,14 @@ int n3n_supernode_main (int argc, char * argv[]) {
         VERSION,
         BUILDDATE
     );
+
+    sss_node.keep_running = &keep_on_running;
+
+    // an edge of its own, which opens its TAP device now, while it still can
+    if(sss_node.conf.relay.tap && !edge_start_local(&sss_node)) {
+        sn_term(&sss_node);
+        exit(1);
+    }
 
 #ifndef _WIN32
 

@@ -29,6 +29,11 @@ int sn_read_proto3_udp (struct n3n_runtime_data *sss, SOCKET sock,
 void sn_read_proto3_tcp (struct n3n_runtime_data *sss, SOCKET sock,
                          uint8_t *pktbuf, ssize_t pktbuf_len, time_t now);
 
+// A PDU from the edge in this process, see local_link.h
+void sn_process_local_pdu (struct n3n_runtime_data *sss,
+                           const struct sockaddr *sender_sock, socklen_t sock_size,
+                           uint8_t *buf, size_t size, time_t now);
+
 // A TCP connection was accepted from addr
 void sn_accepted_proto3_tcp (struct n3n_runtime_data *sss, SOCKET sock,
                              const struct sockaddr *addr, socklen_t addr_len);

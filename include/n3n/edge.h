@@ -22,6 +22,9 @@ typedef struct n2n_edge_conf n2n_edge_conf_t;
 /* Edge conf */
 void edge_conf_prepare (n2n_edge_conf_t *conf);
 int edge_verify_conf (const n2n_edge_conf_t *conf);
+void edge_conf_role_defaults (n2n_edge_conf_t *conf);
+struct n3n_runtime_data *edge_start_local (struct n3n_runtime_data *relay);
+void edge_stop_local (struct n3n_runtime_data *eee);
 int edge_conf_one_community (n2n_edge_conf_t *conf);
 void edge_init_conf_defaults (n2n_edge_conf_t *conf, char *sessionname);
 void edge_term_conf (n2n_edge_conf_t *conf);

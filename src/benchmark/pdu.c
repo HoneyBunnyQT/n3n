@@ -106,12 +106,12 @@ static int const bench_check_fake (void *const _ctx, const int level) {
 #endif
 
 // TODO: use headers to declare this
-void process_pdu (struct n3n_runtime_data *eee,
-                  const struct sockaddr *sender_sock,
-                  const SOCKET in_sock,
-                  uint8_t *udp_buf,
-                  size_t udp_size,
-                  time_t now
+void edge_process_pdu (struct n3n_runtime_data *eee,
+                       const struct sockaddr *sender_sock,
+                       const SOCKET in_sock,
+                       uint8_t *udp_buf,
+                       size_t udp_size,
+                       time_t now
 );
 
 static const ssize_t bench_pdu2tun_run (
@@ -127,7 +127,7 @@ static const ssize_t bench_pdu2tun_run (
     // Avoid attempt to send a reply to this PDU
     ctx->eee.sock = -1;
 
-    process_pdu(
+    edge_process_pdu(
         &ctx->eee,
         (struct sockaddr *)&ctx->sender,
         -1,

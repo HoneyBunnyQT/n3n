@@ -50,6 +50,7 @@ macaddr=00:00:00:00:00:00
 #peer=
 
 spoofing_protection=false
+tap=false
 
 [test]
 benchmark_seconds=0

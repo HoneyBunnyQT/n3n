@@ -131,6 +131,7 @@ OBJS=\
 	src/hexdump.o \
 	src/initfuncs.o \
 	src/json.o \
+	src/local_link.o \
 	src/logging.o \
 	src/mainloop.o \
 	src/management.o \

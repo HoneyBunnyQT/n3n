@@ -54,6 +54,7 @@
 #include "punch.h"                   // for punch_round, punch_note_rx, ...
 #include "resolve.h"                 // for resolve_create_thread, resolve_c...
 #include "sn_selection.h"            // for sn_selection_criterion_common_da...
+#include "local_link.h"              // for local_link_to_relay, local_link_is_sock
 #include "sock.h"                    // for bind_entry_for_family, sendto_bind, ...
 #include "edge_threads.h"            // for edge_threads_post_event, ...
 #include "stats.h"                   // for STATS_INC, n3n_stats_sum
@@ -290,7 +291,7 @@ int edge_verify_conf (const n2n_edge_conf_t *conf) {
     if(conf->community.community_name[0] == 0)
         return -1;
 
-    if(!resolve_hostnames_str_get(RESOLVE_LIST_SUPERNODE, 0)) {
+    if(!conf->client.local_link && !resolve_hostnames_str_get(RESOLVE_LIST_SUPERNODE, 0)) {
         // confirm that there is at least one supernode string provided
         return -5;
     }
@@ -548,16 +549,26 @@ struct n3n_runtime_data* edge_init (const n2n_edge_conf_t *conf, int *rv) {
     }
 #endif
 
-    // Show the user what has been configured
-    resolve_log_hostnames(RESOLVE_LIST_SUPERNODE);
+    if(conf->client.local_link) {
+        // the one supernode is that of this process
+        struct peer_info *sn = peer_info_malloc(null_mac);
+        if(!sn) {
+            goto edge_init_error;
+        }
+        local_link_sock(&sn->sock);
+        HASH_ADD_PEER(eee->client.supernodes, sn);
+    } else {
+        // Show the user what has been configured
+        resolve_log_hostnames(RESOLVE_LIST_SUPERNODE);
 
-    if(resolve_hostnames_str_to_peer_info(
-           RESOLVE_LIST_SUPERNODE,
-           &eee->client.supernodes)) {
-        traceEvent(
-            TRACE_WARNING,
-            "resolve_hostnames_str_to_peer_info returned errors"
-        );
+        if(resolve_hostnames_str_to_peer_info(
+               RESOLVE_LIST_SUPERNODE,
+               &eee->client.supernodes)) {
+            traceEvent(
+                TRACE_WARNING,
+                "resolve_hostnames_str_to_peer_info returned errors"
+            );
+        }
     }
 
     // Statically calculate how many packet buffers we need:
@@ -663,13 +674,16 @@ struct n3n_runtime_data* edge_init (const n2n_edge_conf_t *conf, int *rv) {
     eee->client.udp_multicast_sock_v4 = -1;
     eee->client.udp_multicast_sock_v6 = -1;
 #endif
-    if(edge_init_sockets(eee) < 0) {
-        traceEvent(TRACE_ERROR, "socket setup failed");
-        goto edge_init_error;
-    }
+    // the edge of a supernode has no sockets, nor names to resolve
+    if(!conf->client.local_link) {
+        if(edge_init_sockets(eee) < 0) {
+            traceEvent(TRACE_ERROR, "socket setup failed");
+            goto edge_init_error;
+        }
 
-    if(resolve_create_thread(&(eee->resolve_parameter), eee->client.supernodes) == 0) {
-        traceEvent(TRACE_NORMAL, "successfully created resolver thread");
+        if(resolve_create_thread(&(eee->resolve_parameter), eee->client.supernodes) == 0) {
+            traceEvent(TRACE_NORMAL, "successfully created resolver thread");
+        }
     }
 
     // TODO: skip creating this if there are no filters to add
@@ -701,6 +715,18 @@ void edge_sendto_sock (struct n3n_runtime_data *eee, const void * buf,
     if(!dest->family) {
         traceEvent(TRACE_ERROR, "bad dest->family");
         // invalid socket
+        return;
+    }
+
+    if(eee->conf.client.local_link) {
+        // without sockets, only to the supernode in this process
+        if(local_link_is_sock(dest)) {
+            local_link_to_relay(buf, len);
+        } else {
+            n3n_sock_str_t sockbuf;
+            traceEvent(TRACE_DEBUG, "local edge: dropped a PDU to [%s], it reaches its peers through its supernode",
+                       sock_to_cstr(sockbuf, dest));
+        }
         return;
     }
 
@@ -908,7 +934,7 @@ void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_ctx *c) {
     struct peer_info *sn = NULL;
 
     // the supernode is looked up again rather than passed in: a pointer into
-    // the list must not travel with the PDU. process_pdu() has already
+    // the list must not travel with the PDU. edge_process_pdu() has already
     // dropped the PDU if this lookup fails, so it only fails if the supernode
     // was removed in between.
     if(c->from_supernode) {
@@ -926,12 +952,12 @@ void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_ctx *c) {
 
 
 /** handle a datagram from the main UDP socket to the internet. */
-void process_pdu (struct n3n_runtime_data *eee,
-                  const struct sockaddr *sender_sock,
-                  const SOCKET in_sock,
-                  uint8_t *udp_buf,
-                  size_t udp_size,
-                  time_t now
+void edge_process_pdu (struct n3n_runtime_data *eee,
+                       const struct sockaddr *sender_sock,
+                       const SOCKET in_sock,
+                       uint8_t *udp_buf,
+                       size_t udp_size,
+                       time_t now
 ) {
 
     n2n_common_t cmn;          /* common fields in the packet header */
@@ -951,7 +977,7 @@ void process_pdu (struct n3n_runtime_data *eee,
     /* REVISIT: when UDP/IPv6 is supported we will need a flag to indicate which
      * IP transport version the packet arrived on. May need to UDP sockets. */
 
-    // TODO: pass the sender to process_pdu, dont calculate it here
+    // TODO: pass the sender to edge_process_pdu, dont calculate it here
     if(eee->conf.client.connect_tcp)
         // TCP expects that we know our comm partner and does not deliver the sender
         memcpy(&sender, &(eee->client.curr_sn->sock), sizeof(sender));
@@ -1146,7 +1172,7 @@ int edge_read_proto3_udp (struct n3n_runtime_data *eee,
     // we have a datagram to process...
     // ...and the datagram has data (not just a header)
     //
-    process_pdu(
+    edge_process_pdu(
         eee,
         sender_sock,
         sock,
@@ -1197,7 +1223,7 @@ void edge_read_proto3_tcp (struct n3n_runtime_data *eee,
     }
 
     // have a valid packet read, handle it
-    process_pdu(
+    edge_process_pdu(
         eee,
         NULL,
         sock,
@@ -1357,6 +1383,20 @@ static void edge_tick_supernodes (struct n3n_runtime_data *eee, time_t now) {
 }
 
 
+// The regular work of an edge; rt NULL for the runtime of mainloop_run()
+static void edge_register_ticks (struct n3n_runtime_data *rt) {
+
+    mainloop_register_tick_rt(edge_tick_tap, 0, rt);
+    mainloop_register_tick_rt(edge_tick_registrations, 0, rt);
+    mainloop_register_tick_rt(edge_tick_purge, PURGE_REGISTRATION_FREQUENCY, rt);
+#ifdef HAVE_BRIDGING_SUPPORT
+    mainloop_register_tick_rt(edge_tick_purge_hosts, SWEEP_TIME, rt);
+#endif
+    mainloop_register_tick_rt(edge_tick_dhcp, IFACE_UPDATE_INTERVAL, rt);
+    mainloop_register_tick_rt(edge_tick_supernodes, 0, rt);
+}
+
+
 int run_edge_loop (struct n3n_runtime_data *eee) {
 
 #ifdef _WIN32
@@ -1377,14 +1417,7 @@ int run_edge_loop (struct n3n_runtime_data *eee) {
     n3n_metrics_register(&edge_metrics_module1);
     n3n_metrics_register(&edge_metrics_module2);
 
-    mainloop_register_tick(edge_tick_tap, 0);
-    mainloop_register_tick(edge_tick_registrations, 0);
-    mainloop_register_tick(edge_tick_purge, PURGE_REGISTRATION_FREQUENCY);
-#ifdef HAVE_BRIDGING_SUPPORT
-    mainloop_register_tick(edge_tick_purge_hosts, SWEEP_TIME);
-#endif
-    mainloop_register_tick(edge_tick_dhcp, IFACE_UPDATE_INTERVAL);
-    mainloop_register_tick(edge_tick_supernodes, 0);
+    edge_register_ticks(NULL);
 
     /* Main loop
      *
@@ -1414,6 +1447,117 @@ int run_edge_loop (struct n3n_runtime_data *eee) {
 }
 
 /* ************************************** */
+
+/* The edge of a supernode with supernode.tap: a runtime of its own in the
+ * supernode's process, with the supernode's settings of the community and
+ * of the TAP device.  It has no sockets: it reaches the supernode, and through
+ * it all its peers, over the local link, see local_link.h.  It registers and
+ * opens the TAP device here, so before the privileges are dropped; from then
+ * on the mainloop of the supernode runs it, in its own runtime.
+ * NULL on failure. */
+struct n3n_runtime_data *edge_start_local (struct n3n_runtime_data *relay) {
+
+    n2n_edge_conf_t conf = relay->conf;     // a copy, see edge_term()
+    struct n3n_runtime_data *eee;
+    macstr_t mac_buf;
+    int rc;
+
+#ifdef _WIN32
+    traceEvent(TRACE_ERROR, "supernode.tap is not supported on Windows yet");
+    return NULL;
+#endif
+
+    conf.is_supernode = false;
+    conf.is_edge = true;
+    conf.client.local_link = true;
+    // only through the supernode, which is as direct as it gets for its
+    // own edges; see edge_sendto_sock()
+    conf.client.connect_tcp = false;
+    conf.client.allow_p2p = false;
+    conf.client.local_discovery = false;
+    conf.client.punch_ports = 0;
+    conf.threads = 1;
+    conf.mgmt_port = 0;
+
+    // with user/password authentication, the public key of the federation
+    // is that of this supernode's
+    if(conf.shared_secret && !conf.federation_public_key) {
+        conf.federation_public_key = calloc(1, sizeof(n2n_private_public_key_t));
+        if(conf.federation_public_key) {
+            generate_private_key(*conf.federation_public_key, conf.relay.sn_federation);
+            generate_public_key(*conf.federation_public_key, *conf.federation_public_key);
+        }
+    }
+
+    edge_conf_prepare(&conf);
+    if((rc = edge_verify_conf(&conf)) != 0) {
+        traceEvent(TRACE_ERROR, "supernode.tap: missing or incomplete settings of the community (%d)", rc);
+        return NULL;
+    }
+
+    eee = edge_init(&conf, &rc);
+    if(!eee) {
+        traceEvent(TRACE_ERROR, "supernode.tap: failed in edge_init");
+        return NULL;
+    }
+    eee->keep_running = relay->keep_running;
+    local_link_init(relay, eee);
+    relay->relay.local_edge = eee;
+
+    // register, to be given an address if the supernode hands them out;
+    // the supernode answers right away
+    eee->client.last_sup = 0;
+    eee->client.sn_wait = 1;
+    send_register_super(eee);
+    local_link_drain(time(NULL));
+    if((eee->conf.tap.tuntap_ip_mode == TUNTAP_IP_MODE_SN_ASSIGN) && eee->client.sn_wait) {
+        traceEvent(TRACE_ERROR, "supernode.tap: the supernode did not take its own edge into community '%s'",
+                   eee->conf.community.community_name);
+        relay->relay.local_edge = NULL;
+        edge_stop_local(eee);
+        return NULL;
+    }
+
+    if(edge_tap_open(eee) < 0) {
+        relay->relay.local_edge = NULL;
+        edge_stop_local(eee);
+        return NULL;
+    }
+#ifndef _WIN32
+    mainloop_register_fd_rt(eee->tap.device.fd, fd_info_proto_tuntap, eee);
+#endif
+    in_addr_t addr = eee->conf.tap.tuntap_v4.net_addr;
+    struct in_addr *tmp = (struct in_addr *)&addr;
+    traceEvent(TRACE_NORMAL, "supernode.tap: tap device of community '%s', IPv4: %s/%u, MAC: %s",
+               eee->conf.community.community_name,
+               inet_ntoa(*tmp),
+               eee->conf.tap.tuntap_v4.net_bitlen,
+               macaddr_str(mac_buf, eee->tap.device.mac_addr));
+
+    // as an edge after its bootstrap: register with the MAC of the TAP
+    // device now, and keep doing so
+    eee->client.sn_wait = 1;
+    eee->client.last_register_req = 0;
+    update_supernode_reg(eee, time(NULL));
+    edge_register_ticks(eee);
+
+    return eee;
+}
+
+
+// The edge of edge_start_local() goes
+void edge_stop_local (struct n3n_runtime_data *eee) {
+
+    local_link_init(NULL, NULL);
+#ifndef _WIN32
+    if(eee->tap.device.fd > 0) {
+        mainloop_unregister_fd(eee->tap.device.fd);
+        tuntap_close(&eee->tap.device);
+    }
+#endif
+    edge_term(eee);
+}
+
 
 /** Deinitialise the edge conf structure and deallocate any memory */
 
@@ -1462,8 +1606,21 @@ void edge_term_conf (n2n_edge_conf_t *conf) {
 
 /** Deinitialise the edge and deallocate any owned memory. */
 void edge_term (struct n3n_runtime_data * eee) {
+    bool local = eee->conf.client.local_link;
+
     print_edge_stats(eee);
 
+    if(local) {
+        // The conf is a copy of the supernode's, see edge_start_local(): what
+        // the supernode frees, it frees
+        eee->conf.bind_address = NULL;
+        eee->conf.relay.community_file = NULL;
+        eee->conf.relay.community_regex = NULL;
+        eee->conf.mgmt_password = NULL;
+        eee->conf.sessiondir = NULL;
+        eee->conf.communities = NULL;
+        eee->conf.community.users = NULL;
+    }
     edge_term_conf(&eee->conf);
 
     resolve_cancel_thread(eee->resolve_parameter);
@@ -1508,9 +1665,14 @@ void edge_term (struct n3n_runtime_data * eee) {
     // TODO:
     // - slots_close(eee->mgmt_slots)
 
-    closeTraceFile();
-
     free(eee);
+
+    if(local) {
+        // the process goes on, the supernode ends it
+        return;
+    }
+
+    closeTraceFile();
 
     n3n_deinitfuncs();
 
@@ -1657,6 +1819,35 @@ static int edge_init_sockets (struct n3n_runtime_data *eee) {
 /* ************************************** */
 
 
+/* The defaults of the community, client and tap settings: of an edge, and
+ * of a supernode, which may have an edge of its own (supernode.tap) */
+void edge_conf_role_defaults (n2n_edge_conf_t *conf) {
+
+    conf->client.preferred_sock.family = AF_INVALID;
+    conf->community.transop_id = N2N_TRANSFORM_ID_NULL;
+    conf->community.header_encryption = HEADER_ENCRYPTION_NONE;
+    conf->community.compression = N2N_COMPRESSION_ID_NONE;
+    conf->client.allow_p2p = true;
+    conf->client.local_discovery = true;
+    conf->client.register_interval = REGISTER_SUPER_INTERVAL_DFL;
+    conf->client.punch_ports = NAT_PUNCH_PORTS_DFL;
+    conf->client.punch_sockets = NAT_PUNCH_SOCKETS_DFL;
+
+    // Ensure we can notice if the config has set a dev name
+    conf->tap.tuntap_dev_name[0] = '\0';
+
+    conf->tap.tuntap_ip_mode = TUNTAP_IP_MODE_SN_ASSIGN;
+    conf->tap.tuntap_v4.net_bitlen = N2N_EDGE_DEFAULT_V4MASKLEN;
+
+    /* reserve possible last char as null terminator. */
+    gethostname((char*)conf->dev_desc, N2N_DESC_SIZE-1);
+
+    conf->client.sn_selection_strategy = SN_SELECTION_STRATEGY_LOAD;
+    conf->tap.metric = 0;
+    conf->tap.mtu = DEFAULT_MTU;
+}
+
+
 void edge_init_conf_defaults (n2n_edge_conf_t *conf, char *sessionname) {
 
     memset(conf, 0, sizeof(*conf));
@@ -1672,35 +1863,15 @@ void edge_init_conf_defaults (n2n_edge_conf_t *conf, char *sessionname) {
     conf->is_edge = true;
 
     conf->bind_address = NULL;
-    conf->client.preferred_sock.family = AF_INVALID;
 #ifdef _WIN32
     // Cannot rely on having unix domain sockets on windows
     conf->mgmt_port = N2N_EDGE_MGMT_PORT;
 #endif
-    conf->community.transop_id = N2N_TRANSFORM_ID_NULL;
-    conf->community.header_encryption = HEADER_ENCRYPTION_NONE;
-    conf->community.compression = N2N_COMPRESSION_ID_NONE;
-    conf->client.allow_p2p = true;
-    conf->client.local_discovery = true;
     conf->threads = 1;
-    conf->client.register_interval = REGISTER_SUPER_INTERVAL_DFL;
-    conf->client.punch_ports = NAT_PUNCH_PORTS_DFL;
-    conf->client.punch_sockets = NAT_PUNCH_SOCKETS_DFL;
 
-    // Ensure we can notice if the config has set a dev name
-    conf->tap.tuntap_dev_name[0] = '\0';
-
-    conf->tap.tuntap_ip_mode = TUNTAP_IP_MODE_SN_ASSIGN;
-    conf->tap.tuntap_v4.net_bitlen = N2N_EDGE_DEFAULT_V4MASKLEN;
-
-    /* reserve possible last char as null terminator. */
-    gethostname((char*)conf->dev_desc, N2N_DESC_SIZE-1);
+    edge_conf_role_defaults(conf);
 
     conf->mgmt_password = strdup(N3N_MGMT_PASSWORD);
-
-    conf->client.sn_selection_strategy = SN_SELECTION_STRATEGY_LOAD;
-    conf->tap.metric = 0;
-    conf->tap.mtu = DEFAULT_MTU;
 
     conf->test_benchmark_seconds = 1;
     conf->test_benchmark_threads = 1;

@@ -22,6 +22,7 @@
 #include <errno.h>              // for errno, EAFNOSUPPORT
 #include <n3n/conffile.h>       // for n3n_config_free_communities
 #include <n3n/initfuncs.h>      // for n3n_deinitfuncs
+#include <n3n/edge.h>           // for edge_conf_role_defaults, edge_stop_local
 #include <n3n/logging.h>        // for traceEvent
 #include <n3n/mainloop.h>       // for mainloop_register_fd, mainloop_close_fd, ...
 #include <n3n/random.h>         // for n3n_rand, n3n_rand_sqr, memrnd
@@ -45,6 +46,7 @@
 #include "role_relay.h"
 #include "sn_communities.h"
 #include "sn_utils.h"
+#include "local_link.h"         // for LOCAL_LINK_FD, local_link_to_edge
 #include "sock.h"               // for bind_entry_of_sock, sendto_logged, ...
 #include "stats.h"              // for STATS_INC
 
@@ -176,7 +178,7 @@ static SOCKET peer_sock (struct n3n_runtime_data *sss, const struct peer_info *p
 
     int i;
 
-    if(is_tcp(sss, peer->socket_fd)) {
+    if(is_tcp(sss, peer->socket_fd) || (peer->socket_fd == LOCAL_LINK_FD)) {
         return peer->socket_fd;
     }
     i = bind_entry_of_sock(sss, peer->socket_fd);
@@ -197,6 +199,11 @@ ssize_t sn_sendto_sock (struct n3n_runtime_data *sss,
                         const struct sockaddr *socket,
                         const uint8_t *pktbuf,
                         size_t pktsize) {
+
+    // the edge in this process
+    if(socket_fd == LOCAL_LINK_FD) {
+        return local_link_to_edge(pktbuf, pktsize) ? pktsize : -1;
+    }
 
     // if the connection is tcp, i.e. not the regular sock...
     if(is_tcp(sss, socket_fd)) {
@@ -278,6 +285,9 @@ void sn_init_conf_defaults (struct n3n_runtime_data *sss, char *sessionname) {
 
     conf->is_supernode = true;
     conf->relay.spoofing_protection = true;
+
+    // for an edge of its own, see supernode.tap
+    edge_conf_role_defaults(conf);
 
     strncpy(conf->relay.version, VERSION, sizeof(n2n_version_t));
     conf->relay.version[sizeof(n2n_version_t) - 1] = '\0';
@@ -637,7 +647,8 @@ static bool relay_here (struct n3n_runtime_data *sss,
 
     HASH_FIND_PEER(comm->edges, pkt.dstMac, scan);
     if(scan) {
-        return !is_tcp(sss, scan->socket_fd);
+        // not to the edge in this process, see local_link.h
+        return !is_tcp(sss, scan->socket_fd) && (scan->socket_fd != LOCAL_LINK_FD);
     }
     if(from_supernode) {
         // dropped
@@ -789,6 +800,15 @@ static int process_pdu (struct n3n_runtime_data * sss,
         return -1;
     }
     return process_pdu_body(sss, &h, comm);
+}
+
+
+/* A PDU from the edge in this process, see local_link.h */
+void sn_process_local_pdu (struct n3n_runtime_data *sss,
+                           const struct sockaddr *sender_sock, socklen_t sock_size,
+                           uint8_t *buf, size_t size, time_t now) {
+
+    process_pdu(sss, sender_sock, sock_size, LOCAL_LINK_FD, buf, size, now);
 }
 
 
@@ -989,6 +1009,11 @@ int run_sn_loop (struct n3n_runtime_data *sss) {
 
     mainloop_register_tick(sn_tick, 0);
     mainloop_run(sss);
+
+    if(sss->relay.local_edge) {
+        edge_stop_local(sss->relay.local_edge);
+        sss->relay.local_edge = NULL;
+    }
 
     edge_threads_stop(sss);
 
