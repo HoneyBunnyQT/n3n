@@ -282,11 +282,14 @@ git push origin --delete phase-a phase-b
 
 ### Flaky netns scenarios (NAT work)
 
+Now about one or two per full run with four scenarios at a time, more than a
+chance of 1 in 256 explains; worth a closer look (TODO).
+
 Seen once each in a few full runs, passing on re-runs:
 
 - `no-punch` went direct although port guessing is off on the easy side: the
   hard side's own REGISTERs may get through the easy NAT
-- `easy-hard-pool`, `hard-hard-threads`, `failover-relayed`: an edge behind `hard-range` took its
+- `easy-hard-pool`, `hard-hard-threads`, `failover-relayed`, `hard-easy`: an edge behind `hard-range` took its
   NAT for "easy (port changed)" - perhaps both supernodes saw the same port
   drawn from the range of 240
 
