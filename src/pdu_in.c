@@ -5,6 +5,7 @@
  * The first steps with a received PDU - see pdu_in.h
  */
 
+#include <n3n/logging.h>        // for traceEvent
 #include "header_encryption.h"  // for packet_header_decrypt
 #include "n2n_define.h"         // for N2N_PKT_VERSION, N2N_REG_SUP_HASH_CHECK_LEN, ...
 #include "n2n_typedefs.h"       // for MSG_TYPE_MAX_TYPE
@@ -52,5 +53,18 @@ int pdu_header_decrypt (uint8_t *buf, size_t size, const char *community,
         return 1;
     }
 
+    return 0;
+}
+
+
+int pdu_dispatch (struct n3n_runtime_data *rt, const pdu_handlers_t handlers, struct pdu_ctx *c) {
+
+    unsigned int type = c->cmn.pc;
+
+    if((type > MSG_TYPE_MAX_TYPE) || !handlers[type]) {
+        traceEvent(TRACE_INFO, "unable to handle packet type %u: ignored", type);
+        return -1;
+    }
+    handlers[type](rt, c);
     return 0;
 }

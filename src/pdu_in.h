@@ -18,6 +18,7 @@ struct speck_context_t;
 struct sockaddr;
 struct sn_community;
 struct peer_info;
+struct n3n_runtime_data;
 
 // A received PDU and what the first steps found out about it, for the
 // handler of its message type.  It travels by value - from a packet thread
@@ -42,7 +43,20 @@ struct pdu_ctx {
     // only good on the thread that set them
     const struct sockaddr *sender_sock;
     socklen_t sock_size;
+    struct peer_info *sn;           // the supernode it came from, if from_supernode
+    struct sn_community *comm;      // relay: its community, if in_community
 };
+
+// The handler of a message type for a role: it decodes the rest of the PDU,
+// from c->idx on, and acts on it
+typedef void (*pdu_handler_fn)(struct n3n_runtime_data *rt, struct pdu_ctx *c);
+
+// The handlers of a role, by message type; NULL for a type it does not take
+typedef pdu_handler_fn pdu_handlers_t[MSG_TYPE_MAX_TYPE + 1];
+
+// Hand c to the handler of its message type.  Returns -1, after a line in
+// the log, if there is none.
+int pdu_dispatch (struct n3n_runtime_data *rt, const pdu_handlers_t handlers, struct pdu_ctx *c);
 
 // Whether the header of a PDU looks unencrypted: a version, a message type
 // and flags that make sense, and a community name that ends where it has to.
