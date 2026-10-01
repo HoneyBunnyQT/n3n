@@ -113,6 +113,58 @@ static n2n_cookie_t forwarded_reg_cookie (const struct n3n_runtime_data *eee) {
 // connect_tcp, it stays on TCP.  Packet threads need UDP, see edge_threads.h.
 static size_t encode_query_peer (struct n3n_runtime_data *eee, uint8_t *pktbuf, const n2n_mac_t dst_mac);
 
+
+// Whether a supernode can be reached over that transport: one given with
+// "udp://" or "tcp://" only over that one
+static bool sn_has_transport (const struct peer_info *sn, bool tcp) {
+
+    return !sn->transports || (sn->transports & (tcp ? N3N_TRANSPORT_TCP : N3N_TRANSPORT_UDP));
+}
+
+
+// Where a supernode is reached over TCP: its "tcp://" address, if it has
+// one of its own
+static const n3n_sock_t *sn_tcp_sock (const struct peer_info *sn) {
+
+    return sn->tcp_hostname ? &sn->tcp_sock : &sn->sock;
+}
+
+
+struct peer_info *supernode_first (struct n3n_runtime_data *eee) {
+
+    return supernode_next(eee, NULL);
+}
+
+
+struct peer_info *supernode_next (struct n3n_runtime_data *eee, struct peer_info *sn) {
+
+    struct peer_info *scan = sn ? sn->hh.next : eee->client.supernodes;
+
+    for(int round = 0; round < 2; round++) {
+        for(; scan; scan = scan->hh.next) {
+            if(sn_has_transport(scan, eee->client.tcp)) {
+                return scan;
+            }
+        }
+        scan = eee->client.supernodes;
+    }
+    // none: the first one, which at least is one
+    return eee->client.supernodes;
+}
+
+
+// how many supernodes can be reached over that transport
+static int supernode_count (struct n3n_runtime_data *eee, bool tcp) {
+
+    struct peer_info *scan, *tmp;
+    int count = 0;
+
+    HASH_ITER(hh, eee->client.supernodes, scan, tmp) {
+        count += sn_has_transport(scan, tcp);
+    }
+    return count;
+}
+
 static bool transport_can_fall_back (const struct n3n_runtime_data *eee) {
 
     return eee->conf.client.tcp_fallback && !eee->conf.client.connect_tcp
@@ -141,6 +193,9 @@ static void transport_switch (struct n3n_runtime_data *eee, bool tcp, time_t now
     eee->client.tcp = tcp;
     eee->client.giveups = 0;
     eee->client.last_probe = now;
+    if(!eee->client.curr_sn || !sn_has_transport(eee->client.curr_sn, tcp)) {
+        eee->client.curr_sn = supernode_first(eee);
+    }
     reset_sup_attempts(eee);
     supernode_connect(eee);
 }
@@ -151,12 +206,13 @@ static void transport_switch (struct n3n_runtime_data *eee, bool tcp, time_t now
 // other transport.  true if it did.
 bool transport_note_giveup (struct n3n_runtime_data *eee, time_t now) {
 
-    int round = HASH_COUNT(eee->client.supernodes);
+    int round = supernode_count(eee, eee->client.tcp);
 
     if(eee->client.giveups < UINT8_MAX) {
         eee->client.giveups++;
     }
-    if(!transport_can_fall_back(eee) || (eee->client.giveups < ((round < 2) ? 2 : round))) {
+    if(!transport_can_fall_back(eee) || (eee->client.giveups < ((round < 2) ? 2 : round))
+       || !supernode_count(eee, !eee->client.tcp)) {
         return false;
     }
     transport_switch(eee, !eee->client.tcp, now);
@@ -175,13 +231,29 @@ static void transport_probe (struct n3n_runtime_data *eee, time_t now) {
     uint8_t pktbuf[N2N_PKT_BUF_SIZE];
     size_t len;
 
-    if(!eee->client.tcp || !transport_can_fall_back(eee) || !eee->client.curr_sn
+    struct peer_info *sn = eee->client.curr_sn;
+
+    if(!eee->client.tcp || !transport_can_fall_back(eee) || !sn
        || (now < eee->client.last_probe + 3 * (time_t)eee->conf.client.register_interval)) {
         return;
     }
     eee->client.last_probe = now;
 
-    dest_len = fill_sockaddr((struct sockaddr *)&dest, sizeof(dest), &eee->client.curr_sn->sock);
+    // the current one, if it can be reached over UDP, else the first that can
+    if(!sn_has_transport(sn, false)) {
+        struct peer_info *scan, *tmp;
+        sn = NULL;
+        HASH_ITER(hh, eee->client.supernodes, scan, tmp) {
+            if(sn_has_transport(scan, false)) {
+                sn = scan;
+                break;
+            }
+        }
+        if(!sn) {
+            return;
+        }
+    }
+    dest_len = fill_sockaddr((struct sockaddr *)&dest, sizeof(dest), &sn->sock);
     if(dest_len == 0) {
         return;
     }
@@ -236,24 +308,27 @@ void supernode_connect (struct n3n_runtime_data *eee) {
         // One TCP socket, of the supernode's family - bound to the first
         // address of connection.bind of that family, or with IPv4 to the
         // port of a [::], which stands for IPv4 too
-        sn_sock_len = fill_sockaddr((struct sockaddr*)&sn_sock_storage, sizeof(sn_sock_storage), &eee->client.curr_sn->sock);
+        sn_sock_len = fill_sockaddr((struct sockaddr*)&sn_sock_storage, sizeof(sn_sock_storage), sn_tcp_sock(eee->client.curr_sn));
         if(sn_sock_len == 0) {
             traceEvent(
                 TRACE_WARNING,
                 "failed to prepare sockaddr for family %d",
-                eee->client.curr_sn->sock.family
+                sn_tcp_sock(eee->client.curr_sn)->family
             );
             return;
         }
 
         struct sockaddr_storage local = {0};
         local.ss_family = sn_sock_storage.ss_family;
-        const struct sockaddr_storage *list = (const struct sockaddr_storage *)eee->conf.bind_address;
-        for(int i = 0; list && (i < N3N_BIND_MAX) && list[i].ss_family; i++) {
-            const struct sockaddr_in6 *sa6 = (const struct sockaddr_in6 *)&list[i];
+        const struct n3n_bind *list = eee->conf.bind_address;
+        for(int i = 0; list && (i < N3N_BIND_MAX) && list[i].sa.ss_family; i++) {
+            const struct sockaddr_in6 *sa6 = (const struct sockaddr_in6 *)&list[i].sa;
 
-            if(list[i].ss_family == local.ss_family) {
-                memcpy(&local, &list[i], sizeof(local));
+            if(!(list[i].transports & N3N_TRANSPORT_TCP)) {
+                continue;
+            }
+            if(list[i].sa.ss_family == local.ss_family) {
+                memcpy(&local, &list[i].sa, sizeof(local));
                 break;
             }
             if((local.ss_family == AF_INET) && (sa6->sin6_family == AF_INET6)
@@ -909,6 +984,10 @@ void send_query_peer (struct n3n_runtime_data * eee,
         traceEvent(TRACE_DEBUG, "n_o_skip_sn=%i", n_o_skip_sn);
         HASH_ITER(hh, eee->client.supernodes, peer, tmp) {
             traceEvent(TRACE_DEBUG, "consider peer %p", peer);
+            if(!sn_has_transport(peer, false)) {
+                // given with tcp:// only
+                continue;
+            }
             if(n_o_top_sn) {
                 n_o_top_sn--;
                 // fall through (send to top supernode)
@@ -1040,10 +1119,10 @@ void sort_supernodes (struct n3n_runtime_data *eee, time_t now) {
         sn_selection_sort(&(eee->client.supernodes));
     }
 
-    if(eee->client.curr_sn != eee->client.supernodes) {
+    if(eee->client.curr_sn != supernode_first(eee)) {
         // we have not been connected to the best/top one
         send_unregister_super(eee);
-        eee->client.curr_sn = eee->client.supernodes;
+        eee->client.curr_sn = supernode_first(eee);
         reset_sup_attempts(eee);
         supernode_connect(eee);
 
@@ -1223,7 +1302,7 @@ void update_supernode_reg (struct n3n_runtime_data * eee, time_t now) {
             eee->client.curr_sn->selection_criterion = sn_selection_criterion_bad();
         }
         sn_selection_sort(&(eee->client.supernodes));
-        eee->client.curr_sn = eee->client.supernodes;
+        eee->client.curr_sn = supernode_first(eee);
         traceEvent(
             TRACE_WARNING,
             "supernode not responding, now trying [%s]",
@@ -1275,6 +1354,9 @@ void update_supernode_reg (struct n3n_runtime_data * eee, time_t now) {
     }
 
     // the supernode of this process has no name to resolve, see local_link.h
+    if(eee->client.curr_sn->tcp_hostname) {
+        maybe_supernode2sock(&(eee->client.curr_sn->tcp_sock), eee->client.curr_sn->tcp_hostname);
+    }
     if(eee->conf.client.local_link
        || (maybe_supernode2sock(&(eee->client.curr_sn->sock), peer_info_get_hostname(eee->client.curr_sn)) == 0)) {
         traceEvent(

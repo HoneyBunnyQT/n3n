@@ -771,6 +771,7 @@ static void jsonrpc_get_supernodes (char *id, struct n3n_runtime_data *eee, conn
     struct peer_info *peer, *tmpPeer;
     macstr_t mac_buf;
     n3n_sock_str_t sockbuf;
+    n3n_sock_str_t tcpbuf;
     selection_criterion_str_t sel_buf;
 
     jsonrpc_result_head(id, conn);
@@ -792,6 +793,8 @@ static void jsonrpc_get_supernodes (char *id, struct n3n_runtime_data *eee, conn
                     "\"current\":%i,"
                     "\"macaddr\":\"%s\","
                     "\"sockaddr\":\"%s\","
+                    "\"tcp_sockaddr\":\"%s\","
+                    "\"transports\":\"%s\","
                     "\"selection\":\"%s\","
                     "\"last_seen\":%u,"
                     "\"uptime\":%u},",
@@ -800,6 +803,8 @@ static void jsonrpc_get_supernodes (char *id, struct n3n_runtime_data *eee, conn
                     (peer == eee->client.curr_sn) ? (eee->client.sn_wait ? 2 : 1 ) : 0,
                     is_null_mac(peer->mac_addr) ? "" : macaddr_str(mac_buf, peer->mac_addr),
                     sock_to_cstr(sockbuf, &(peer->sock)),
+                    sock_to_cstr(tcpbuf, peer->tcp_hostname ? &peer->tcp_sock : &peer->sock),
+                    (peer->transports == N3N_TRANSPORT_UDP) ? "udp" : (peer->transports == N3N_TRANSPORT_TCP) ? "tcp" : "udp tcp",
                     sn_selection_criterion_str(eee, sel_buf, peer),
                     (uint32_t)peer->last_seen,
                     (uint32_t)peer->uptime);

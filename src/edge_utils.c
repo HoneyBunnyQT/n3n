@@ -456,23 +456,27 @@ void set_sock_options (struct n3n_runtime_data *eee, SOCKET sock, int family, bo
 // A family the system does not have is left out quietly, unless asked for.
 int open_udp_sockets (struct n3n_runtime_data *eee) {
 
-    struct sockaddr_storage list[N3N_BIND_MAX + 1];
+    struct n3n_bind list[N3N_BIND_MAX + 1];
     int count = 0;
 
+    // the addresses for UDP; tcp:// ones are for the TCP connection, see
+    // supernode_connect()
     memset(list, 0, sizeof(list));
-    if(eee->conf.bind_address) {
-        const struct sockaddr_storage *conf_list = (const struct sockaddr_storage *)eee->conf.bind_address;
-        while((count < N3N_BIND_MAX) && conf_list[count].ss_family) {
-            list[count] = conf_list[count];
+    for(int i = 0; eee->conf.bind_address && (i < N3N_BIND_MAX) && eee->conf.bind_address[i].sa.ss_family; i++) {
+        if(eee->conf.bind_address[i].transports & N3N_TRANSPORT_UDP) {
+            list[count] = eee->conf.bind_address[i];
+            list[count].transports = N3N_TRANSPORT_UDP;
             count++;
         }
-    } else {
-        struct sockaddr_in6 *any = (struct sockaddr_in6 *)&list[0];
+    }
+    if(!count) {
+        struct sockaddr_in6 *any = (struct sockaddr_in6 *)&list[0].sa;
         any->sin6_family = AF_INET6;
         any->sin6_addr = in6addr_any;
+        list[0].transports = N3N_TRANSPORT_UDP;
     }
 
-    if(n3n_open_bind_sockets(eee, list, false, eee->conf.bind_address ? TRACE_WARNING : TRACE_INFO) != 0) {
+    if(n3n_open_bind_sockets(eee, list, false, count ? TRACE_WARNING : TRACE_INFO) != 0) {
         return -1;
     }
     for(int i = 0; i < eee->bind_count; i++) {
@@ -674,7 +678,22 @@ struct n3n_runtime_data* edge_init (const n2n_edge_conf_t *conf, int *rv) {
     // on trying to close them (open_sockets does so for also being able to RE-open the sockets
     // if called in-between, see "Supernode not responding" in update_supernode_reg(...)
     eee->sock = -1;
-    eee->client.tcp = conf->client.connect_tcp;
+    // TCP if asked, and if every supernode is given with tcp://: then only
+    // TCP, as with connect_tcp - not even the supernodes the federation
+    // tells about are tried over UDP
+    if(!conf->client.local_link && !eee->conf.client.connect_tcp) {
+        bool udp = false;
+        const char *s;
+        for(int i = 0; (s = resolve_hostnames_str_get(RESOLVE_LIST_SUPERNODE, i)); i++) {
+            udp |= n3n_transport_prefix(s, NULL) != N3N_TRANSPORT_TCP;
+        }
+        if(!udp) {
+            traceEvent(TRACE_NORMAL, "all supernodes are given with tcp://, connecting over TCP only");
+            eee->conf.client.connect_tcp = true;
+        }
+    }
+    eee->client.tcp = eee->conf.client.connect_tcp;
+    eee->client.curr_sn = supernode_first(eee);
     eee->client.probe_sock = -1;
     eee->client.advertised_sock.family = AF_INVALID;
 #ifndef SKIP_MULTICAST_PEERS_DISCOVERY

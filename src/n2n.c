@@ -160,21 +160,24 @@ void close_bind_sockets (struct n3n_runtime_data *sss) {
 
     for(int i = 0; i < sss->bind_count; i++) {
         closesocket(sss->bind_sock[i]);
-        if(sss->bind_tcp[i] >= 0) {
-            closesocket(sss->bind_tcp[i]);
-        }
+    }
+    for(int i = 0; i < sss->bind_tcp_count; i++) {
+        closesocket(sss->bind_tcp[i]);
     }
     sss->bind_count = 0;
+    sss->bind_tcp_count = 0;
     sss->sock = -1;
     sss->relay.tcp_sock = -1;
 }
 
 
-// is there an IPv4 address with this port in the list?
-static bool v4_on_port (const struct sockaddr_storage *list, int count, uint16_t port) {
+// is there an IPv4 address with this port in the list, for one of these
+// transports?
+static bool v4_on_port (const struct n3n_bind *list, int count, uint16_t port, int transports) {
 
     for(int i = 0; i < count; i++) {
-        if((list[i].ss_family == AF_INET) && (sockaddr_port((const struct sockaddr *)&list[i]) == port)) {
+        if((list[i].sa.ss_family == AF_INET) && (list[i].transports & transports)
+           && (sockaddr_port((const struct sockaddr *)&list[i].sa) == port)) {
             return true;
         }
     }
@@ -218,30 +221,33 @@ static SOCKET open_bind_socket (const struct sockaddr *sa, int type, int v6only)
 }
 
 
-// A UDP socket, and on the supernode a TCP one, for each address of the list
-// from connection.bind, alike: the first ones are also sock and tcp_sock. The
-// list needs room for N3N_BIND_MAX addresses and its end. A [::] gets a 0.0.0.0 on its port
-// beside it, and an IPv6 address is IPv6 only when an IPv4 one has the same
-// port - the IPv4 edges on that port belong to that one. Without IPv6 on the
-// system its addresses are left out, but a [::] whose port no IPv4 address
-// has listens on 0.0.0.0 instead, as the default [::] always did, logged at
-// missing_v6_level. Anything else that stops a socket from opening is an
-// error.
-int n3n_open_bind_sockets (struct n3n_runtime_data *sss, struct sockaddr_storage *list,
+// The sockets for the addresses of the list from connection.bind: a UDP
+// socket for each address for UDP, and on the supernode (with_tcp) a TCP one
+// for each address for TCP - without "udp://" or "tcp://" in front, an
+// address is for both.  The first ones are also sock and tcp_sock.  The list
+// needs room for N3N_BIND_MAX addresses and its end.  A [::] gets a 0.0.0.0
+// on its port beside it, and an IPv6 address is IPv6 only when an IPv4 one
+// has the same port and transport - the IPv4 edges on that port belong to
+// that one.  Without IPv6 on the system its addresses are left out, but a
+// [::] whose port no IPv4 address has listens on 0.0.0.0 instead, as the
+// default [::] always did, logged at missing_v6_level.  Anything else that
+// stops a socket from opening is an error, and so is a list without an
+// address for UDP.
+int n3n_open_bind_sockets (struct n3n_runtime_data *sss, struct n3n_bind *list,
                            bool with_tcp, int missing_v6_level) {
 
     int count = 0;
     n3n_sock_str_t sockbuf;
     n3n_sock_t sock;
 
-    while((count < N3N_BIND_MAX) && list[count].ss_family) {
+    while((count < N3N_BIND_MAX) && list[count].sa.ss_family) {
         count++;
     }
 
     SOCKET probe = socket(AF_INET6, SOCK_DGRAM, 0);
     if((probe == -1) && (errno == EAFNOSUPPORT)) {
         for(int i = 0; i < count;) {
-            struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)&list[i];
+            struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)&list[i].sa;
             uint16_t port;
 
             if(sa6->sin6_family != AF_INET6) {
@@ -249,10 +255,10 @@ int n3n_open_bind_sockets (struct n3n_runtime_data *sss, struct sockaddr_storage
                 continue;
             }
             port = ntohs(sa6->sin6_port);
-            if(IN6_IS_ADDR_UNSPECIFIED(&sa6->sin6_addr) && !v4_on_port(list, count, port)) {
-                struct sockaddr_in *sa4 = (struct sockaddr_in *)&list[i];
+            if(IN6_IS_ADDR_UNSPECIFIED(&sa6->sin6_addr) && !v4_on_port(list, count, port, list[i].transports)) {
+                struct sockaddr_in *sa4 = (struct sockaddr_in *)&list[i].sa;
 
-                memset(&list[i], 0, sizeof(list[i]));
+                memset(&list[i].sa, 0, sizeof(list[i].sa));
                 sa4->sin_family = AF_INET;
                 sa4->sin_port = htons(port);
                 sa4->sin_addr.s_addr = htonl(INADDR_ANY);
@@ -260,7 +266,7 @@ int n3n_open_bind_sockets (struct n3n_runtime_data *sss, struct sockaddr_storage
                 i++;
                 continue;
             }
-            fill_n3nsock(&sock, (struct sockaddr *)&list[i]);
+            fill_n3nsock(&sock, (struct sockaddr *)&list[i].sa);
             traceEvent(missing_v6_level, "no IPv6 on this system, leaving out %s", sock_to_cstr(sockbuf, &sock));
             memmove(&list[i], &list[i + 1], (count - i) * sizeof(list[i]));   // with the end of the list
             count--;
@@ -280,64 +286,84 @@ int n3n_open_bind_sockets (struct n3n_runtime_data *sss, struct sockaddr_storage
     // [::] - also the default, and what a port alone stands for - is for
     // IPv4 as well: on a socket of its own at 0.0.0.0, so that IPv4 edges
     // are no mapped IPv6 addresses to it, unless an IPv4 address with that
-    // port is given already
+    // port and transport is given already
     for(int i = 0; i < count; i++) {
-        struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)&list[i];
+        struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)&list[i].sa;
         uint16_t port;
 
         if((sa6->sin6_family != AF_INET6) || !IN6_IS_ADDR_UNSPECIFIED(&sa6->sin6_addr)) {
             continue;
         }
         port = ntohs(sa6->sin6_port);
-        if(v4_on_port(list, count, port) || (count == N3N_BIND_MAX)) {
+        if(v4_on_port(list, count, port, list[i].transports) || (count == N3N_BIND_MAX)) {
             continue;
         }
         memmove(&list[i + 2], &list[i + 1], (count - i) * sizeof(list[i]));   // with the end of the list
-        struct sockaddr_in *sa4 = (struct sockaddr_in *)&list[i + 1];
+        struct sockaddr_in *sa4 = (struct sockaddr_in *)&list[i + 1].sa;
         memset(&list[i + 1], 0, sizeof(list[i + 1]));
         sa4->sin_family = AF_INET;
         sa4->sin_port = htons(port);
         sa4->sin_addr.s_addr = htonl(INADDR_ANY);
+        list[i + 1].transports = list[i].transports;
         count++;
         i++;
     }
 
     for(int i = 0; i < count; i++) {
-        struct sockaddr *sa = (struct sockaddr *)&list[i];
-        int v6only = (sa->sa_family == AF_INET6) && v4_on_port(list, count, sockaddr_port(sa));
+        struct sockaddr *sa = (struct sockaddr *)&list[i].sa;
+        int transports = list[i].transports;
+        bool udp = transports & N3N_TRANSPORT_UDP;
+        bool tcp = false;
+        // one per transport: an IPv4 address for UDP only does not make
+        // an IPv6 one for TCP only IPv6 only
+        int v6only_udp = (sa->sa_family == AF_INET6) && v4_on_port(list, count, sockaddr_port(sa), N3N_TRANSPORT_UDP);
+        int v6only_tcp = (sa->sa_family == AF_INET6) && v4_on_port(list, count, sockaddr_port(sa), N3N_TRANSPORT_TCP);
 
         fill_n3nsock(&sock, sa);
         sock_to_cstr(sockbuf, &sock);
 
-        sss->bind_sock[i] = open_bind_socket(sa, SOCK_DGRAM, v6only);
-        if(sss->bind_sock[i] < 0) {
-            // e.g. a port another program has
-            traceEvent(TRACE_ERROR, "cannot listen on UDP %s: %s", sockbuf, strerror(errno));
-            close_bind_sockets(sss);
-            return -1;
+        if(udp) {
+            int n = sss->bind_count;
+            sss->bind_sock[n] = open_bind_socket(sa, SOCK_DGRAM, v6only_udp);
+            if(sss->bind_sock[n] < 0) {
+                // e.g. a port another program has
+                traceEvent(TRACE_ERROR, "cannot listen on UDP %s: %s", sockbuf, strerror(errno));
+                close_bind_sockets(sss);
+                return -1;
+            }
+            sss->bind_family[n] = sa->sa_family;
+            sss->bind_v6only[n] = v6only_udp;
+            sss->bind_count++;
         }
-        sss->bind_tcp[i] = -1;
 #ifdef N2N_HAVE_TCP
-        if(with_tcp) {
-            sss->bind_tcp[i] = open_bind_socket(sa, SOCK_STREAM, v6only);
-            if((sss->bind_tcp[i] < 0) || (listen(sss->bind_tcp[i], N2N_TCP_BACKLOG_QUEUE_SIZE) != 0)) {
+        if(with_tcp && (transports & N3N_TRANSPORT_TCP)) {
+            int n = sss->bind_tcp_count;
+            sss->bind_tcp[n] = open_bind_socket(sa, SOCK_STREAM, v6only_tcp);
+            if((sss->bind_tcp[n] < 0) || (listen(sss->bind_tcp[n], N2N_TCP_BACKLOG_QUEUE_SIZE) != 0)) {
                 traceEvent(TRACE_ERROR, "cannot listen on TCP %s: %s", sockbuf, strerror(errno));
-                closesocket(sss->bind_sock[i]);
-                if(sss->bind_tcp[i] >= 0) {
-                    closesocket(sss->bind_tcp[i]);
+                if(sss->bind_tcp[n] >= 0) {
+                    closesocket(sss->bind_tcp[n]);
                 }
                 close_bind_sockets(sss);
                 return -1;
             }
+            sss->bind_tcp_count++;
+            tcp = true;
         }
 #endif
-        sss->bind_family[i] = sa->sa_family;
-        sss->bind_v6only[i] = v6only;
-        sss->bind_count++;
-        traceEvent(TRACE_NORMAL, "listening on UDP%s %s%s", with_tcp ? " and TCP" : "", sockbuf, v6only ? " (IPv6 only)" : "");
+        if(udp || tcp) {
+            traceEvent(TRACE_NORMAL, "listening on %s %s%s",
+                       (udp && tcp) ? "UDP and TCP" : udp ? "UDP" : "TCP", sockbuf,
+                       ((udp && v6only_udp) || (tcp && v6only_tcp)) ? " (IPv6 only)" : "");
+        }
+    }
+    if(!sss->bind_count) {
+        traceEvent(TRACE_ERROR, "connection.bind has no address for UDP");
+        close_bind_sockets(sss);
+        return -1;
     }
     sss->sock = sss->bind_sock[0];
-    sss->relay.tcp_sock = sss->bind_tcp[0];
+    sss->relay.tcp_sock = sss->bind_tcp_count ? sss->bind_tcp[0] : -1;
     return 0;
 }
 
@@ -585,11 +611,38 @@ const char *sockaddr_to_str (char *s, size_t len, const struct sockaddr *sa) {
 
 // TODO: move to a strings helper source file
 // splitting host:port parts
+int n3n_transport_prefix (const char *spec, const char **rest) {
+
+    const char *sep = strstr(spec, "://");
+    int transports = N3N_TRANSPORT_BOTH;
+
+    if(sep) {
+        if((sep - spec == 3) && !strncasecmp(spec, "udp", 3)) {
+            transports = N3N_TRANSPORT_UDP;
+        } else if((sep - spec == 3) && !strncasecmp(spec, "tcp", 3)) {
+            transports = N3N_TRANSPORT_TCP;
+        } else {
+            return -1;
+        }
+        spec = sep + 3;
+    }
+    if(rest) {
+        *rest = spec;
+    }
+    return transports;
+}
+
+
 int parse_address_spec (n3n_parsed_address_t *out, const n3n_sock_str_t spec_in) {
 
     // work_buffer is of same type as the input as it will only hodl substring
     n3n_sock_str_t work_buffer;
-    const char *spec_start = spec_in;
+    const char *spec_start;
+
+    // "udp://" or "tcp://" in front tells the transport, not the address
+    if(n3n_transport_prefix(spec_in, &spec_start) < 0) {
+        return -1;
+    }
 
     // initialize output
     memset(out, 0, sizeof(n3n_parsed_address_t));

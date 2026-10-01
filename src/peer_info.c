@@ -111,6 +111,7 @@ struct peer_info* peer_info_malloc (const n2n_mac_t mac) {
 void peer_info_free (struct peer_info *p) {
     metrics.free++;
     free(p->hostname);
+    free(p->tcp_hostname);
     free(p);
 }
 

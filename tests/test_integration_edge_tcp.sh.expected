@@ -68,6 +68,8 @@
         "purgeable": 0,
         "selection": "",
         "sockaddr": "127.0.0.1:7654",
+        "tcp_sockaddr": "127.0.0.1:7654",
+        "transports": "udp tcp",
         "uptime": 0,
         "version": ""
     }

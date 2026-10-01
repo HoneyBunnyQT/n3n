@@ -94,6 +94,12 @@ user=bob nHWum+r42k1qDXdIeH-WFKeylK5UyLStRzxofRNAgpG
 community_regex=net[0-9]+
 community_regex=lab[a-z]+
 
+### test: load_dump tests/conf/transports.conf (bind, supernode)
+supernode=udp://198.51.100.1:7654
+supernode=tcp://sn.example.org:443
+supernode=sn.example.org:7654
+bind=udp://[::]:7654 tcp://[::]:443 tcp://0.0.0.0:443 [::]:7655
+
 ### test: ./apps/n3n-edge tools keygen logan 007
 * logan nHWum+r42k1qDXdIeH-WFKeylK5UyLStRzxofRNAgpG
 

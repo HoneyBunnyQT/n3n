@@ -25,6 +25,11 @@ typedef struct n3n_parsed_address_t {
     int socktype;
 } n3n_parsed_address_t;
 
+// An optional "udp://" or "tcp://" in front of an address: returns the
+// transports it is for (N3N_TRANSPORT_UDP, _TCP, or _BOTH without one), or
+// -1 for another such prefix; *rest, if rest is not NULL, is after it
+int n3n_transport_prefix (const char *spec, const char **rest);
+
 int parse_address_spec (
     n3n_parsed_address_t *out,
     const n3n_sock_str_t spec_in

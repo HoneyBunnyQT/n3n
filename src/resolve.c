@@ -376,6 +376,16 @@ int resolve_create_thread (n3n_resolve_parameter_t **param, struct peer_info *sn
                         sn->hostname
                     );
             }
+            // and its address for TCP, if it has one of its own
+            if(sn->tcp_hostname) {
+                entry = (struct n3n_resolve_ip_sock*)calloc(1, sizeof(struct n3n_resolve_ip_sock));
+                if(entry) {
+                    entry->org_ip = sn->tcp_hostname;
+                    entry->org_sock = &(sn->tcp_sock);
+                    memcpy(&(entry->sock), &(sn->tcp_sock), sizeof(n3n_sock_t));
+                    HASH_ADD(hh, (*param)->list, org_ip, sizeof(char*), entry);
+                }
+            }
         }
         (*param)->check_interval = N2N_RESOLVE_CHECK_INTERVAL;
     } else {
@@ -559,10 +569,56 @@ void resolve_log_hostnames (int listnr) {
     traceEvent(TRACE_INFO, "number of hostnames in this list: %i\n", count);
 }
 
+// Whether two supernode addresses name the same host, whatever their
+// "udp://" or "tcp://" and port
+static bool same_host (const char *a, const char *b) {
+
+    n3n_parsed_address_t pa, pb;
+
+    if(!a || !b || parse_address_spec(&pa, a) || parse_address_spec(&pb, b)) {
+        return false;
+    }
+    return !strcmp(pa.host, pb.host);
+}
+
+
+// A supernode for UDP of the same host as s, which a "tcp://" entry s gives
+// its TCP address to
+static struct peer_info *sn_for_tcp_of (struct peer_info *list, const char *s) {
+
+    struct peer_info *peer, *tmp;
+
+    HASH_ITER(hh, list, peer, tmp) {
+        if((!peer->transports || (peer->transports & N3N_TRANSPORT_UDP)) && same_host(peer->hostname, s)) {
+            return peer;
+        }
+    }
+    return NULL;
+}
+
+
+// A supernode that has only a "tcp://" entry of the same host as s, which
+// becomes the TCP address of the supernode s is for UDP
+static struct peer_info *sn_tcp_only_of (struct peer_info *list, const char *s) {
+
+    struct peer_info *peer, *tmp;
+
+    HASH_ITER(hh, list, peer, tmp) {
+        if((peer->transports == N3N_TRANSPORT_TCP) && same_host(peer->hostname, s)) {
+            return peer;
+        }
+    }
+    return NULL;
+}
+
+
 /*
  * Convert one string into an added peer_info
  * (This is a refactor of n3n_peer_add_by_hostname)
  *
+ * A "udp://" or "tcp://" in front makes the supernode one for that transport
+ * only - unless another entry names the same host for the other one: then
+ * it is one supernode, reached over TCP at the address of the "tcp://" one.
  */
 static int resolve_hostnames_str_to_peer_info_one (
     struct peer_info **list,
@@ -579,6 +635,12 @@ static int resolve_hostnames_str_to_peer_info_one (
         return 1;
     }
 
+    int transports = n3n_transport_prefix(s, NULL);
+    if(transports < 0) {
+        traceEvent(TRACE_WARNING, "supernode %s: only udp:// or tcp:// can come before the address", s);
+        return 1;
+    }
+
     // WARN: this function could block for a name resolution
     int rv = supernode2sock(&sock, s);
 
@@ -586,6 +648,32 @@ static int resolve_hostnames_str_to_peer_info_one (
         /* just warn, since it might resolve next time */
         traceEvent(TRACE_WARNING, "could not resolve %s", s);
         return 1;
+    }
+
+    struct peer_info *other;
+    if(transports == N3N_TRANSPORT_TCP) {
+        other = sn_for_tcp_of(*list, s);
+        if(other) {
+            if(!other->tcp_hostname) {
+                other->tcp_hostname = strdup(s);
+            }
+            other->tcp_sock = sock;
+            other->transports = 0;
+            traceEvent(TRACE_INFO, "supernode %s over TCP at %s", peer_info_get_hostname(other), s);
+            return 0;
+        }
+    } else {
+        other = sn_tcp_only_of(*list, s);
+        if(other) {
+            // that one is this supernode's TCP address
+            other->tcp_hostname = other->hostname;
+            other->tcp_sock = other->sock;
+            other->hostname = strdup(s);
+            other->sock = sock;
+            other->transports = 0;
+            traceEvent(TRACE_INFO, "supernode %s over TCP at %s", s, other->tcp_hostname);
+            return 0;
+        }
     }
 
     int skip_add = SN_ADD;
@@ -618,6 +706,16 @@ static int resolve_hostnames_str_to_peer_info_one (
     // This is the only peer_info where the default purgeable=true
     // is overwritten
     peer->purgeable = false;
+
+    // 0 for both; two entries for one address make it for both of theirs
+    if(skip_add == SN_ADD_ADDED) {
+        peer->transports = transports;
+    } else if(peer->transports) {
+        peer->transports |= transports;
+    }
+    if(peer->transports == N3N_TRANSPORT_BOTH) {
+        peer->transports = 0;
+    }
 
     // TODO: say something different if we updated an existing record?
     traceEvent(

@@ -1004,7 +1004,7 @@ int n3n_edge_main (int argc, char* argv[]) {
     }
 
     eee->client.last_sup = 0; /* if it wasn't zero yet */
-    eee->client.curr_sn = eee->client.supernodes; // Duplicates action taken by edge_init()
+    eee->client.curr_sn = supernode_first(eee); // Duplicates action taken by edge_init()
     supernode_connect(eee);
     while(runlevel < 5) {
         if(!keep_on_running) {
@@ -1031,7 +1031,7 @@ int n3n_edge_main (int argc, char* argv[]) {
                 // first answer
                 eee->client.sn_pong = 0;
                 sn_selection_sort(&(eee->client.supernodes));
-                eee->client.curr_sn = eee->client.supernodes;
+                eee->client.curr_sn = supernode_first(eee);
                 supernode_connect(eee);
                 traceEvent(
                     TRACE_NORMAL,
@@ -1093,10 +1093,7 @@ int n3n_edge_main (int argc, char* argv[]) {
                 // it should be from curr_sn, but we can't determine definitely here, so no details to output
             } else if(last_action <= (now - BOOTSTRAP_TIMEOUT)) {
                 // timeout, so try next supernode
-                if(eee->client.curr_sn->hh.next)
-                    eee->client.curr_sn = eee->client.curr_sn->hh.next;
-                else
-                    eee->client.curr_sn = eee->client.supernodes;
+                eee->client.curr_sn = supernode_next(eee, eee->client.curr_sn);
                 supernode_connect(eee);
                 transport_note_giveup(eee, now);
                 runlevel--;

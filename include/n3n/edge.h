@@ -35,5 +35,9 @@ void send_register_super (struct n3n_runtime_data *eee);
 void send_query_peer (struct n3n_runtime_data *eee, const n2n_mac_t dst_mac);
 void supernode_connect (struct n3n_runtime_data *eee);
 bool transport_note_giveup (struct n3n_runtime_data *eee, time_t now);
+// the first supernode that can be reached over the transport in use, and the
+// next one after sn (round the list)
+struct peer_info *supernode_first (struct n3n_runtime_data *eee);
+struct peer_info *supernode_next (struct n3n_runtime_data *eee, struct peer_info *sn);
 
 #endif

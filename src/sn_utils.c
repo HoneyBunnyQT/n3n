@@ -299,7 +299,7 @@ void sn_init_conf_defaults (struct n3n_runtime_data *sss, char *sessionname) {
 
     // room for a full list and its end, as n3n_conf_sockaddr makes it:
     // open_bind_sockets() may add to it
-    conf->bind_address = calloc(N3N_BIND_MAX + 1, sizeof(*conf->sas));
+    conf->bind_address = calloc(N3N_BIND_MAX + 1, sizeof(*conf->bind_address));
 
 #ifdef _WIN32
     // Cannot rely on having unix domain sockets on windows
@@ -354,10 +354,11 @@ void sn_init_conf_defaults (struct n3n_runtime_data *sss, char *sessionname) {
     sss->conf.relay.sn_mac_addr[0] |= 0x02;    /* Set locally-assigned bit */
 
     // [::] stands for IPv4 too, see open_bind_sockets()
-    struct sockaddr_in6 *sa = (struct sockaddr_in6 *)conf->bind_address;
+    struct sockaddr_in6 *sa = (struct sockaddr_in6 *)&conf->bind_address[0].sa;
     sa->sin6_family = AF_INET6;
     sa->sin6_port = htons(N2N_SN_LPORT_DEFAULT);
     sa->sin6_addr = in6addr_any;
+    conf->bind_address[0].transports = N3N_TRANSPORT_BOTH;
 
     sss->sock = -1;
     conf->relay.sn_min_auto_ip_net.net_addr = inet_addr(N2N_SN_MIN_AUTO_IP_NET_DEFAULT);
@@ -391,6 +392,12 @@ void sn_init (struct n3n_runtime_data *sss) {
     // Show the user what has been configured
     resolve_log_hostnames(RESOLVE_LIST_SUPERNODE);
     resolve_log_hostnames(RESOLVE_LIST_PEER);
+    const char *peer_str;
+    for(int i = 0; (peer_str = resolve_hostnames_str_get(RESOLVE_LIST_PEER, i)); i++) {
+        if(n3n_transport_prefix(peer_str, NULL) == N3N_TRANSPORT_TCP) {
+            traceEvent(TRACE_WARNING, "supernode.peer %s: supernodes talk to each other over UDP only", peer_str);
+        }
+    }
 
     // TODO:
     // - is sss->client.supernodes even used in supernode?
@@ -426,12 +433,15 @@ void sn_term (struct n3n_runtime_data *sss) {
     // sock and tcp_sock are the first of these
     for(int i = 1; i < sss->bind_count; i++) {
         closesocket(sss->bind_sock[i]);
-#ifdef N2N_HAVE_TCP
-        shutdown(sss->bind_tcp[i], SHUT_RDWR);
-        closesocket(sss->bind_tcp[i]);
-#endif
     }
     sss->bind_count = 0;
+#ifdef N2N_HAVE_TCP
+    for(int i = 1; i < sss->bind_tcp_count; i++) {
+        shutdown(sss->bind_tcp[i], SHUT_RDWR);
+        closesocket(sss->bind_tcp[i]);
+    }
+#endif
+    sss->bind_tcp_count = 0;
 
     if(sss->sock >= 0) {
         closesocket(sss->sock);
@@ -1012,10 +1022,12 @@ int run_sn_loop (struct n3n_runtime_data *sss) {
     // connections on them
     for(int i = 0; i < sss->bind_count; i++) {
         mainloop_register_fd(sss->bind_sock[i], fd_info_proto_v3udp);
-#ifdef N2N_HAVE_TCP
-        mainloop_register_fd(sss->bind_tcp[i], fd_info_proto_listen_v3tcp);
-#endif
     }
+#ifdef N2N_HAVE_TCP
+    for(int i = 0; i < sss->bind_tcp_count; i++) {
+        mainloop_register_fd(sss->bind_tcp[i], fd_info_proto_listen_v3tcp);
+    }
+#endif
 
     // more threads for PACKETs, if asked for; from here on the main thread
     // holds their lock whenever it is awake

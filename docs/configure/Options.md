@@ -90,7 +90,7 @@ Only on a supernode, in a [community NAME] section: the range (eg: 10.1.2.0/24) 
 
 Add a supernode.
 
-Multiple supernodes can be specified, each one as a host:port string, which will be resolved if needed. If no port is provided, a default of 7654 will be used. The supernodes of all community sections form one list.
+Multiple supernodes can be specified, each one as a host:port string, which will be resolved if needed. If no port is provided, a default of 7654 will be used. The supernodes of all community sections form one list. With udp:// or tcp:// in front, a supernode is used over that transport only; given both ways with the same host (eg: sn.example.org:7654 and tcp://sn.example.org:443), it is one supernode, reached over TCP at the tcp:// address (see connection.tcp_fallback). With tcp:// on every one, the edge uses TCP only, as with connect_tcp.
 
 ### community.user
 
@@ -122,7 +122,7 @@ Default: `true`
 
 Bind to local addresses and/or ports.
 
-One or more [address]:[port], separated by spaces, to bind. This can be useful to allow home router's port forwarding to point to a known port, or when coupled with a local ip address can help with restriction to a certain LAN or WiFi interface. By default, the daemon binds to any interface. The supernode answers edges on each of the addresses alike, each one a UDP and a TCP socket of its own: an edge gets its answers from the socket it came in on. [::], which a port alone stands for, and the supernode's default [::]:7654, are for IPv4 too, on a socket of its own at 0.0.0.0 on the same port, unless an IPv4 address with that port is given. A second port lets edges see whether their NAT maps each destination to a port of its own. The edge opens its UDP sockets the same way, by default [::]:0 - a socket for IPv6 and one for IPv4, on ports the system picks - and sends from the first socket of the destination's family. Over TCP (connect_tcp) it binds its one connection to the first address of the supernode's family.
+One or more [address]:[port], separated by spaces, to bind. This can be useful to allow home router's port forwarding to point to a known port, or when coupled with a local ip address can help with restriction to a certain LAN or WiFi interface. By default, the daemon binds to any interface. The supernode answers edges on each of the addresses alike, each one a UDP and a TCP socket of its own: an edge gets its answers from the socket it came in on. [::], which a port alone stands for, and the supernode's default [::]:7654, are for IPv4 too, on a socket of its own at 0.0.0.0 on the same port, unless an IPv4 address with that port is given. A second port lets edges see whether their NAT maps each destination to a port of its own. The edge opens its UDP sockets the same way, by default [::]:0 - a socket for IPv6 and one for IPv4, on ports the system picks - and sends from the first socket of the destination's family. Over TCP (connect_tcp) it binds its one connection to the first address of the supernode's family. An address with udp:// or tcp:// in front (eg: udp://[::]:7654 tcp://[::]:443) is for that transport only; the supernode needs one for UDP.
 
 ### connection.connect_tcp
 

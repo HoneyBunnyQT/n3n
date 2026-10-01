@@ -101,7 +101,13 @@ static struct n3n_conf_option section_community[] = {
         .help = "Multiple supernodes can be specified, each one as a "
                 "host:port string, which will be resolved if needed. "
                 "If no port is provided, a default of 7654 will be used.  "
-                "The supernodes of all community sections form one list.",
+                "The supernodes of all community sections form one list.  "
+                "With udp:// or tcp:// in front, a supernode is used over "
+                "that transport only; given both ways with the same host "
+                "(eg: sn.example.org:7654 and tcp://sn.example.org:443), it "
+                "is one supernode, reached over TCP at the tcp:// address "
+                "(see connection.tcp_fallback).  With tcp:// on every one, "
+                "the edge uses TCP only, as with connect_tcp.",
     },
     {
         .name = "user",
@@ -167,7 +173,9 @@ static struct n3n_conf_option section_connection[] = {
                 "picks - and sends from the first socket of the "
                 "destination's family. Over TCP (connect_tcp) it binds its "
                 "one connection to the first address of the supernode's "
-                "family.",
+                "family. An address with udp:// or tcp:// in front (eg: "
+                "udp://[::]:7654 tcp://[::]:443) is for that transport "
+                "only; the supernode needs one for UDP.",
     },
     {
         .name = "connect_tcp",

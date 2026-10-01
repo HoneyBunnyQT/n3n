@@ -543,7 +543,7 @@ int n3n_supernode_main (int argc, char * argv[]) {
 
     traceEvent(TRACE_DEBUG, "traceLevel is %d", getTraceLevel());
 
-    if(n3n_open_bind_sockets(&sss_node, (struct sockaddr_storage *)sss_node.conf.bind_address, true, TRACE_WARNING) != 0) {
+    if(n3n_open_bind_sockets(&sss_node, sss_node.conf.bind_address, true, TRACE_WARNING) != 0) {
         exit(-2);
     }
 

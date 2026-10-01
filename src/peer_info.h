@@ -44,6 +44,9 @@ struct peer_info {
     uint64_t selection_criterion;
     uint64_t last_valid_time_stamp;
     char *hostname;
+    uint8_t transports;     /* a supernode: N3N_TRANSPORT_*, 0 for both */
+    char *tcp_hostname;     /* a supernode: its "tcp://" entry, if TCP is elsewhere than sock */
+    n3n_sock_t tcp_sock;    /* where it is reached over TCP then */
     time_t uptime;
     n2n_version_t version;
 

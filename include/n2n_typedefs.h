@@ -431,6 +431,18 @@ typedef struct n2n_trans_op {
 
 /* *************************************************** */
 
+/* The transports an address is for: an address of connection.bind or a
+ * supernode with "udp://" or "tcp://" in front is for that one only */
+#define N3N_TRANSPORT_UDP    1
+#define N3N_TRANSPORT_TCP    2
+#define N3N_TRANSPORT_BOTH   (N3N_TRANSPORT_UDP | N3N_TRANSPORT_TCP)
+
+/* An address of connection.bind */
+struct n3n_bind {
+    struct sockaddr_storage sa;
+    uint8_t transports;                 /* N3N_TRANSPORT_* */
+};
+
 /* How the edge reaches its supernodes and the other edges: the client role */
 struct n3n_conf_client {
     bool local_link;                    /* the supernode is the one of this process, see local_link.h */
@@ -507,10 +519,7 @@ typedef struct n2n_edge_conf {
     // What all roles use: sockets, the management interface, the daemon
     bool pmtu_discovery;                             /**< Enable the Path MTU discovery. */
     uint32_t tos;                                    /** TOS for sent packets */
-    union {
-        struct sockaddr *bind_address;               /**< The address to bind to if provided; the first of an array ended by family 0 */
-        struct sockaddr_storage *sas;
-    };
+    struct n3n_bind *bind_address;                   /**< connection.bind, if given: an array ended by family 0 */
     bool enable_debug_pages;
     uint32_t mgmt_port;     // TODO: ports are actually uint16_t
     uint32_t mgmt_sock_perms;
@@ -759,7 +768,8 @@ struct n3n_runtime_data {
 
     // The sockets of connection.bind, on the supernode and on the edge
     SOCKET bind_sock[N3N_BIND_MAX];                         /* a UDP socket for each address of bind; sock is the first */
-    SOCKET bind_tcp[N3N_BIND_MAX];                          /* on the supernode a TCP one too; tcp_sock is the first */
+    SOCKET bind_tcp[N3N_BIND_MAX];                          /* on the supernode a TCP one for each address of bind for TCP; tcp_sock is the first */
+    int bind_tcp_count;
     int bind_family[N3N_BIND_MAX];                          /* the family each of them was opened with */
     bool bind_v6only[N3N_BIND_MAX];                         /* IPv6 without mapped IPv4 */
     int bind_count;                                         /* 0 for an edge connected over TCP, which has only sock */

@@ -27,5 +27,11 @@ echo "### test: load_dump tests/conf/communities.conf (community parts)"
     | sed -n -e '/^\[community/,/^$/p' -e '/^community_regex/p'
 echo
 
+# udp:// and tcp:// in front of addresses; the same address for both is one
+echo "### test: load_dump tests/conf/transports.conf (bind, supernode)"
+"$BINDIR"/apps/n3n-edge debug config load_dump "$TOPDIR"/tests/conf/transports.conf \
+    | grep -E '^(bind|supernode)='
+echo
+
 docmd "$BINDIR"/apps/n3n-edge tools keygen logan 007
 docmd "$BINDIR"/apps/n3n-edge tools keygen secretFed

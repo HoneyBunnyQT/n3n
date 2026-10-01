@@ -365,10 +365,11 @@ try_uint32:
             return 0;
         }
         case n3n_conf_sockaddr: {
-            // One or more addresses, separated by spaces, into an array that
-            // an entry of family 0 ends; the option points at the first
-            struct sockaddr_storage **val = (struct sockaddr_storage **)valvoid;
-            struct sockaddr_storage *list;
+            // One or more addresses, separated by spaces, each with an
+            // optional "udp://" or "tcp://" in front, into an array that an
+            // entry of family 0 ends; the option points at the first
+            struct n3n_bind **val = (struct n3n_bind **)valvoid;
+            struct n3n_bind *list;
             char *copy, *item, *saveptr = NULL;
             int count = 0;
 
@@ -380,20 +381,34 @@ try_uint32:
                 return -1;
             }
             for(item = strtok_r(copy, " ", &saveptr); item; item = strtok_r(NULL, " ", &saveptr)) {
-                if((count == N3N_BIND_MAX) || (n3n_config_parse_sockaddr(&list[count], item) != 0)) {
+                int transports = n3n_transport_prefix(item, NULL);
+                bool merged = false;
+
+                if((count == N3N_BIND_MAX) || (transports < 0)
+                   || (n3n_config_parse_sockaddr(&list[count].sa, item) != 0)) {
                     free(list);
                     free(copy);
                     return -1;
                 }
-                // the same address twice would share its port with itself
+                list[count].transports = transports;
+                // the same address twice would share its port with itself,
+                // but "udp://" and "tcp://" of one address are that address
                 for(int i = 0; i < count; i++) {
-                    if(!memcmp(&list[i], &list[count], sizeof(*list))) {
+                    if(memcmp(&list[i].sa, &list[count].sa, sizeof(list[i].sa))) {
+                        continue;
+                    }
+                    if(list[i].transports & transports) {
                         free(list);
                         free(copy);
                         return -1;
                     }
+                    list[i].transports |= transports;
+                    memset(&list[count], 0, sizeof(list[count]));
+                    merged = true;
                 }
-                count++;
+                if(!merged) {
+                    count++;
+                }
             }
             free(copy);
             if(!count) {
@@ -704,12 +719,13 @@ static const char * stringify_option (void *conf, struct n3n_conf_option option,
             return buf;
         }
         case n3n_conf_sockaddr: {
-            struct sockaddr_storage **val = (struct sockaddr_storage **)valvoid;
+            struct n3n_bind **val = (struct n3n_bind **)valvoid;
             if(!*val) {
                 return NULL;
             }
             buf[0] = 0;
-            for(struct sockaddr_storage *sas = *val; sas->ss_family; sas++) {
+            for(struct n3n_bind *bind = *val; bind->sa.ss_family; bind++) {
+                struct sockaddr_storage *sas = &bind->sa;
                 ssize_t used = strlen(buf);
                 char *p = buf + used;
                 size_t left = buflen - used;
@@ -718,6 +734,11 @@ static const char * stringify_option (void *conf, struct n3n_conf_option option,
                     snprintf(p, left, " ");
                     p++;
                     left--;
+                }
+                if(bind->transports != N3N_TRANSPORT_BOTH) {
+                    snprintf(p, left, "%s", (bind->transports == N3N_TRANSPORT_UDP) ? "udp://" : "tcp://");
+                    p += 6;
+                    left -= 6;
                 }
                 if(sas->ss_family == AF_INET) {
                     struct sockaddr_in *sa = (struct sockaddr_in *)sas;
@@ -864,7 +885,7 @@ static int option_storagesize (const struct n3n_conf_option option) {
             return sizeof(*val);
         }
         case n3n_conf_sockaddr: {
-            struct sockaddr_in **val = (struct sockaddr_in **)valvoid;
+            struct n3n_bind **val = (struct n3n_bind **)valvoid;
             return sizeof(*val);
         }
         case n3n_conf_n2n_sock_addr: {
