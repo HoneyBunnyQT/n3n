@@ -296,16 +296,12 @@ community_regex = net[0-9]+     # may repeat
 
 ### Old branches on honeybunnyqt/n3n
 
-Branches that are the head of a pull request at n42n/n3n stay (their state
-there cannot be read from here): `chachacha` (#155), `crash` (#158),
+Gone: the pull requests at n42n/n3n from `chachacha` (#155), `crash` (#158),
 `drain` (#157), `pdu-len-check` (#152), `speck-avx512` (#161),
-`trace-level-check` (#153), `twofish` (#154).  `phase-a` (9282d0f) and
-`phase-b` (b2b2e5a) back no pull request and are in `main` (phase-b as an
-ancestor, phase-a's work in reworked commits), so they can go:
-
-```
-git push origin --delete phase-a phase-b
-```
+`trace-level-check` (#153) and `twofish` (#154) are closed, with notes that
+point to where their work is now (`main`, or `fixes` for the length checks
+and the AES burst benchmark), and the branches deleted, as `phase-a` and
+`phase-b` before them.  The fork has `main`, `fixes` and `peer`.
 
 ### Flaky netns scenarios (NAT work)
 
@@ -418,4 +414,15 @@ Take a single commit from another branch:
 
 ```sh
 git cherry-pick <commit>
+```
+
+Clean up branches:
+
+```sh
+git fetch --prune origin        # forget origin/... of branches deleted on GitHub
+git branch -vv                  # local branches; "gone" = deleted on GitHub
+git log --oneline BR --not main fixes peer   # what only BR has (empty: nothing)
+git branch -d BR                # delete, refuses if BR has commits nowhere else
+git branch -D BR                # delete anyway ("not fully merged")
+git reflog | grep BR            # find it again; then: git branch BR <hash>
 ```
