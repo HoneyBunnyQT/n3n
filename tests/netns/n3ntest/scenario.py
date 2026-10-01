@@ -79,7 +79,7 @@ class Site:
 class Scenario:
     def __init__(self, name, desc, a, b, expect, traffic="both",
                  tags=(), conf=None, connect_timeout=None, failover=None,
-                 sn_conf=None, auth=None):
+                 sn_conf=None, auth=None, community_conf=False):
         self.name = name
         self.desc = desc
         self.sites = {"a": a, "b": b}
@@ -92,6 +92,10 @@ class Scenario:
         # community from a community file) or "userpw" (also user/password
         # authentication: the file lists a user for each edge)
         self.auth = auth
+        # With auth: the supernodes have the community, and its users, in
+        # a [community NAME] section of their configuration instead of the
+        # file, and the edges have theirs in such a section too
+        self.community_conf = community_conf
         self.connect_timeout = connect_timeout
         # After the warm-up, kill (SIGKILL) the supernode this site's edge
         # is registered at, and measure once the edges moved to the other
@@ -275,14 +279,19 @@ class Run:
         out = out.strip()
         return out.split()[-1].split("=")[-1]
 
+    def _users(self):
+        """The (name, public key) of the user of each edge"""
+        if self.sc.auth != "userpw":
+            return []
+        return [(sname, self._keygen(sname, PASSWORD))
+                for sname in sorted(self.sc.sites)]
+
     def _community_file(self):
         """The community file of the supernodes, None if they need none"""
-        if not self.sc.auth:
+        if not self.sc.auth or self.sc.community_conf:
             return None
         lines = [COMMUNITY]
-        if self.sc.auth == "userpw":
-            lines += ["* {} {}".format(sname, self._keygen(sname, PASSWORD))
-                      for sname in sorted(self.sc.sites)]
+        lines += ["* {} {}".format(*user) for user in self._users()]
         path = os.path.join(self.workdir, "community.list")
         with open(path, "w") as f:
             f.write("\n".join(lines) + "\n")
@@ -291,6 +300,7 @@ class Run:
     def start_supernodes(self):
         names = sorted(self.supernodes)
         community_file = self._community_file()
+        users = self._users()
         for i, name in enumerate(names, start=1):
             sn = self.supernodes[name]
             peers = [("peer", "{}:{}".format(self.supernodes[o]["ip"],
@@ -307,6 +317,10 @@ class Run:
             if community_file:
                 sections["supernode"].append(
                     ("community_file", community_file))
+            if self.sc.auth and self.sc.community_conf:
+                sections["community " + COMMUNITY] = [
+                    ("header_encryption", True)
+                ] + [("user", "{} {}".format(*user)) for user in users]
             for section, options in self.sc.sn_conf.items():
                 sections.setdefault(section, [])
                 sections[section] = [
@@ -356,8 +370,13 @@ class Run:
         for overrides in (self.sc.conf, site.conf):
             for section, options in overrides.items():
                 conf.setdefault(section, {}).update(options)
+        community = "community"
+        if self.sc.community_conf:
+            # the edge's only community, from a named section
+            community = "community " + conf["community"].pop("name")
+            conf[community] = conf.pop("community")
         sections = {s: list(o.items()) for s, o in conf.items()}
-        sections["community"] += [
+        sections[community] += [
             ("supernode", "{}:{}".format(self.supernodes[sn]["ip"], SN_PORT))
             for sn in site.supernodes
         ]

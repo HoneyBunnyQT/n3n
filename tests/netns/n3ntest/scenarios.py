@@ -145,6 +145,13 @@ SCENARIOS = [
         Site(["hard-range"], supernodes=["sn1"]),
         Site(["hard-range"], supernodes=["sn2"]),
         "relayed", auth="userpw"),
+    Scenario(
+        "userpw-conf",
+        "user/password authentication, the community and its users in "
+        "configuration sections instead of a file",
+        Site(["hard-range"], supernodes=["sn1"]),
+        Site(["hard-range"], supernodes=["sn2"]),
+        "relayed", auth="userpw", community_conf=True, tags=["quick"]),
 ]
 
 BY_NAME = {s.name: s for s in SCENARIOS}

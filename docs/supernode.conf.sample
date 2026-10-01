@@ -19,3 +19,14 @@ bind=7777
 # two options are needed:
 # federation = yoursecret
 # peer = other.node:7777
+
+# The allowed communities can also be listed here instead, or along with
+# the file: a section for each, and the regular expressions in [supernode]
+# (see docs/configure/Communities.md):
+#
+# [community myCommunity]
+# network = 10.77.0.0/24
+# user = logan nHWum+r42k1qDXdIeH-WFKeylK5UyLStRzxofRNAgpG
+#
+# [supernode]
+# community_regex = myCommunity[0-9][0-9]

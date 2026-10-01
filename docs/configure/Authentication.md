@@ -71,6 +71,20 @@ her line can easily be copied from one community section to another. By the
 way, do not forget to provide the `community.list` file to the supernode
 through the `supernode.community_file` option.
 
+The users can also be given in the supernode's configuration file instead, in
+the section of their community, each with a `user` option and without the
+leading `*`:
+
+```
+[community netleo]
+user = logan nHWum+r42k1qDXdIeH-WFKeylK5UyLStRzxofRNAgpG
+user = sister HwHpPrdMft+38tFDDiunUds6927t0+zhCMMkQdJafcC
+```
+
+See [Communities](Communities.md#communities-in-the-configuration-file).
+Changes there need a restart of the supernode, `reload_communities` reads only
+the `community.list` file again.
+
 Current supernode behavior does not limit the simultaneous usage of usernames,
 i.e. one username can be used from several edges at the same time. However, it
 is recommended to use a distinct username and password for each edge or

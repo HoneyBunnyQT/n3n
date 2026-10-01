@@ -93,6 +93,7 @@ router behind a carrier NAT.  The block of hard-range ends at a multiple of
 | header-enc | easy-kept / hard-range, encrypted headers | direct |
 | userpw | as header-enc, with user/password authentication (ChaCha20) | direct |
 | userpw-relayed | hard-range / hard-range, user/password, each edge at its own supernode | relayed, across the federation |
+| userpw-conf | as userpw-relayed, the community and users in `[community NAME]` sections | relayed, across the federation |
 
 An edge connected over TCP does not learn how its NAT maps it, so the NAT
 class of tcp-tcp and tcp-udp is not checked for those edges (`expect_nat` of
@@ -101,6 +102,9 @@ a `Site`).  `sn_conf` of a `Scenario` sets options of the supernodes.
 and user/password authentication (`"userpw"`): the supernodes then get a
 community file, with a user for each edge whose public key comes from
 `n3n-edge tools keygen`, as docs/configure/Authentication.md describes.
+With `community_conf=True` the supernodes have them in a `[community
+nettest]` section with `user` options instead, and the edges their
+community in such a section too.
 
 To keep runs short, the edges use `connection.register_interval=5` and
 `connection.punch_ports=128` (instead of 20 and 16), so guessing through

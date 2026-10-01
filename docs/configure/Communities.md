@@ -43,6 +43,58 @@ communities called "myCommunity" and "yourCommunity", these are fixed-name
 communities.
 
 
+## Communities in the Configuration File
+
+Instead of the community file, or along with it, the communities can be given
+in the supernode's configuration file, one section each, with the name of the
+community after the section name:
+
+```
+[community myCommunity]
+
+[community yourCommunity]
+network = 10.77.0.0/24
+user = logan nHWum+r42k1qDXdIeH-WFKeylK5UyLStRzxofRNAgpG
+
+[supernode]
+community_regex = myCommunity[0-9][0-9]
+```
+
+- `network` is the address range the auto ip address service hands out
+  addresses from, as the range after a name in the community file.  Without
+  it, the supernode chooses one between `supernode.auto_ip_min` and
+  `supernode.auto_ip_max`.
+- `user` allows a user, as the `* <username> <public key>` lines of the
+  community file do, only without the `*`; see
+  [Authentication](Authentication.md).  It may be given more than once.
+- `community_regex` in the `[supernode]` section allows the communities
+  matching a regular expression, see below.  It may be given more than once.
+- `header_encryption = true` marks the community as one with
+  [header encryption](#header-encryption) from the start, instead of when the
+  first packet shows it.
+
+A section name can only have letters and digits, and in the community name
+after it also `_ - .` (but not at its start).  For any other community name, a
+`name` option in the section gives the actual name:
+
+```
+[community lab]
+name = my lab!
+```
+
+The supernode joins the communities of the sections with those of the
+community file.  If a community is in both, the section wins and the
+supernode logs so; the file only gives what the section leaves out, its
+address range if the section has no `network`, its users if the section has
+no `user`.  Issuing the `reload_communities` command to
+the management port reads the community file again, but not the
+configuration file.
+
+An edge joins exactly one community: the one of `[community]`, or of its only
+`[community NAME]` section.  More than one community makes the edge stop with
+an error.
+
+
 ## Somewhat Flexible Community Names
 
 If you want to allow all community names from a certain name range, e.g. from "myCommunity00" to "myCommunity99", the `community.list` file (or whatever you name it) could look as follows:

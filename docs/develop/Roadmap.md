@@ -69,6 +69,10 @@ tests and `make lint` pass after each.
       community lookup and header decryption, replay check, giving a
       `struct pdu_ctx`.  The edge's single community becomes a community
       table with one entry
+  - [x] 5a: header decryption in one place (`pdu_header_decrypt()`)
+  - [x] 5c: communities in the config, `[community NAME]` sections (see
+        Scratchpad); `struct n3n_conf_community`, `conf.communities`
+  - [ ] 5b: `struct pdu_ctx` for both roles, together with step 6
 - [ ] Step 6: dispatch through a table per message type with a handler per
       role instead of the two big `switch` statements
 - [ ] Step 7: split `edge_utils.c` / `sn_utils.c` by role and by concern:
@@ -85,7 +89,10 @@ tests and `make lint` pass after each.
 
 ### Next
 
-- [ ] Communities configured the same way for both roles (see Scratchpad)
+- [x] Communities configured the same way for both roles (see Scratchpad)
+- [ ] `-O` on the command line for an instance (`-O "community home.key=x"`)
+- [ ] The edge reading the community file (the first entry), for a peer
+      whose roles share one config
 - [ ] Unit tests for the parts that become shared (send layer, `pdu_in`)
 - [ ] Integration test: a supernode with a TAP device next to plain edges
 - [ ] Run the netns NAT scenarios in CI (`make test.netns`)
@@ -201,9 +208,9 @@ file becomes optional:
 - The communities are the union of the sections and the file.
 - A community in both: the section's options win, the file fills in what the
   section does not set (network, users); a line in the log says so.
-- Regular expressions in both: a list of rules in the config (e.g.
-  `supernode.allow = ntop[0-1][0-9]`, repeatable) as well as in the file.
-  They are no community of their own but say which names are welcome.
+- Regular expressions in both: a list of rules in the config as well as in
+  the file.  They are no community of their own but say which names are
+  welcome.
 - A reload (SIGHUP) re-reads the file; the sections stay as they were
   started.
 - A peer with only the `tap` role takes exactly one community: one section,
@@ -211,6 +218,31 @@ file becomes optional:
   choice.  (Several TAP devices, one per community, could come later.)
 - The `community.*` options of today stay as the short form of a single
   section, so existing edge configs keep working.
+
+Done (2026-10-01), see docs/configure/Communities.md:
+
+```
+[community home]                # "home" is the community's name ...
+name = my home!                 # ... unless this says otherwise
+network = 10.77.0.0/24          # supernode: the auto ip range
+user = alice <public key>       # supernode: may repeat, no leading '*'
+header_encryption = true
+
+[supernode]
+community_regex = net[0-9]+     # may repeat
+```
+
+- The parser keeps the word after the section name as the instance name;
+  a section registered with `n3n_config_register_section_instanced()` gets
+  its options relative to what its `instance()` callback returns.
+  `[community]` is `conf.community`, `[community NAME]` an entry of the
+  uthash table `conf.communities`.  `n3n_conf_strlist` is the option type
+  for repeatable options.
+- The supernode list stays one global list, whichever section adds to it.
+- The edge does not read the community file (yet); its one community is
+  `[community]` or the only `[community NAME]`
+  (`edge_conf_one_community()`).
+- netns scenario `userpw-conf` runs with sections on both sides.
 
 ### Flaky netns scenarios (NAT work)
 
