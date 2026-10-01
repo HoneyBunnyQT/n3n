@@ -23,6 +23,9 @@ link, one thread is plenty.
 
 If any of these is missing, a warning is printed and one thread is used.
 
+A supernode with an edge of its own (`supernode.tap`) can have threads too;
+the PACKETs to and from its own edge are handled by the main thread.
+
 ## Configuration
 
 The option is the same for edges and supernodes.  In the config file:

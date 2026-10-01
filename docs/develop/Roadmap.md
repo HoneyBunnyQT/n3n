@@ -113,6 +113,8 @@ tests and `make lint` pass after each.
 - [ ] netns scenarios where a supernode fails over with user/password
       authentication (and more failover cases).  Once step 9 is done: ask
       whether to stay on 9 for a while with this, or move on more quickly
+- [ ] `n3n-edge help transform`: list the ciphers and compressions built in,
+      with the implementation of each (says "Not implemented" so far)
 - [ ] `-O` on the command line for an instance (`-O "community home.key=x"`)
 - [ ] The edge reading the community file (the first entry), for a peer
       whose roles share one config

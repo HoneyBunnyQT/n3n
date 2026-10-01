@@ -15,8 +15,9 @@ or
 n3nctl edges
 ```
 
-(The supernode still uses the legacy default of TCP/5645, but it will soon
-switch to using the unix domain socket as its default)
+The supernode listens the same way, at `/run/n3n/supernode/mgmt` for the
+default session name: `n3nctl -s supernode edges`.  A TCP port is opened as
+well with the `management.port` option.
 
 In addition to the main JsonRPC interface, there are a small number of simple
 HTTP pages.  These are not intended for complex data, being mainly for
@@ -72,6 +73,40 @@ or
 n3nctl help
 ```
 
+## The Methods
+
+Every method answers a JsonRPC request; `n3nctl` passes any method on,
+`n3nctl <method>`, and prints the answer as a table, or as JSON with
+`--raw`.  It has short names for some: `edges`, `supernodes` and `mac`.
+Those marked with a key need the password (see Authentication below):
+`n3nctl -k <password> stop`.
+
+| method | edge | supernode | what |
+|--------|------|-----------|------|
+| `help` | yes | yes | the methods, each with a short description |
+| `help.events` | yes | yes | the event topics, see Events Stream |
+| `get_info` | yes | yes | version, build date, `is_edge`/`is_supernode`, the edge's MAC and address, and how its NAT maps it (`nat4`, `nat6`: `unknown`, `easy (port kept)`, `easy (port changed)`, `hard (ports 40100-40180)`, `several addresses`) |
+| `get_edges` | yes | yes | the edge: its peers; the supernode: the edges registered at it, with community, address, MAC, `mode` (`p2p`, `pSp` or `sn`), `nat`, `sockaddr`, `last_seen` |
+| `get_supernodes` | yes | yes | the edge: its supernodes, `current` the one it is registered at, `selection` the criterion; the supernode: the other supernodes of the federation |
+| `get_communities` | yes | yes | the edge: its community; the supernode: its communities with their address range of the auto ip service, the federation shown as `-/-` |
+| `get_packetstats` | yes | yes | counters of received and sent packets by kind: `transop`, `p2p`, `super`, `super_broadcast`, `tuntap_error`, `multicast_drop`, and on a supernode `sn_fwd`, `sn_broadcast`, `sn_reg` (with `nak`), `sn_errors` |
+| `get_timestamps` | yes | yes | when things last happened, as Unix times: `start_time`, `last_register_req`, `last_rx_p2p`, `last_rx_super`, `last_sn_fwd`, `last_sn_reg`, `last_sweep` |
+| `get_mac` | yes | | the MAC addresses the edge has seen behind its peers (with routing and bridging) |
+| `get_verbose` | yes | yes | the log level |
+| `set_verbose` (key) | yes | yes | set the log level: `n3nctl -k n3n set_verbose 3` |
+| `reload_communities` (key) | | yes | read the community file again, see [Communities](../configure/Communities.md) |
+| `stop` (key) | yes | yes | stop the daemon |
+| `post.test` | yes | yes | send an event on the topic `test` |
+
+The edge of a supernode with `supernode.tap` has no management interface of
+its own yet: it shows in the supernode's `get_edges`, at `127.0.0.1:0`.
+
+Each daemon also has metrics in the Prometheus text format at `/metrics`,
+for example
+```
+curl --unix-socket /run/n3n/edge/mgmt http://x/metrics
+```
+
 ## Events Stream
 
 An event stream is available at the "/events/$topic" URL.  Making a request
@@ -96,8 +131,9 @@ affect the availability of the n3n networking.  In this case, the daemon
 will check for a standard HTTP Authorization header in the request.
 
 The authentication is a simple password that the client must provide. It
-defaults to 'n3n' and can either be set with the config option
-`management.password`
+defaults to 'n3n' and can be set with the config option
+`management.password`.  Change it wherever other users of the machine, or
+anyone who can reach `management.port`, should not stop the daemon.
 
 ## Pagination
 

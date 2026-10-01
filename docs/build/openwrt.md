@@ -2,6 +2,8 @@ SPDX-License-Identifier: GPL-3.0-only
 SPDX-FileCopyrightText: Copyright 2020 n2n contributors
 SPDX-FileCopyrightText: Copyright Hamish Coleman
 
+# Build for OpenWrt
+
 ## Prerequisites
 
 This instructions explain how to build an OpenWRT .ipk package for n3n.
@@ -63,8 +65,8 @@ an automated version of the above steps.
 
 ## Configuration
 
-The edge node can be started with `/etc/init.d/edge start`.
+The edge node can be started with `/etc/init.d/n3n-edge start`.
 Its configuration file is `/etc/n3n/edge.conf`.
 
-The supernode can be started with `/etc/init.d/supernode start`.
+The supernode can be started with `/etc/init.d/n3n-supernode start`.
 Its configuration file is `/etc/n3n/supernode.conf`.

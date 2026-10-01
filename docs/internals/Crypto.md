@@ -35,8 +35,8 @@ acceleration from optionally compiling with openSSL 1.1 support.
 The`-k <key>` command line parameter supplies the key. As even non-privileged
 users might get to see the command line parameters (try `ps -Af | grep edge`),
 the key can also be supplied through the `N3N_KEY` environment variable: `sudo
-N3N_KEY=mysecretpass edge start -c mynetwork -a 192.168.100.1 -l
-supernode.ntop.org:7777`.
+N3N_KEY=mysecretpass n3n-edge start -c mynetwork -a 192.168.100.1 -l
+supernode.n3n.dev:7654`, or better in the config file.
 
 Providing a key (with a community.key option) without specifying any cipher
 (with a community.cipher` option) will default to AES encryption.
@@ -60,8 +60,10 @@ mileage may vary. Cipher speed's can be compared running the
 
 AES also prepends a random value to the plaintext. Its size is adjustable by changing the `AES_PREAMBLE_SIZE` definition found in `src/transform_aes.c`. It defaults to AES_BLOCK_SIZE (== 16). The AES scheme uses a CBC/CTS scheme which can send out plaintext-length ciphertexts as long as they are one block or more in length.
 
-Apart from n3n's plain C implementation, Intel's AES-NI is supported – again,
-please have a look at the [Building document](../build/index.md). In case
+Apart from n3n's plain C implementation, Intel's AES-NI and the AES
+instructions of ARMv8 (the Cryptography Extension, with `-march=armv8-a+crypto`
+or a `-mcpu` that has it) are supported – again, please have a look at the
+[Build time Configuration](../build/BuildConfig.md). In case
 of openSSL support its `evp_*` interface gets used which also offers hardware
 acceleration where available (SSE, AES-NI, …). It however is slower than the
 following stream ciphers because the CBC mode cannot compete with the
@@ -73,7 +75,9 @@ This cipher's different key-sizes are triggered by the length of the user-provid
 
 ChaCha20 was the first stream cipher supported by n3n.
 
-In addition to the basic C implementation, an SSE version is offered. If compiled with openSSL support, ChaCha20 is provided via the `evp_*` interface. It is not used together with the Poly1305 message tag from the same author though. Whole packet's checksum will be handled in the header (see below).
+In addition to the basic C implementation, SSE2, AVX2, AVX512 and ARM NEON
+versions are offered (NEON on aarch64 always, on 32 bit ARM with
+`-mfpu=neon`). If compiled with openSSL support, ChaCha20 is provided via the `evp_*` interface. It is not used together with the Poly1305 message tag from the same author though. Whole packet's checksum will be handled in the header (see below).
 
 The random full 128-bit IV is transmitted in plain.
 
@@ -83,7 +87,10 @@ ChaCha20 usually performs faster than AES-CTS.
 
 SPECK is recommended by the NSA for offical use in case AES implementation is not feasible due to system constraints (performance, size, …). The block cipher is used in CTR mode making it a stream cipher. The random full 128-bit IV is transmitted in plain.
 
-On modern Intel CPUs, SPECK performs even faster than openSSL's ChaCha20 as it takes advantage of SSE4, AVX2, or AVX512 if available. On Raspberry's ARM CPU, it is second place behind ChaCha20 and before Twofish.
+On modern Intel CPUs, SPECK performs even faster than openSSL's ChaCha20 as it takes advantage of SSE4, AVX2, or AVX512 if available. On Raspberry's ARM CPU, it is second place behind ChaCha20 and before Twofish.  A NEON version is there for ARM, but only built with `-DSPECK_ARM_NEON`: on many ARM cores the plain C version is as fast, see [Build time Configuration](../build/BuildConfig.md).
+
+`n3n-edge test benchmark` shows how fast each cipher is in the build at
+hand.
 
 ### Random Numbers
 

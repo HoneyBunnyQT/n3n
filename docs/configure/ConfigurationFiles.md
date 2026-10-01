@@ -26,7 +26,7 @@ If you created the following `/etc/n3n/testing.conf` file:
 cipher = Speck
 key = mysecretpass
 name = mynetwork
-supernode = supernode.ntop.org:7777
+supernode = supernode.n3n.dev:7654
 
 [daemon]
 background = false
@@ -59,3 +59,41 @@ these with:
 ```
 n3n-edge help options
 ```
+
+All the options, with their defaults, are in [Configuration
+Options](Options.md), generated from what the program says about them -
+`n3n-edge help config` shows the same.
+
+## Where the Settings Come From
+
+On start, the daemon takes its settings in this order, each one overriding
+what came before:
+
+1. the defaults; for the supernode, `N3N_FEDERATION` in the environment
+   sets the default of `supernode.federation`
+2. the config file of the session name, `/etc/n3n/<sessionname>.conf`
+   (or a path given instead of a session name, starting with `/` or `./`)
+3. the environment: `N3N_KEY` (also sets the cipher to AES), `N3N_COMMUNITY`,
+   `N3N_PASSWORD`
+4. the command line, `-O section.option=value` and the shortcuts
+
+To see the result:
+
+```
+n3n-edge debug config load_dump mysession
+```
+
+## Sections with a Name
+
+Some sections can be there more than once, each with a name after the
+section's own: `[community home]`.  A supernode takes each such
+`[community NAME]` as a community it allows, see
+[Communities](Communities.md#communities-in-the-configuration-file); an edge
+takes its one community from `[community]` or from its only named section.
+
+## Options Given More Than Once
+
+Some options make a list: each line adds to it, for example
+`community.supernode`, `supernode.peer`, `supernode.community_regex` and
+`community.user`.  `connection.bind` takes several addresses in one line,
+separated by spaces.

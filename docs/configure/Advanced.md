@@ -94,3 +94,16 @@ what kind of NAT it is behind, and what `connection.bind` and
 An edge or a supernode with a lot of traffic can handle its packets on
 several threads at once with the `daemon.threads` option.  Details can be
 found in the [Threads document](../advanced/Threads.md).
+
+
+## A Supernode That Is an Edge Too
+
+A supernode can join one community with a TAP device of its own
+(`supernode.tap`), so that the machine it runs on needs no separate edge.
+See [Setting up a Custom Supernode](Supernode.md#a-supernode-that-is-an-edge-too).
+
+
+## All the Options
+
+Every option, with its default and description, is listed in
+[Configuration Options](Options.md).

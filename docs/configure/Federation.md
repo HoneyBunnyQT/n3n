@@ -62,3 +62,43 @@ Note, that workload distribution among supernodes might not be so fair then.
 Furthermore, `connection.supernode_selection=mac` would switch to a MAC address
 based selection strategy choosing the supernode active with the lowest MAC
 address.
+
+## Example
+
+Two supernodes, at 198.51.100.1 and 198.51.100.2, each with this config, but
+for the `peer` pointing at the other one:
+
+```
+[connection]
+bind = 7654
+
+[supernode]
+federation = mySecretFederation
+peer = 198.51.100.2:7654
+```
+
+and the edges given both:
+
+```
+[community]
+name = mynetwork
+key = mysecretpass
+supernode = 198.51.100.1:7654
+supernode = 198.51.100.2:7654
+```
+
+Edges at either supernode reach each other: what one supernode gets for an
+edge registered at the other, it passes on.  With user/password
+authentication, every supernode needs the same users (the same community
+file or `[community NAME]` sections), and the edges the public key of the
+federation (`auth.pubkey`, from `n3n-edge tools keygen <federation name>`).
+
+## When a Supernode Goes Away
+
+An edge whose supernode stops answering moves to another one of its list or
+of the federation, within a few registration intervals
+(`connection.register_interval`, 20 seconds by default), and authenticates
+there again.  Peers that reach each other directly carry on meanwhile.  The
+netns tests `failover-*` and `sn-tap-failover` check this, also with
+encrypted headers, user/password authentication and TCP, see
+[Testing behind NATs](../develop/netns_testing.md).

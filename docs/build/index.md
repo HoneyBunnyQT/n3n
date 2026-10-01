@@ -34,3 +34,4 @@ The following pages provide more in-depth information:
 - [Build on BSD](bsd.md)
 - [Build on Windows](windows.md)
 - [Cross compile on Linux](linux_crosscompile.md)
+- [Build for OpenWrt](openwrt.md)

@@ -26,6 +26,16 @@ This file describes the internals of n3n. Read this before starting to modify
 the code. Because coding examples may be present in this document it is licensed
 under the GPL rather than FDL.
 
+Parts of it date from n2n and describe that history.  Since then, some of it
+has changed:
+
+- Two peers behind NATs that map each destination to a port of their own can
+  often still reach each other directly: the edges tell the supernode what
+  kind of NAT they are behind and guess each other's ports (see
+  [NAT Traversal](../advanced/NatTraversal.md)).
+- Edge and supernode are one program, with the code split by role (see
+  [Source Layout](../develop/SourceLayout.md)).
+
 ## Symmetric NAT
 
 Symmetric NAT is a form of firewall NAT in which an UDP packets are only passed
@@ -53,7 +63,8 @@ NAT. For example, if A is behind symmetric NAT and B is behind asymmetric NAT
    - A->B packets are P2P (will have the B public IP as destination)
    - B->A packets must go through the supernode
 
-If both the peers are behind symmetric NAT, then no P2P communication is possible.
+If both the peers are behind symmetric NAT, then no P2P communication is possible
+with this alone; the port guessing of NAT Traversal can still connect them.
 
 ## ARP Cache
 

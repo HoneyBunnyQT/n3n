@@ -24,11 +24,17 @@ sections where the _binaries_ file contains the Windows binaries in its
 
 ### I want to setup a supernode that only I can use. Perhaps even password protected?
 
-Please think of the community-name as password and start the supernode with the
-`supernode.community_file` options pointing at a simple text file containing a
-single line with the name of your secret community. It will be the only
-community allowed. Only edge nodes from that community can join (`-c <community
-name>` at the edge).
+Please think of the community-name as password and give the supernode just
+that one community, either as a section of its config file:
+
+```
+[community mySecretCommunity]
+```
+
+or with the `supernode.community_file` option pointing at a simple text file
+containing a single line with the name of your secret community. It will be
+the only community allowed. Only edge nodes from that community can join
+(`-c <community name>` at the edge).  See [Communities](configure/Communities.md).
 
 If you additionally want to prevent open transmission of your secret community
 name via the network, **all** edge nodes should use
@@ -63,11 +69,17 @@ supernodes can form a Federation to increase network resilience.
 
 ### Can a supernode listen on multiple ports?
 
-The supernode itself can only listen on one port. However, your firewall might be able to map additional UDP ports to the supernode's regular port:
+Yes: `connection.bind` takes several addresses, separated by spaces, for
+example `bind = [::]:7654 [::]:443`.  The supernode answers edges on each of
+them alike, on UDP and TCP.  A second port also lets the edges see how their
+NAT maps them, see [NAT Traversal](advanced/NatTraversal.md).
 
-`sudo iptables -t nat -A PREROUTING -i <network interface name> -d <supernode's ip address> -p udp --dport <additional port number> -j REDIRECT --to-ports <regular supernode port number>`
 
-This command line can be put down as additional `ExecStartPost=` line (without `sudo`) in the supernode's `.service` file which can hold several such lines if required.
+### Can the machine of the supernode be part of the network too?
+
+Yes, without a separate edge: with `supernode.tap = true` the supernode joins
+`community.name` with a TAP device of its own, see [Setting up a Custom
+Supernode](configure/Supernode.md#a-supernode-that-is-an-edge-too).
 
 
 ### How to handle the error message "process_udp dropped a packet with seemingly encrypted header for which no matching community which uses encrypted headers was found"?
@@ -102,6 +114,21 @@ option.
 Alternatively, the edge can be started with a `management.port` config option
 to specify a TCP port, and any web browser can be used to inspect the status.
 (from localhost only)
+
+
+### UDP is blocked where I am. Can the edge still connect?
+
+Yes, if the supernode is reachable over TCP: with `connection.connect_tcp =
+true` the edge talks to its supernode over one TCP connection, and all its
+traffic goes through the supernode then.  Every supernode also listens on
+TCP on the ports of its `connection.bind`; one on port 443 gets through most
+firewalls that only let web traffic out.
+
+
+### Does n3n work together with n2n?
+
+The protocol is that of n2n 3.x, so n3n edges and supernodes work together
+with those of n2n 3.0 and later; n2n 2.x and older use other protocols.
 
 
 ### The edge repeatedly throws an "Authentication error. MAC or IP address already in use or not released yet by supernode" message. What is wrong?

@@ -47,13 +47,20 @@ version 1.3.1 which uses a protocol from 2008 and has not been compatible with
 the stable releases of n2n for many years - thus will definitely not
 interoperate with n3n)
 
-- [License](LICENSE.md)
-- [Quick Start Guides](quick_start)
-- [Building from Source](build/index.md)
-- [Contributing](Contributing.md)
+# Documentation
 
-# See Also
+- [Quick Start Guides](quick_start/Config.md): a first configuration, and
+  [on Debian or Ubuntu](quick_start/Debian.md)
+- [Configuration](configure/index.md): edges, supernodes, communities, all
+  [options](configure/Options.md)
+- [Advanced Topics](advanced/index.md): NAT traversal, threads, routing,
+  bridging, filtering
+- [Building from Source](build/index.md), with the options of `./configure`
+- [Tools](Tools.md) and [Scripts](Scripts.md), like `n3nctl`
+- [Internals](internals/index.md): the management API, cryptography, design
+- [Developing](develop/index.md): coding style, tests, the roadmap
+- Answers to [frequently asked questions](FAQ.md) (FAQ)
+- [Contributing](Contributing.md) and the [License](LICENSE.md)
 
-- [Configure](configure/index.md)
-- Answers to [frequently asked questions](FAQ.md) (FAQ).
-- Details about the internals in the [Hacking guide](internals/Hacking.md).
+The man pages `n3n(8)`, `n3n-edge(8)`, `n3n-supernode(8)` and `n3n(7)` come
+with the package.

@@ -14,9 +14,50 @@ nav:
   - Quick Start Guides:
       - Config: quick_start/Config.md
       - Debian: quick_start/Debian.md
+  - Configuration:
+      - Overview: configure/index.md
+      - Configuration Files: configure/ConfigurationFiles.md
+      - Options: configure/Options.md
+      - Communities: configure/Communities.md
+      - Supernode: configure/Supernode.md
+      - Federation: configure/Federation.md
+      - Authentication: configure/Authentication.md
+      - TAP Device: configure/TapConfiguration.md
+      - Advanced: configure/Advanced.md
+      - Security: configure/Security.md
+  - Advanced Topics:
+      - Overview: advanced/index.md
+      - NAT Traversal: advanced/NatTraversal.md
+      - Threads: advanced/Threads.md
+      - Routing: advanced/Routing.md
+      - Bridging: advanced/Bridging.md
+      - Traffic Restrictions: advanced/TrafficRestrictions.md
+  - Tools: Tools.md
+  - Scripts: Scripts.md
+  - FAQ: FAQ.md
+  - Internals:
+      - Overview: internals/index.md
+      - Management API: internals/ManagementAPI.md
+      - Cryptography: internals/Crypto.md
+      - Hacking: internals/Hacking.md
   - Development:
       - Contributing: Contributing.md
-      - Build From Source: build/index.md
+      - Overview: develop/index.md
+      - Where the Code Lives: develop/SourceLayout.md
+      - Coding Style: develop/linting.md
+      - Testing: develop/testing.md
+      - Testing behind NATs: develop/netns_testing.md
       - Roadmap: develop/Roadmap.md
+      - Release Process: ReleaseProcess.md
+      - Build From Source:
+          - Overview: build/index.md
+          - Branches: build/Overview.md
+          - Build Configuration: build/BuildConfig.md
+          - Linux: build/linux.md
+          - Cross Compiling: build/linux_crosscompile.md
+          - macOS: build/macos.md
+          - BSD: build/bsd.md
+          - Windows: build/windows.md
+          - OpenWrt: build/openwrt.md
   - Links:
       - Bug Tracker: 'https://github.com/n42n/n3n/issues'

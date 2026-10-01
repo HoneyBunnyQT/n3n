@@ -16,7 +16,9 @@ All tools can be found in the `tools` directory.
 This tool is deprecated as the function is now built-in to the n3n-edge with
 the `n3n-edge test benchmark` command.
 
-It is not built by default.
+It is not built by default, and no longer builds as it stands; use
+`n3n-edge test benchmark` (or `n3n edge test benchmark`), which also runs
+in several threads at once with `test.threads`.
 
 This C tool has n3n's basic transforms (the ciphers, compression, hash)
 crunch a test packet and outputs the measured throughput. You might observe
@@ -81,6 +83,13 @@ when on bug hunt.
 
 Example:
 - `tools/tests-transform`
+
+The unit tests are listed in `tests/tests_units.list` and run with
+`make test.units`; among them `tests-aes` and `tests-cc20` (the published test
+vectors of AES and ChaCha20, for whichever implementation is built),
+`tests-wire-fuzz` (the decoders against every truncation of every PDU) and
+`tests-regex` (the regular expressions of the community rules).  See
+[Testing](develop/testing.md).
 
 ### `n3n-decode`
 
