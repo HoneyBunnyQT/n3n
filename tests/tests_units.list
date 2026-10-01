@@ -9,3 +9,5 @@ tests-elliptic
 tests-peers
 tests-transform
 tests-wire
+tests-wire-fuzz
+tests-wire-numsn
