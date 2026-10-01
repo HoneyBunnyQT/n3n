@@ -13,6 +13,9 @@ contributions.
   [more info](develop/linting.md))
 - Ensure that the tests pass (Use `make test` to check, [more
   info](develop/testing.md))
+- If you change the help text of an option, regenerate the options reference
+  with `make options` (`make options.check` tells whether it is up to date)
+- Keep the documentation in `docs/` and the man pages current with your change
 - Ensure that the licence and copyright of any imported code is marked
 - Ensure that each commit has a commit message that clearly explains "why" the
   commit was made (Note, you should not explain "what" as that should be clear

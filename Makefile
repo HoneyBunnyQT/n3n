@@ -262,6 +262,7 @@ LINT_CCODE=\
 # TODO: change either the files or the linter to remove these failures
 LINT_EXCLUDE=include/uthash.h
 
+MANS+=docs/n3n.8.gz
 MANS+=docs/n3n-edge.8.gz
 MANS+=docs/n3n-supernode.8.gz
 MANS+=docs/n3n.7.gz
@@ -355,8 +356,8 @@ test.netns: apps		# needs apps
 test.netns.full: apps	# needs apps
 	$(NETNS_RUN) $(NETNS_ARGS)
 
-.PHONY: lint lint.python lint.ccode lint.shell lint.yaml
-lint: lint.python lint.ccode lint.shell lint.yaml
+.PHONY: lint lint.python lint.ccode lint.shell lint.yaml lint.man
+lint: lint.python lint.ccode lint.shell lint.yaml lint.man
 
 lint.python:
 	flake8 \
@@ -365,6 +366,7 @@ lint.python:
 		scripts/n3nctl \
 		tests/netns/run.py \
 		tests/netns/n3ntest/ \
+		scripts/gen_options_md.py \
 
 lint.ccode:
 	scripts/indent.sh -e '$(LINT_EXCLUDE)' $(LINT_CCODE)
@@ -374,6 +376,23 @@ lint.shell:
 
 lint.yaml:
 	yamllint .
+
+# the man pages, where groff is there to check them
+lint.man:
+	@if command -v groff >/dev/null; then \
+	    for f in docs/*.[78]; do groff -man -ww -z $$f || exit 1; done; \
+	else echo "no groff, the man pages are not checked"; fi
+
+# The reference of all options, from what the program says about them; it
+# needs the apps.  "make options.check" fails if it is not up to date.
+.PHONY: options options.check
+options: apps
+	python3 scripts/gen_options_md.py apps/n3n-edge apps/n3n-supernode \
+	    > docs/configure/Options.md
+
+options.check: apps
+	python3 scripts/gen_options_md.py apps/n3n-edge apps/n3n-supernode \
+	    | diff -u docs/configure/Options.md -
 
 # To generate coverage information, run configure with
 # CFLAGS="-fprofile-arcs -ftest-coverage" LDFLAGS="--coverage"
@@ -438,7 +457,7 @@ distclean:
 	rm -f tests/*.out src/*.indent src/*.unc-backup*
 	rm -rf autom4te.cache/
 	rm -f config.mak config.log config.status configure include/config.h include/config.h.in
-	rm -f n3n-edge.8.gz n3n.7.gz n3n-supernode.8.gz
+	rm -f n3n.8.gz n3n-edge.8.gz n3n.7.gz n3n-supernode.8.gz
 	rm -f packages/debian/config.log packages/debian/config.status
 	rm -rf packages/debian/autom4te.cache/
 	rm -f packages/rpm/config.log packages/rpm/config.status
@@ -472,6 +491,7 @@ install.systemd:
 .PHONY: install.doc
 install: $(MANS)
 	$(INSTALL) -d $(MAN7DIR) $(MAN8DIR) $(CONFIG_DOCDIR)
+	$(INSTALL_DOC) docs/n3n.8.gz $(MAN8DIR)/
 	$(INSTALL_DOC) docs/n3n-edge.8.gz $(MAN8DIR)/
 	$(INSTALL_DOC) docs/n3n-supernode.8.gz $(MAN8DIR)/
 	$(INSTALL_DOC) docs/n3n.7.gz $(MAN7DIR)/

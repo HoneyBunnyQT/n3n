@@ -30,6 +30,10 @@ jobs:
           make -j4 all
           make test
 
+      - name: Check that the options reference is up to date
+        run: |
+          make options.check
+
       - if: ${{ failure() }}
         name: Upload tests output
         uses: actions/upload-artifact@v6

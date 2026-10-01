@@ -1,6 +1,26 @@
 SPDX-License-Identifier: GPL-3.0-only
 SPDX-FileCopyrightText: Copyright Hamish Coleman
 
+# Testing
+
+## What there is, and where it runs
+
+| what | how | in CI |
+|------|-----|-------|
+| lint: C style (uncrustify 0.77.1), python, shell, yaml, man pages | `make lint` | yes |
+| unit tests: the programs `tools/tests-*`, against `tests/*.expected` | `make test.units` | yes |
+| builtin tests: commands of the program itself, see below | `make test.builtin` | yes |
+| integration tests: supernodes and edges on this host, checked with `n3nctl` | `make test.integration` | yes |
+| NAT tests: edges and supernodes in network namespaces behind emulated NATs, see [Testing behind NATs](netns_testing.md) | `make test.netns` (the quick ones), `make test.netns.full` (needs root) | no |
+| other CPUs: big endian, 32 bit, ARM, under qemu-user | `scripts/test_qemu.sh`, see below | yes |
+| an edge-only build (`./configure --disable-relay`) | the unit and builtin tests | yes |
+| the options reference is up to date | `make options.check` | yes |
+
+`make test` runs the first four and the quick NAT tests (which skip
+themselves without root).  A change that touches the protocol, NAT
+traversal, the threads or the supernode should also pass
+`make test.netns.full`, with and without `./configure --enable-pthread`.
+
 # Built in Testing and Benchmarking framework
 
 There is a built in framework that is compiled into the code.  This allows the

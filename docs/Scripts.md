@@ -25,6 +25,15 @@ daemons.
 Example:
 - `scripts/n3nctl --help`
 - `scripts/n3nctl help`
+- `scripts/n3nctl -s supernode edges`
+
+The methods it can call are described in the
+[Management API](internals/ManagementAPI.md).
+
+### `n3n-convert_old_conf`
+
+Converts the edge config file of n2n, with command line style options, to
+the INI style of n3n.  Not installed by the packages: it is only needed once.
 
 ## Build and Development scripts
 
@@ -39,6 +48,12 @@ the [Build documentation](build/index.md)
 This shell script is a wrapper for the `uncrustify` C code style checker
 which checks or applies a set of rules to the code.  It is used during
 the automated lint checks.
+
+### `gen_options_md.py`
+
+Writes [the reference of all options](configure/Options.md) from what the
+built program says about them: `make options` runs it, `make options.check` tells
+whether the reference is up to date.
 
 ### `version.sh`
 
@@ -95,10 +110,18 @@ Each test is a program, searched for in several locations, including the
 Each test is run with its output being sent to `*.out` files in the `listdir`
 and compared with the expected output.
 
-### `scripts/test_integration_supernode.sh`
+### `test_builtin_edge.sh`, `test_integration_*.sh`
 
-This starts a supernode and runs an integration test on the Json API using
-the `n3nctl` command.
+The builtin tests run commands of the program itself (`test config
+roundtrip`, a config with community sections, `tools keygen`); the
+integration tests start supernodes and edges on this host and check them
+through the management API with `n3nctl`, also over TCP and with the web
+UI.
+
+### `test_qemu.sh`
+
+Runs the unit and builtin tests of a cross build under qemu-user, for big
+endian and other CPUs, see [Testing](develop/testing.md).
 
 ## Example or Documentation scripts
 
