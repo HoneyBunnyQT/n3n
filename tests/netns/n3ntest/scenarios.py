@@ -63,7 +63,8 @@ SCENARIOS = [
         "the hard side behind a home router and a carrier NAT, its extra "
         "REGISTERs with a TTL to get through both",
         Site(["easy-kept"], conf={"connection": {"punch_ports": 16}}),
-        Site(["hard-range", "easy-kept"], conf={"connection": {"punch_ttl": 3}}),
+        Site(["hard-range", "easy-kept"],
+             conf={"connection": {"punch_ttl": 3}}),
         "direct"),
     Scenario(
         "hard-hard",
@@ -108,6 +109,26 @@ SCENARIOS = [
         Site(["easy-kept"], lan="192.168.1.0/24"),
         Site(["easy-changed"], lan="192.168.1.0/24"),
         "direct"),
+    Scenario(
+        "tcp-tcp",
+        "both edges reach the supernode over TCP only, which relays",
+        Site(["easy-kept"], conf={"connection": {"connect_tcp": True}},
+             expect_nat=".*"),
+        Site(["easy-changed"], conf={"connection": {"connect_tcp": True}},
+             expect_nat=".*"),
+        "relayed", tags=["quick"]),
+    Scenario(
+        "tcp-udp",
+        "one edge over TCP, the other over UDP, relayed between the two",
+        Site(["easy-kept"], conf={"connection": {"connect_tcp": True}},
+             expect_nat=".*"),
+        Site(["easy-changed"]),
+        "relayed"),
+    Scenario(
+        "hard-hard-threads",
+        "relayed by supernodes that handle PACKETs on several threads",
+        Site(["hard-range"]), Site(["hard-range"]),
+        "relayed", sn_conf={"daemon": {"threads": 3}}),
 ]
 
 BY_NAME = {s.name: s for s in SCENARIOS}

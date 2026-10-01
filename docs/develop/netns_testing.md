@@ -87,6 +87,13 @@ router behind a carrier NAT.  The block of hard-range ends at a multiple of
 | failover-direct | easy-kept / easy-changed, a's supernode killed | direct |
 | cgnat-both | easy-changed+easy-kept on both sides | direct |
 | same-lan | both sites 192.168.1.0/24, the edges at the same address | direct |
+| tcp-tcp | easy-kept / easy-changed, both edges with connect_tcp | relayed, over TCP both ways |
+| tcp-udp | as tcp-tcp, only a with connect_tcp | relayed, between TCP and UDP |
+| hard-hard-threads | as hard-hard, the supernodes with daemon.threads=3 | relayed |
+
+An edge connected over TCP does not learn how its NAT maps it, so the NAT
+class of tcp-tcp and tcp-udp is not checked for those edges (`expect_nat` of
+a `Site`).  `sn_conf` of a `Scenario` sets options of the supernodes.
 
 To keep runs short, the edges use `connection.register_interval=5` and
 `connection.punch_ports=128` (instead of 20 and 16), so guessing through

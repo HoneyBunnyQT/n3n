@@ -64,16 +64,20 @@ class Site:
     """An edge, and the NAT routers in front of it, outermost first"""
 
     def __init__(self, nat=(), lan=None, supernodes=("sn1", "sn2"),
-                 conf=None):
+                 conf=None, expect_nat=None):
         self.nat = list(nat)
         self.lan = lan                  # subnet of the innermost LAN
         self.supernodes = list(supernodes)
         self.conf = conf or {}          # {section: {option: value}}
+        # the NAT class the edge should see, as a regular expression; by
+        # default the one its NAT routers give, see nat.expected_class()
+        self.expect_nat = expect_nat
 
 
 class Scenario:
     def __init__(self, name, desc, a, b, expect, traffic="both",
-                 tags=(), conf=None, connect_timeout=None, failover=None):
+                 tags=(), conf=None, connect_timeout=None, failover=None,
+                 sn_conf=None):
         self.name = name
         self.desc = desc
         self.sites = {"a": a, "b": b}
@@ -81,6 +85,7 @@ class Scenario:
         self.traffic = traffic          # "both", "a2b" or "b2a"
         self.tags = set(tags)
         self.conf = conf or {}          # for all edges
+        self.sn_conf = sn_conf or {}    # for all supernodes
         self.connect_timeout = connect_timeout
         # After the warm-up, kill (SIGKILL) the supernode this site's edge
         # is registered at, and measure once the edges moved to the other
@@ -248,7 +253,8 @@ class Run:
             "index": i,
             "overlay": OVERLAY_NET.format(i + 1),
             "mac": "02:00:00:99:00:{:02x}".format(i + 1),
-            "expect_nat": nat.expected_class(layers),
+            "expect_nat": (site.expect_nat if site.expect_nat is not None
+                           else nat.expected_class(layers)),
         }
 
     # 2. The daemons
@@ -271,6 +277,11 @@ class Run:
                 "daemon": [("background", False)],
                 "logging": [("verbose", self.st.verbose)],
             }
+            for section, options in self.sc.sn_conf.items():
+                sections.setdefault(section, [])
+                sections[section] = [
+                    (o, v) for o, v in sections[section] if o not in options
+                ] + list(options.items())
             d = Supernode(self.lab, name, sn["ns"], self._session(name),
                           self.st.sn_bin, sections, wrap=self.st.wrap)
             d.start()
