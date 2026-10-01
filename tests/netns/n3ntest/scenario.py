@@ -597,6 +597,12 @@ class Run:
             return self.check("failover", False,
                               "edge {} is at no known supernode ({!r})"
                               .format(site, at))
+        hosted = [s for s, e in self.edges.items()
+                  if e.get("on_supernode") == victim]
+        if hosted:
+            return self.check("failover", False,
+                              "edge {} is at {}, which is the edge {} itself"
+                              .format(site, victim, hosted[0]))
         self.supernodes[victim]["daemon"].proc.stop(sig=signal.SIGKILL)
         self.killed.add(victim)
         ip = self.supernodes[victim]["ip"] + ":"
@@ -606,6 +612,8 @@ class Run:
             if not self.check_alive_quiet():
                 return "dead"
             for e in self.edges.values():
+                if "daemon" not in e:
+                    continue
                 now = e["daemon"].current_supernode() or ip
                 if now.startswith(ip) or not e["daemon"].registered():
                     return None
@@ -613,7 +621,8 @@ class Run:
         ok = wait_for(moved, 60 + 4 * self.st.register_interval,
                       interval=0.5) == "ok"
         took = round(time.monotonic() - t, 1)
-        where = {s: e["daemon"].current_supernode()
+        where = {s: (e["daemon"].current_supernode() if "daemon" in e
+                     else e["registered_at"])
                  for s, e in self.edges.items()}
         self.result["failover"] = {"killed": victim, "seconds": took,
                                    "registered_at": where}

@@ -85,6 +85,10 @@ router behind a carrier NAT.  The block of hard-range ends at a multiple of
 | several | several / easy-kept | relayed |
 | failover-relayed | hard-range / hard-range, a's supernode killed | relayed, through the other one |
 | failover-direct | easy-kept / easy-changed, a's supernode killed | direct |
+| failover-userpw | as failover-relayed, with user/password authentication | relayed, through the other one |
+| failover-userpw-direct | as failover-direct, with user/password authentication | direct |
+| failover-header-enc | as failover-relayed, with encrypted headers | relayed, through the other one |
+| failover-tcp | easy-kept with connect_tcp / easy-changed, a's supernode killed | relayed, a over TCP to the other one |
 | cgnat-both | easy-changed+easy-kept on both sides | direct |
 | same-lan | both sites 192.168.1.0/24, the edges at the same address | direct |
 | tcp-tcp | easy-kept / easy-changed, both edges with connect_tcp | relayed, over TCP both ways |
@@ -98,6 +102,7 @@ router behind a carrier NAT.  The block of hard-range ends at a multiple of
 | sn-tap | hard-range / the TAP device of sn2 (`supernode.tap`), the edge at sn2 | relayed |
 | sn-tap-fed | easy-kept at sn1 / the TAP device of sn2 | relayed, across the federation |
 | sn-tap-userpw | as sn-tap-fed, with user/password authentication | relayed, across the federation |
+| sn-tap-failover | easy-kept at sn1 (`supernode_selection=mac`) / the TAP device of sn2, sn1 killed | relayed, a moves to sn2 |
 
 An edge connected over TCP does not learn how its NAT maps it, so the NAT
 class of tcp-tcp and tcp-udp is not checked for those edges (`expect_nat` of

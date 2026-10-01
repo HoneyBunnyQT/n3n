@@ -98,6 +98,30 @@ SCENARIOS = [
         Site(["easy-kept"]), Site(["easy-changed"]),
         "direct", failover="a", tags=["quick"]),
     Scenario(
+        "failover-userpw",
+        "as failover-relayed, with user/password authentication: the "
+        "edges authenticate again at the other supernode",
+        Site(["hard-range"]), Site(["hard-range"]),
+        "relayed", failover="a", auth="userpw"),
+    Scenario(
+        "failover-userpw-direct",
+        "as failover-direct, with user/password authentication",
+        Site(["easy-kept"]), Site(["easy-changed"]),
+        "direct", failover="a", auth="userpw"),
+    Scenario(
+        "failover-header-enc",
+        "as failover-relayed, with encrypted headers",
+        Site(["hard-range"]), Site(["hard-range"]),
+        "relayed", failover="a", auth="header"),
+    Scenario(
+        "failover-tcp",
+        "an edge over TCP, its supernode gets killed: it connects to the "
+        "other one",
+        Site(["easy-kept"], conf={"connection": {"connect_tcp": True}},
+             expect_nat=".*"),
+        Site(["easy-changed"]),
+        "relayed", failover="a"),
+    Scenario(
         "cgnat-both",
         "home router behind a carrier NAT on both sides",
         Site(["easy-changed", "easy-kept"]),
@@ -178,6 +202,14 @@ SCENARIOS = [
         Site(["easy-kept"], supernodes=["sn1"]),
         Site(on_supernode="sn2"),
         "relayed", auth="userpw"),
+    Scenario(
+        "sn-tap-failover",
+        "as sn-tap-fed, the edge's supernode gets killed: it moves to the "
+        "supernode that is the other edge",
+        Site(["easy-kept"], supernodes=["sn1", "sn2"],
+             conf={"connection": {"supernode_selection": "mac"}}),
+        Site(on_supernode="sn2"),
+        "relayed", failover="a"),
 ]
 
 BY_NAME = {s.name: s for s in SCENARIOS}
