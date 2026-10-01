@@ -90,7 +90,14 @@ shows the hint of a peer it does not reach directly yet as `nat` in
 | hard, range up to 4096 ports | easy or unknown | the same, the peer guesses |
 | any | hard, wider range | through the supernode |
 | hard | hard | through the supernode |
-| any | several addresses | through the supernode |
+| any | several addresses | through the supernode, mostly (see below) |
+
+An edge with several addresses still gets through directly where the
+supernode it is registered at happens to see it at the address it also
+reaches the peer from - with one uplink towards that supernode and the
+peers, say, and another towards a second supernode.  Which supernode the
+edge is registered at can change, and with it whether the peers get
+through.
 
 Behind a hard NAT, the peer's REGISTERs to the edge's public port leave from
 a public port of their own, one the edge has not sent to, so the edge's NAT
