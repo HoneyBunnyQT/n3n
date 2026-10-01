@@ -375,6 +375,7 @@ int load_allowed_sn_community (struct n3n_runtime_data *sss) {
     // remove all regular expressions for allowed communities
     HASH_ITER(hh, sss->relay.rules, re, tmp_re) {
         HASH_DEL(sss->relay.rules, re);
+        free(re->rule);
         free(re);
     }
 
