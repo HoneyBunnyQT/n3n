@@ -65,16 +65,22 @@ tests and `make lint` pass after each.
       structs rather than pointers: the same order, no allocation and no
       NULL checks; a role that is off leaves its part zero.  The community
       settings of the config wait for the community table (step 5)
-- [ ] Step 5: one front end for received PDUs (`pdu_in`): length check,
+- [x] Step 5: one front end for received PDUs (`pdu_in`): length check,
       community lookup and header decryption, replay check, giving a
       `struct pdu_ctx`.  The edge's single community becomes a community
       table with one entry
   - [x] 5a: header decryption in one place (`pdu_header_decrypt()`)
   - [x] 5c: communities in the config, `[community NAME]` sections (see
         Scratchpad); `struct n3n_conf_community`, `conf.communities`
-  - [ ] 5b: `struct pdu_ctx` for both roles, together with step 6
-- [ ] Step 6: dispatch through a table per message type with a handler per
-      role instead of the two big `switch` statements
+  - [x] 5b: `struct pdu_ctx` (`pdu_in.h`) for both roles, also what a
+        packet thread hands to the main thread
+  - [ ] Later: the steps before the dispatch (decode the common header,
+        static key check, supernode lookup, TTL) are still one function per
+        role, `process_pdu()` and `process_pdu_body()`; the handlers still
+        copy the fields of the `pdu_ctx` into locals of the old names
+- [x] Step 6: dispatch through a table per message type with a handler per
+      role instead of the two big `switch` statements: `edge_pdu_handlers`,
+      `sn_pdu_handlers`, `pdu_dispatch()`
 - [ ] Step 7: split `edge_utils.c` / `sn_utils.c` by role and by concern:
       core (`loop`, `sock`, `pdu_in`, `peers`) and `role_tap`,
       `role_client`, `role_relay`, `role_federate`
@@ -243,6 +249,19 @@ community_regex = net[0-9]+     # may repeat
   `[community]` or the only `[community NAME]`
   (`edge_conf_one_community()`).
 - netns scenario `userpw-conf` runs with sections on both sides.
+
+### Old branches on honeybunnyqt/n3n
+
+Branches that are the head of a pull request at n42n/n3n stay (their state
+there cannot be read from here): `chachacha` (#155), `crash` (#158),
+`drain` (#157), `pdu-len-check` (#152), `speck-avx512` (#161),
+`trace-level-check` (#153), `twofish` (#154).  `phase-a` (9282d0f) and
+`phase-b` (b2b2e5a) back no pull request and are in `main` (phase-b as an
+ancestor, phase-a's work in reworked commits), so they can go:
+
+```
+git push origin --delete phase-a phase-b
+```
 
 ### Flaky netns scenarios (NAT work)
 
