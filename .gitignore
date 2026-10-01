@@ -24,6 +24,7 @@ __pycache__
 
 # Files generated while running tests
 tests/*.out
+tests/netns/out/
 
 # Files generated while running coverage reports
 *.gcno

@@ -308,8 +308,8 @@ $(info CC is: $(CC) $(CFLAGS) $(CPPFLAGS) -c -o $$@ $$<)
 %.h : %
 	libs/connslot/file2strbufc $< $(basename $(notdir $<)) >$@
 
-.PHONY: test test.units test.integration
-test: test.builtin test.units test.integration
+.PHONY: test test.units test.integration test.netns test.netns.full
+test: test.builtin test.units test.integration test.netns
 
 test.units: tools		# needs tools
 	scripts/test_harness.sh tests/tests_units.list
@@ -320,6 +320,22 @@ test.integration: apps	# needs apps
 test.builtin: apps		# needs apps
 	scripts/test_harness.sh tests/tests_builtin.list
 
+# Edges and supernodes in network namespaces behind NATs of several kinds,
+# see docs/develop/netns_testing.md.  This needs root, so it runs through
+# sudo unless make already runs as root, and skips if root, iproute2, nft
+# or TUN are not to be had.  "make test" runs the scenarios tagged quick,
+# "make test.netns.full" all of them.  NETNS_ARGS passes more options,
+# e.g. NETNS_ARGS="-v3 easy-hard"
+NETNS_SUDO?=$(shell [ "$$(id -u)" = 0 ] || echo sudo)
+NETNS_RUN=$(NETNS_SUDO) python3 tests/netns/run.py --skip-missing -q
+NETNS_ARGS?=
+
+test.netns: apps		# needs apps
+	$(NETNS_RUN) $(if $(NETNS_ARGS),$(NETNS_ARGS),@quick)
+
+test.netns.full: apps	# needs apps
+	$(NETNS_RUN) $(NETNS_ARGS)
+
 .PHONY: lint lint.python lint.ccode lint.shell lint.yaml
 lint: lint.python lint.ccode lint.shell lint.yaml
 
@@ -328,6 +344,8 @@ lint.python:
 		scripts/benchmark2graphdata.py \
 		scripts/n3n-convert_old_conf \
 		scripts/n3nctl \
+		tests/netns/run.py \
+		tests/netns/n3ntest/ \
 
 lint.ccode:
 	scripts/indent.sh -e '$(LINT_EXCLUDE)' $(LINT_CCODE)
@@ -392,6 +410,7 @@ iwyu.out:
 clean: clean.cov
 	rm -rf $(SUBDIR_LIBS) $(MANS) $(COVERAGEDIR)/ *.dSYM *~
 	rm -f tests/*.out
+	rm -rf tests/netns/out
 	rm -f $(CLEAN_FILES)
 	for dir in $(SUBDIR_CLEAN); do $(MAKE) -C $$dir clean; done
 

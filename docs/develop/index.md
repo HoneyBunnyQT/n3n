@@ -8,4 +8,5 @@ documents with useful information.
 
 - [Coding style and linting rules](linting.md)
 - [Test and benchmark framework](testing.md)
+- [Testing edges and supernodes behind NATs](netns_testing.md)
 - [Old test framework](testing_legacy.md)
