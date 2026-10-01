@@ -23,6 +23,7 @@ TESTS+=tests-aes
 TESTS+=tests-cc20
 TESTS+=tests-wire-fuzz
 TESTS+=tests-wire-numsn
+TESTS+=tests-regex
 
 .PHONY: all clean install
 all: $(TOOLS) $(TESTS)
