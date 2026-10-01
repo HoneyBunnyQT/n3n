@@ -63,7 +63,8 @@ SCENARIOS = [
         "the hard side behind a home router and a carrier NAT, its extra "
         "REGISTERs with a TTL to get through both",
         Site(["easy-kept"], conf={"connection": {"punch_ports": 16}}),
-        Site(["hard-range", "easy-kept"], conf={"connection": {"punch_ttl": 3}}),
+        Site(["hard-range", "easy-kept"],
+             conf={"connection": {"punch_ttl": 3}}),
         "direct"),
     Scenario(
         "hard-hard",
