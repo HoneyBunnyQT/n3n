@@ -4196,6 +4196,19 @@ void edge_read_proto3_tcp (struct n3n_runtime_data *eee,
 
     // tcp gets handed a pre filled pktbuf
 
+    if(!pktbuf) {
+        // the connection is gone, and the mainloop closed it already
+        if(sock != eee->sock) {
+            // not the one to the current supernode
+            return;
+        }
+        traceEvent(TRACE_WARNING, "tcp connection to the supernode closed");
+        eee->sock = -1;
+        supernode_disconnect(eee);
+        eee->sn_wait = 1;
+        return;
+    }
+
     // zero contents means an error
     if(pktbuf_len <= 0) {
         traceEvent(TRACE_ERROR, "tcp conn read error %i", pktbuf_len);

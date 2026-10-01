@@ -27,6 +27,7 @@ enum __attribute__((__packed__)) fd_info_proto {
     fd_info_proto_v3tcp,
     fd_info_proto_http,
     fd_info_proto_wakeup,       // only wakes the main loop, see edge_threads.c
+    fd_info_proto_listen_v3tcp, // accepts v3tcp connections (supernode)
 };
 
 // Place debug info from the slots into the strbuf
@@ -44,6 +45,9 @@ int mainloop_runonce (struct n3n_runtime_data *);
 // the slot of the fd, or -1 if there is no free one
 int mainloop_register_fd (int, enum fd_info_proto);
 void mainloop_unregister_fd (int);
+
+// Close a socket and, if it is registered, its connection, and unregister it
+void mainloop_close_fd (int);
 
 
 #endif

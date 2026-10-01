@@ -10,6 +10,7 @@
 #include <n2n_wire.h>   // for fill_n3nsock
 #include <n3n/ethernet.h> // for for n2n_mac_t
 #include <n3n/logging.h> // for traceEvent
+#include <n3n/mainloop.h> // for mainloop_close_fd
 #include <n3n/metrics.h> // for traceEvent
 #include <sn_selection.h>   // for sn_selection_criterion_default
 #include <stdbool.h>
@@ -174,7 +175,7 @@ size_t purge_peer_list (struct peer_info **peer_list,
                         HASH_DEL(*tcp_connections, conn);
                         free(conn);
                         shutdown(scan->socket_fd, SHUT_RDWR);
-                        closesocket(scan->socket_fd);
+                        mainloop_close_fd(scan->socket_fd);
                     }
                 }
             }

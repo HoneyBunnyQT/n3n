@@ -24,6 +24,7 @@
 #include <n3n/ethernet.h>       // for is_null_mac
 #include <n3n/initfuncs.h>      // for n3n_deinitfuncs
 #include <n3n/logging.h>        // for traceEvent
+#include <n3n/mainloop.h>       // for mainloop_register_fd, mainloop_close_fd, ...
 #include <n3n/pktbuf.h>         // for n3n_pktbuf_zero, n3n_pktbuf_getbufptr, ...
 #include <n3n/random.h>         // for n3n_rand, n3n_rand_sqr, memrnd
 #include <n3n/resolve.h>        // for RESOLVE_LIST_*
@@ -42,10 +43,9 @@
 #include "counter.h"            // for COUNTER_INC, SHARED_LOAD, SHARED_STORE
 #include "crypto/speck.h"       // for speck_128_encrypt, speck_context_t
 #include "edge_threads.h"       // for edge_threads_post_pdu, edge_threads_sock, ...
-#include "sock.h"               // for bind_entry_of_sock, sendto_logged, ...
 #include "header_encryption.h"  // for packet_header_encrypt, packet_header_...
 #include "management.h"         // for process_mgmt
-#include "minmax.h"                  // for MIN, MAX
+#include "minmax.h"             // for MIN, MAX
 #include "n2n.h"                // for sn_community, n3n_runtime_data
 #include "n2n_define.h"
 #include "n2n_regex.h"          // for re_matchp, re_compile
@@ -56,6 +56,8 @@
 #include "portable_endian.h"    // for be16toh, htobe16
 #include "resolve.h"            // for resolve_create_thread, resolve_cancel...
 #include "sn_selection.h"       // for sn_selection_criterion_gather_data
+#include "sn_utils.h"
+#include "sock.h"               // for bind_entry_of_sock, sendto_logged, ...
 #include "stats.h"              // for STATS_INC
 #include "thread_local.h"       // for n3n_thread_slot
 #include "uthash.h"             // for UT_hash_handle, HASH_ITER, HASH_DEL
@@ -67,10 +69,7 @@
 #else
 #include <arpa/inet.h>          // for inet_addr, inet_ntoa
 #include <netinet/in.h>         // for ntohl, in_addr_t, sockaddr_in, INADDR...
-#include <netinet/tcp.h>        // for TCP_NODELAY
 #include <pwd.h>
-#include <sys/resource.h>       // for getrlimit, RLIMIT_NOFILE
-#include <sys/select.h>         // for FD_ISSET, FD_SET, select, FD_SETSIZE
 #include <sys/socket.h>         // for recvfrom, shutdown, sockaddr_storage
 #endif
 
@@ -80,18 +79,9 @@
 #endif
 
 #ifdef _WIN32
-// Winsock has no per call non blocking read flag, so draining is not possible
-// there - a second read would block the whole loop
-#define SN_DRAIN_MAX 1
 #ifndef MSG_DONTWAIT
 #define MSG_DONTWAIT 0
 #endif
-#else
-// How many datagrams to take from the UDP socket before going round the loop
-// again, for the same reason as FD_DRAIN_MAX in mainloop.c: select() only
-// says that at least one is waiting, and under load there is a queue behind
-// it. The cap keeps the TCP connections and the management interface served
-#define SN_DRAIN_MAX 32
 #endif
 
 
@@ -148,13 +138,12 @@ uint8_t mask2bitlen (uint32_t mask) {
 }
 
 
-void close_tcp_connection (struct n3n_runtime_data *sss, n2n_tcp_connection_t *conn) {
+// Forget a TCP connection whose socket is closed already, and the edge that
+// was connected over it
+static void forget_tcp_connection (struct n3n_runtime_data *sss, n2n_tcp_connection_t *conn) {
 
     struct sn_community *comm, *tmp_comm;
     struct peer_info *edge, *tmp_edge;
-
-    if(!conn)
-        return;
 
     // find peer by file descriptor
     HASH_ITER(hh, sss->communities, comm, tmp_comm) {
@@ -163,17 +152,26 @@ void close_tcp_connection (struct n3n_runtime_data *sss, n2n_tcp_connection_t *c
                 // remove peer
                 HASH_DEL(comm->edges, edge);
                 peer_info_free(edge);
-                goto close_conn; /* break - level 2 */
+                goto forget_conn; /* break - level 2 */
             }
         }
     }
 
-close_conn:
-    // close the connection
+forget_conn:
+    HASH_DEL(sss->tcp_connections, conn);
+    free(conn);
+}
+
+
+// Close a TCP connection, and forget it and the edge that was connected over it
+static void close_tcp_connection (struct n3n_runtime_data *sss, n2n_tcp_connection_t *conn) {
+
+    if(!conn)
+        return;
+
     shutdown(conn->socket_fd, SHUT_RDWR);
-    closesocket(conn->socket_fd);
-    // forget about the connection, will be deleted later
-    conn->inactive = 1;
+    mainloop_close_fd(conn->socket_fd);
+    forget_tcp_connection(sss, conn);
 }
 
 
@@ -195,16 +193,6 @@ static void remove_edge (struct n3n_runtime_data *sss, struct sn_community *comm
     peer_info_free(edge);
 }
 
-#ifdef N2N_HAVE_TCP
-// The addresses of TCP connections are kept as struct sockaddr, which
-// sock_to_cstr() cannot read directly
-static char *tcp_addr_to_cstr (n3n_sock_str_t out, const struct sockaddr *sa) {
-    n3n_sock_t sock;
-
-    fill_n3nsock(&sock, sa);
-    return sock_to_cstr(out, &sock);
-}
-#endif
 
 
 /* *************************************************** */
@@ -617,29 +605,8 @@ static SOCKET peer_sock (struct n3n_runtime_data *sss, const struct peer_info *p
 }
 
 
-// Send a datagram on a socket.  A TCP connection that fails is closed, and its
-// edge forgotten.  The bytes sent, or -1.
-static ssize_t sendto_fd (struct n3n_runtime_data *sss,
-                          SOCKET socket_fd,
-                          const struct sockaddr *socket, socklen_t socket_len,
-                          const uint8_t *pktbuf,
-                          size_t pktsize) {
-
-    ssize_t sent = sendto_logged(socket_fd, pktbuf, pktsize, socket, socket_len);
-    n2n_tcp_connection_t *conn;
-
-    // if the erroneous connection is tcp, i.e. not the regular sock...
-    if((sent < 0) && is_tcp(sss, socket_fd)) {
-        // ...forget about the corresponding peer and the connection
-        HASH_FIND_INT(sss->tcp_connections, &socket_fd, conn);
-        close_tcp_connection(sss, conn);
-    }
-
-    return sent;
-}
-
-
-/** Send a datagram to a network order socket of type struct sockaddr.
+/** Send a datagram to a network order socket of type struct sockaddr, or
+ *  over the TCP connection socket_fd.
  *
  *    @return -1 on error otherwise number of bytes sent
  */
@@ -649,57 +616,29 @@ static ssize_t sendto_sock (struct n3n_runtime_data *sss,
                             const uint8_t *pktbuf,
                             size_t pktsize) {
 
-    ssize_t sent = 0;
-#ifdef _WIN32
-    char value = 0;
-#else
-    int value = 0;
-#endif
+    // if the connection is tcp, i.e. not the regular sock...
+    if(is_tcp(sss, socket_fd)) {
+        // ...the mainloop sends it, with the length in front; it drops it if
+        // the connection is still busy with the one before
+        if(!mainloop_send_v3tcp(socket_fd, pktbuf, pktsize)) {
+            traceEvent(TRACE_DEBUG, "dropped a PDU for busy TCP connection %d", socket_fd);
+            return -1;
+        }
+        return pktsize;
+    }
 
     // TODO: do we really have to check this every time?
     //       maye try a struct containing the socket and its length
     //       would require broader changes
-    socklen_t socket_len;
     struct sockaddr_storage dest_addr = {0};
-
-    socket_len = prepare_sockaddr_for_send(&dest_addr, sock_family(sss, socket_fd), socket);
+    socklen_t socket_len = prepare_sockaddr_for_send(&dest_addr, sock_family(sss, socket_fd), socket);
     if(socket_len == 0) {
         // unknown or unsupported family we cannot send
         traceEvent(TRACE_ERROR, "found unknown address family %d", socket->sa_family);
         return -1;
     }
 
-    // if the connection is tcp, i.e. not the regular sock...
-    if(is_tcp(sss, socket_fd)) {
-
-        setsockopt(socket_fd, IPPROTO_TCP, TCP_NODELAY, &value, sizeof(value));
-        value = 1;
-#ifdef __linux__
-        setsockopt(socket_fd, IPPROTO_TCP, TCP_CORK, &value, sizeof(value));
-#endif
-
-        // prepend packet length...
-        uint16_t pktsize16 = htobe16(pktsize);
-        sent = sendto_fd(sss, socket_fd, (const struct sockaddr *)&dest_addr, socket_len, (uint8_t*)&pktsize16, sizeof(pktsize16));
-
-        if(sent <= 0)
-            return -1;
-        // ...before sending the actual data
-    }
-
-    sent = sendto_fd(sss, socket_fd, (const struct sockaddr *)&dest_addr, socket_len, pktbuf, pktsize);
-
-    // if the connection is tcp, i.e. not the regular sock...
-    if(is_tcp(sss, socket_fd)) {
-        value = 1; /* value should still be set to 1 */
-        setsockopt(socket_fd, IPPROTO_TCP, TCP_NODELAY, (void *)&value, sizeof(value));
-#ifdef __linux__
-        value = 0;
-        setsockopt(socket_fd, IPPROTO_TCP, TCP_CORK, &value, sizeof(value));
-#endif
-    }
-
-    return sent;
+    return sendto_logged(socket_fd, pktbuf, pktsize, (const struct sockaddr *)&dest_addr, socket_len);
 }
 
 
@@ -1085,7 +1024,7 @@ void sn_term (struct n3n_runtime_data *sss) {
 
     HASH_ITER(hh, sss->tcp_connections, conn, tmp_conn) {
         shutdown(conn->socket_fd, SHUT_RDWR);
-        closesocket(conn->socket_fd);
+        mainloop_close_fd(conn->socket_fd);
         HASH_DEL(sss->tcp_connections, conn);
         free(conn);
     }
@@ -1149,7 +1088,9 @@ void sn_term (struct n3n_runtime_data *sss) {
     free(sss->conf.sessiondir);
     free(sss->conf.sessionname);
 
-    slots_free(sss->mgmt_slots);
+    if(sss->mgmt_slots) {
+        slots_free(sss->mgmt_slots);
+    }
 
     n3n_deinitfuncs();
 
@@ -3001,21 +2942,6 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
 }
 
 
-#ifdef N2N_HAVE_TCP
-// close_tcp_connection() closes the socket but leaves the entry in the list,
-// as the caller may be iterating over it
-static void remove_closed_tcp_connections (struct n3n_runtime_data *sss) {
-    n2n_tcp_connection_t *conn, *tmp_conn;
-
-    HASH_ITER(hh, sss->tcp_connections, conn, tmp_conn) {
-        if(conn->inactive) {
-            HASH_DEL(sss->tcp_connections, conn);
-            free(conn);
-        }
-    }
-}
-#endif
-
 /** Long lived processing entry point. Split out from main to simply
  *  daemonisation on some platforms. */
 static int process_pdu (struct n3n_runtime_data * sss,
@@ -3068,8 +2994,9 @@ static void process_pdu_handed_over (struct n3n_runtime_data *sss,
 }
 
 
-// a packet thread of the supernode: take one PDU off sock
-static int sn_read_udp (struct n3n_runtime_data *sss,
+// Take one PDU off sock - for the main thread from the mainloop, for a packet
+// thread from edge_threads.c
+int sn_read_proto3_udp (struct n3n_runtime_data *sss,
                         SOCKET sock,
                         struct n3n_pktbuf *pktbuf,
                         time_t now) {
@@ -3087,8 +3014,31 @@ static int sn_read_udp (struct n3n_runtime_data *sss,
                      MSG_DONTWAIT,
                      (struct sockaddr *)&sas,
                      &ss_size);
-    if(bread <= 0) {
-        // nothing (more) queued, or an error the main thread sees as well
+    if(bread < 0) {
+#ifdef _WIN32
+        unsigned int wsaerr = WSAGetLastError();
+        // WSAECONNRESET on a UDP socket: an earlier send got an ICMP port
+        // unreachable back
+        if((wsaerr == WSAEWOULDBLOCK) || (wsaerr == WSAECONNRESET)) {
+            return 0;
+        }
+        traceEvent(TRACE_ERROR, "WSAGetLastError(): %u", wsaerr);
+#else
+        if((errno == EAGAIN) || (errno == EWOULDBLOCK)) {
+            // nothing (more) queued for us
+            return 0;
+        }
+#endif
+        if(!n3n_thread_slot) {
+            // The fd is no good now. Maybe we lost our interface. A packet
+            // thread leaves it to the main thread, which sees it as well.
+            traceEvent(TRACE_ERROR, "recvfrom() failed %d errno %d (%s)", bread, errno, strerror(errno));
+            *sss->keep_running = false;
+        }
+        return 0;
+    }
+    if(bread == 0) {
+        // For UDP bread of zero just means no data (unlike TCP)
         return 0;
     }
 
@@ -3101,377 +3051,96 @@ static int sn_read_udp (struct n3n_runtime_data *sss,
 }
 
 
-// what the workers of a supernode do
-// Take what is queued on one of the UDP sockets, up to SN_DRAIN_MAX, not
-// just the one datagram select() promised. pktbuf is reused each time round,
-// which is fine: process_pdu() is done with it when it returns
-static void read_udp_sock (struct n3n_runtime_data *sss, SOCKET sock, uint8_t *pktbuf, time_t now) {
+void sn_read_proto3_tcp (struct n3n_runtime_data *sss,
+                         SOCKET sock,
+                         uint8_t *pktbuf,
+                         ssize_t pktbuf_len,
+                         time_t now) {
 
-    ssize_t bread;
-    int drain = SN_DRAIN_MAX;
+    n2n_tcp_connection_t *conn;
 
-    while(drain--) {
-        struct sockaddr_storage sas;
-        struct sockaddr *sender_sock = (struct sockaddr*)&sas;
-        socklen_t ss_size = sizeof(sas);
-
-        bread = recvfrom(
-            sock,
-            (void *)pktbuf,
-            N2N_SN_PKTBUF_SIZE,
-            MSG_DONTWAIT,
-            sender_sock,
-            &ss_size
-        );
-
-        if(bread < 0) {
-#ifdef _WIN32
-            // FIXME: when would we get a WSAECONNRESET on a UDP
-            // read of a non connected socket
-            if(WSAGetLastError() == WSAECONNRESET) {
-                break;
-            }
-#else
-            if((errno == EAGAIN) || (errno == EWOULDBLOCK)) {
-                // nothing (more) queued for us
-                break;
-            }
-#endif
-            /* The fd is no good now. Maybe we lost our interface. */
-            traceEvent(TRACE_ERROR, "recvfrom() failed %d errno %d (%s)", bread, errno, strerror(errno));
-#ifdef _WIN32
-            traceEvent(TRACE_ERROR, "WSAGetLastError(): %u", WSAGetLastError());
-#endif
-            *sss->keep_running = false;
-            break;
+    HASH_FIND_INT(sss->tcp_connections, &sock, conn);
+    if(!conn) {
+        // a connection the supernode has forgotten already
+        if(pktbuf) {
+            mainloop_close_fd(sock);
         }
-
-        /* For UDP bread of zero just means no data (unlike TCP). */
-        if(bread == 0) {
-            break;
-        }
-
-        // we have a datagram to process, and it has data (not just
-        // a header)
-        process_pdu(
-            sss,
-            sender_sock,
-            ss_size,
-            sock,
-            pktbuf,
-            bread,
-            now
-        );
+        return;
     }
+
+    if(!pktbuf) {
+        n3n_sock_str_t sockbuf;
+        traceEvent(TRACE_INFO, "closing tcp connection to [%s]",
+                   sockaddr_to_str(sockbuf, sizeof(sockbuf), &conn->sock));
+        forget_tcp_connection(sss, conn);
+        return;
+    }
+
+    process_pdu(sss, &conn->sock, conn->sock_len, sock, pktbuf, pktbuf_len, now);
+}
+
+
+void sn_accepted_proto3_tcp (struct n3n_runtime_data *sss,
+                             SOCKET sock,
+                             const struct sockaddr *addr,
+                             socklen_t addr_len) {
+
+    n2n_tcp_connection_t *conn = calloc(1, sizeof(n2n_tcp_connection_t));
+    n3n_sock_str_t sockbuf;
+
+    if(!conn || (addr_len > sizeof(conn->sas))) {
+        free(conn);
+        mainloop_close_fd(sock);
+        return;
+    }
+
+    conn->socket_fd = sock;
+    memcpy(&conn->sas, addr, addr_len);
+    conn->sock_len = addr_len;
+    HASH_ADD_INT(sss->tcp_connections, socket_fd, conn);
+    traceEvent(TRACE_INFO, "accepted incoming TCP connection from [%s]",
+               sockaddr_to_str(sockbuf, sizeof(sockbuf), addr));
 }
 
 
 static const struct edge_thread_ops sn_thread_ops = {
-    .read_udp = sn_read_udp,
+    .read_udp = sn_read_proto3_udp,
     .process_pdu = process_pdu_handed_over,
 };
 
 
 int run_sn_loop (struct n3n_runtime_data *sss) {
 
-    uint8_t pktbuf[N2N_SN_PKTBUF_SIZE];
     time_t last_purge_edges = 0;
     time_t last_sort_communities = 0;
     time_t last_re_reg_and_purge = 0;
-#ifdef N2N_HAVE_TCP
-    time_t tcp_accept_pause_until = 0;
-#ifndef _WIN32
-    // TCP connections stop 16 descriptors short of what FD_SET() and the
-    // process's limit allow, leaving room for everything else that goes into
-    // the fd sets: the UDP and listening sockets and up to five management
-    // connections
-    int tcp_fd_limit = FD_SETSIZE;
-    struct rlimit nofile;
-    if((getrlimit(RLIMIT_NOFILE, &nofile) == 0) && (nofile.rlim_cur < (rlim_t)FD_SETSIZE)) {
-        tcp_fd_limit = nofile.rlim_cur;
-    }
-    tcp_fd_limit -= 16;
-#endif
-#endif
 
     sss->start_time = time(NULL);
+
+    // the mainloop reads the sockets of connection.bind, and accepts TCP
+    // connections on them
+    for(int i = 0; i < sss->bind_count; i++) {
+        mainloop_register_fd(sss->bind_sock[i], fd_info_proto_v3udp);
+#ifdef N2N_HAVE_TCP
+        mainloop_register_fd(sss->bind_tcp[i], fd_info_proto_listen_v3tcp);
+#endif
+    }
 
     // more threads for PACKETs, if asked for; from here on the main thread
     // holds their lock whenever it is awake
     edge_threads_start(sss, edge_threads_wanted(&sss->conf), &sn_thread_ops);
 
     while(*sss->keep_running) {
-        int rc;
-        int max_sock;
-        ssize_t bread;
-        fd_set readers;
-        fd_set writers;
-        n2n_tcp_connection_t *conn;
-        n2n_tcp_connection_t *tmp_conn;
-        struct timeval wait_time;
-        time_t before;
-        time_t now;
-
-        FD_ZERO(&readers);
-        FD_ZERO(&writers);
-
-        max_sock = 0;
-        for(int i = 0; i < sss->bind_count; i++) {
-            FD_SET(sss->bind_sock[i], &readers);
-            max_sock = MAX(max_sock, sss->bind_sock[i]);
-        }
-
-#ifdef N2N_HAVE_TCP
-        n3n_sock_str_t sockbuf;
-        if(time(NULL) >= tcp_accept_pause_until) {
-            for(int i = 0; i < sss->bind_count; i++) {
-                FD_SET(sss->bind_tcp[i], &readers);
-                max_sock = MAX(max_sock, sss->bind_tcp[i]);
-            }
-        }
-
-        // Connections can also be closed outside the handling of select()'s
-        // result, e.g. by a reload of the communities or when the timeout
-        // below is taken as an error. A closed one left in the set makes
-        // every select() fail with EBADF, and the loop spins without ever
-        // getting to the removal after the reads again.
-        remove_closed_tcp_connections(sss);
-
-        // add the tcp connections' sockets
-        HASH_ITER(hh, sss->tcp_connections, conn, tmp_conn) {
-            //socket descriptor
-            FD_SET(conn->socket_fd, &readers);
-            if(conn->socket_fd > max_sock) {
-                max_sock = MAX(max_sock, conn->socket_fd);
-            }
-        }
-#endif
-
-        slots_t *slots = sss->mgmt_slots;
-        max_sock = MAX(
-            max_sock,
-            slots_fdset(
-                slots,
-                &readers,
-                &writers
-            )
-        );
-
-        int wake_fd = edge_threads_wake_fd(sss);
-        if(wake_fd >= 0) {
-            FD_SET(wake_fd, &readers);
-            max_sock = MAX(max_sock, wake_fd);
-        }
-
-        wait_time.tv_sec = 10;
-        wait_time.tv_usec = 0;
-
-        before = time(NULL);
-
-        edge_threads_main_release(sss);
-        rc = select(max_sock + 1, &readers, &writers, NULL, &wait_time);
-        edge_threads_main_acquire(sss);
-
-        now = time(NULL);
+        mainloop_runonce(sss);
 
         // what the packet threads handed over, if there are any
         edge_threads_drain(sss);
 
-        if(rc == 0) {
-            if(((now - before) < wait_time.tv_sec) && (*sss->keep_running)) {
-                // this is no real timeout, something went wrong with one of the tcp connections (probably)
-                // close them all, edges will re-open if they detect closure
-                // FIXME: untangle this as the description above is unlikely
-                traceEvent(TRACE_DEBUG, "falsly claimed timeout, assuming issue with tcp connection, closing them all");
-                HASH_ITER(hh, sss->tcp_connections, conn, tmp_conn) {
-                    close_tcp_connection(sss, conn);
-                }
-            } else {
-                traceEvent(TRACE_DEBUG, "timeout");
-            }
-        }
-
-        if(rc > 0) {
-
-            // external udp
-            for(int i = 0; i < sss->bind_count; i++) {
-                if(FD_ISSET(sss->bind_sock[i], &readers)) {
-                    read_udp_sock(sss, sss->bind_sock[i], pktbuf, now);
-                }
-            }
-
-#ifdef N2N_HAVE_TCP
-            // the so far known tcp connections
-
-            // beware: current conn and other items of the connection list may be found
-            // due for deletion while processing packets. Even OTHER connections, e.g. if
-            // forwarding to another edge node fails. connections due for deletion will
-            // not immediately be deleted but marked 'inactive' for later deletion
-            HASH_ITER(hh, sss->tcp_connections, conn, tmp_conn) {
-                // do not process entries that have been marked inactive, those will be deleted
-                // immediately after this loop
-                if(conn->inactive)
-                    continue;
-
-                if(FD_ISSET(conn->socket_fd, &readers)) {
-                    struct sockaddr_storage sas;
-                    struct sockaddr *sender_sock = (struct sockaddr*)&sas;
-                    socklen_t ss_size = sizeof(sas);
-
-                    // TODO: this all looks like it could use a tcp buffer
-                    // management layer - like the connslot abstraction
-                    bread = recvfrom(
-                        conn->socket_fd,
-                        conn->buffer + conn->position,
-                        conn->expected - conn->position,
-                        0 /*flags*/,
-                        sender_sock,
-                        &ss_size
-                    );
-
-                    if(bread <= 0) {
-                        traceEvent(TRACE_INFO, "closing tcp connection to [%s]", tcp_addr_to_cstr(sockbuf, &(conn->sock)));
-                        traceEvent(TRACE_DEBUG, "recvfrom() returns %d and sees errno %d (%s)", bread, errno, strerror(errno));
-#ifdef _WIN32
-                        traceEvent(TRACE_DEBUG, "WSAGetLastError(): %u", WSAGetLastError());
-#endif
-                        close_tcp_connection(sss, conn);
-                        continue;
-                    }
-                    conn->position += bread;
-
-                    if(conn->position == conn->expected) {
-                        if(conn->position == sizeof(uint16_t)) {
-                            // the prepended length has been read, preparing for the packet
-                            conn->expected += be16toh(*(uint16_t*)(conn->buffer));
-                            if(conn->expected > N2N_SN_PKTBUF_SIZE) {
-                                traceEvent(TRACE_INFO, "closing tcp connection to [%s]", tcp_addr_to_cstr(sockbuf, &(conn->sock)));
-                                traceEvent(TRACE_DEBUG, "too many bytes in tcp packet expected");
-                                close_tcp_connection(sss, conn);
-                                continue;
-                            }
-                        } else {
-                            // full packet read, handle it
-                            process_pdu(
-                                sss,
-                                &(conn->sock),
-                                conn->sock_len,
-                                conn->socket_fd,
-                                conn->buffer + sizeof(uint16_t),
-                                conn->position - sizeof(uint16_t),
-                                now
-                            );
-
-                            // reset, await new prepended length
-                            conn->expected = sizeof(uint16_t);
-                            conn->position = 0;
-                        }
-                    }
-                }
-            }
-
-            // before accept() can hand out one of their file descriptors again
-            remove_closed_tcp_connections(sss);
-
-            // accept new incoming tcp connections, on each address
-            for(int e = 0; e < sss->bind_count; e++) {
-                SOCKET listen_sock = sss->bind_tcp[e];
-
-                if(FD_ISSET(listen_sock, &readers)) {
-                    struct sockaddr_storage sas;
-                    struct sockaddr *sender_sock = (struct sockaddr*)&sas;
-                    socklen_t ss_size = sizeof(sas);
-
-                    // A connection left pending keeps the listening socket
-                    // readable, so select() returns at once for as long as it
-                    // waits. Every readable listening socket therefore gets an
-                    // accept(), and one over the limit is closed again.
-                    SOCKET tmp_sock = accept(
-                        listen_sock,
-                        sender_sock,
-                        &ss_size
-                    );
-                    // REVISIT: should we error out if ss_size returns bigger
-                    // than before? can this ever happen?
-#ifdef _WIN32
-                    bool failed = (tmp_sock == INVALID_SOCKET);
-                    // a Windows fd_set holds up to FD_SETSIZE sockets, of any
-                    // value; 16 are left for the others as below
-                    bool too_many = ((HASH_COUNT(sss->tcp_connections) + 16) >= FD_SETSIZE);
-#else
-                    bool failed = (tmp_sock < 0);
-                    // FD_SET() only takes descriptors below FD_SETSIZE; a higher
-                    // one writes beyond the end of the fd_set
-                    bool too_many = (tmp_sock >= tcp_fd_limit);
-#endif
-                    if(failed) {
-                        // Most likely out of file descriptors. The connection
-                        // stays pending, so do not ask select() about the listening sockets
-                        // for a second instead of spinning on it.
-                        traceEvent(TRACE_WARNING, "accept() failed: %s", strerror(errno));
-                        tcp_accept_pause_until = now + 1;
-                    } else if(too_many) {
-                        traceEvent(
-                            TRACE_WARNING,
-                            "denied incoming TCP connection from [%s] due to max connections limit hit",
-                            tcp_addr_to_cstr(sockbuf, sender_sock)
-                        );
-                        closesocket(tmp_sock);
-                    } else {
-                        conn = (n2n_tcp_connection_t*)calloc(
-                            1,
-                            sizeof(n2n_tcp_connection_t)
-                        );
-                        if(conn) {
-                            conn->socket_fd = tmp_sock;
-                            memcpy(&(conn->sock), sender_sock, ss_size);
-                            conn->sock_len = ss_size;
-                            conn->inactive = 0;
-                            conn->expected = sizeof(uint16_t);
-                            conn->position = 0;
-                            HASH_ADD_INT(sss->tcp_connections, socket_fd, conn);
-                            traceEvent(
-                                TRACE_INFO,
-                                "accepted incoming TCP connection from [%s]",
-                                tcp_addr_to_cstr(sockbuf, sender_sock)
-                            );
-                        } else {
-                            closesocket(tmp_sock);
-                        }
-                    }
-                }
-            }
-#endif /* N2N_HAVE_TCP */
-
-            int slots_ready = slots_fdset_loop(slots, &readers, &writers);
-
-            if(slots_ready < 0) {
-                traceEvent(
-                    TRACE_ERROR,
-                    "error: slots_fdset_loop = %i", slots_ready
-                );
-            } else if(slots_ready > 0) {
-                // see edge_utils for note about linear scan
-                for(int i=0; i<slots->nr_slots; i++) {
-                    if(slots->conn[i].fd == -1) {
-                        continue;
-                    }
-
-                    if(slots->conn[i].state == CONN_READY) {
-                        mgmt_api_handler(sss, &slots->conn[i]);
-                        sb_zero(slots->conn[i].request);
-                    }
-                }
-            }
-
-        }
-
-        // check for timed out slots
-        slots_closeidle(slots);
-
         // If anything we recieved caused us to stop..
         if(!(*sss->keep_running))
             break;
+
+        time_t now = time(NULL);
 
         re_register_and_purge_supernodes(
             sss,

@@ -528,6 +528,8 @@ struct n2n_edge_stats {
 // N3N_THREADS_MAX in src/thread_local.h, which stats.h checks
 #define N3N_STATS_SLOTS 16
 
+/* A TCP connection the supernode accepted.  Reading and writing it is up to
+ * the mainloop, which has its buffers; this is the address it came from. */
 typedef struct n2n_tcp_connection {
     int socket_fd;                                        /* file descriptor for tcp socket */
     socklen_t sock_len;                                   /* amount of actually used space (of the following) */
@@ -535,11 +537,7 @@ typedef struct n2n_tcp_connection {
         struct sockaddr sock;                             /* network order socket */
         struct sockaddr_storage sas;                      /* memory for it, can be longer than sockaddr */
     };
-    uint16_t expected;                                    /* number of bytes expected to be read */
-    uint16_t position;                                    /* current position in the buffer */
-    uint8_t buffer[N2N_PKT_BUF_SIZE + sizeof(uint16_t)];  /* buffer for data collected from tcp socket incl. prepended length */
 
-    uint8_t inactive;                                     /* connection not be handled if set, already closed and to be deleted soon */
     UT_hash_handle hh; /* makes this structure hashable */
 } n2n_tcp_connection_t;
 

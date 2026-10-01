@@ -51,8 +51,11 @@ tests and `make lint` pass after each.
       it.  (`get_local_auth()` and `handle_remote_auth()`, found in both
       files, are no duplicates but the two halves of the handshake - edge and
       supernode side; they move with their roles in step 7)
-- [ ] Step 2: the supernode runs on `mainloop.c` like the edge, instead of its
-      own `select()` loop in `run_sn_loop()`
+- [x] Step 2: the supernode runs on `mainloop.c` like the edge, instead of its
+      own `select()` loop in `run_sn_loop()`.  The mainloop's tables grow
+      (up to `FD_SETSIZE`), it accepts v3tcp connections, tells the upper
+      layer which fd closed, and hands over every complete PDU in a TCP
+      buffer.  Management connections of the supernode go through it too
 - [ ] Step 3: periodic work (registrations, purges, sorting, resolving)
       registered as timers in the mainloop, for both
 - [ ] Step 4: role sub-structs in `struct n3n_runtime_data` and
@@ -185,6 +188,8 @@ Build and test:
 ./autogen.sh && ./configure --enable-pthread && make -j"$(nproc)"
 make test.builtin test.units test.integration    # quick
 sudo make test.netns                             # NAT scenarios, needs root
+sudo tests/netns/run.py -q                       # all of them
+sudo tests/netns/run.py -q --wrap 'valgrind --error-exitcode=99 --leak-check=full --errors-for-leak-kinds=definite' tcp-tcp hard-hard
 make lint                                        # everything CI lints
 scripts/indent.sh -i src/edge_utils.c            # reformat one file
 ```

@@ -27,6 +27,7 @@
 #include <n3n/conffile.h>      // for n3n_config_set_option
 #include <n3n/initfuncs.h>     // for n3n_initfuncs()
 #include <n3n/logging.h>       // for traceEvent
+#include <n3n/mainloop.h>      // for mainloop_register_fd
 #include <n3n/supernode.h>     // for load_allowed_sn_community, calculate_s...
 #include <signal.h>            // for signal, SIGHUP, SIGINT, SIGPIPE, SIGTERM
 #include <stdbool.h>
@@ -543,24 +544,20 @@ int main (int argc, char * argv[]) {
         exit(-2);
     }
 
-    sss_node.mgmt_slots = slots_malloc(5, 5000, 500);
-    if(!sss_node.mgmt_slots) {
-        abort();
-    }
-
     if(sss_node.conf.mgmt_port) {
-        if(slots_listen_tcp(sss_node.mgmt_slots, sss_node.conf.mgmt_port, false)!=0) {
+        int fd = slots_create_listen_tcp(sss_node.conf.mgmt_port, false);
+        if(fd < 0) {
             perror("slots_listen_tcp");
             exit(1);
         }
+        mainloop_register_fd(fd, fd_info_proto_listen_http);
         traceEvent(TRACE_NORMAL, "supernode is listening on TCP %u (management)", sss_node.conf.mgmt_port);
-    }
 #ifdef _WIN32
-    // HACK!
-    // Remove this once the supernode users mainloop and it also supports
-    // stopping on windows
-    windows_stop_fd = sss_node.mgmt_slots->listen[0];
+        // HACK!
+        // Remove this once the mainloop supports stopping on windows
+        windows_stop_fd = fd;
 #endif
+    }
 
     n3n_config_setup_sessiondir(&sss_node.conf);
 
@@ -568,8 +565,7 @@ int main (int argc, char * argv[]) {
     char unixsock[1024];
     snprintf(unixsock, sizeof(unixsock), "%s/mgmt", sss_node.conf.sessiondir);
 
-    int e = slots_listen_unix(
-        sss_node.mgmt_slots,
+    int fd = slots_create_listen_unix(
         unixsock,
         sss_node.conf.mgmt_sock_perms,
         sss_node.conf.userid,
@@ -578,11 +574,12 @@ int main (int argc, char * argv[]) {
     // TODO:
     // - do we actually want to tie the user/group to the running pid?
 
-    if(e !=0) {
+    if(fd < 0) {
         perror("slots_listen_unix");
         sn_term(&sss_node);
         exit(1);
     }
+    mainloop_register_fd(fd, fd_info_proto_listen_http);
 #endif
 
     // The supernodes of the federation from the configuration have not come

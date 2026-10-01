@@ -12,10 +12,12 @@
 #include <n3n/logging.h>        // for traceEvent
 #include <n3n/mainloop.h>       // for fd_info_proto
 #include <n3n/metrics.h>
-#include <n3n/logging.h>        // for traceEvent
 #include <n3n/pktbuf.h>
+#include <n3n/strings.h>        // for sockaddr_to_str
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>             // for calloc, realloc, free, abort
+#include <string.h>             // for memmove, memset, strerror
 
 #ifndef _WIN32
 #include <sys/select.h>         // for select, FD_ZERO,
@@ -29,10 +31,17 @@
 #endif
 
 #include "edge_utils.h"         // for edge_read_from_tap
-#include "edge_threads.h"    // for edge_threads_main_release, ...
+#include "edge_threads.h"       // for edge_threads_main_release, ...
 #include "management.h"         // for readFromMgmtSocket
 #include "minmax.h"             // for min, max
 #include "portable_endian.h"    // for htobe16
+#include "sn_utils.h"           // for sn_read_proto3_udp, ...
+
+#ifndef _WIN32
+#include <netinet/in.h>         // for IPPROTO_TCP
+#include <netinet/tcp.h>        // for TCP_NODELAY
+#include <sys/resource.h>       // for getrlimit, RLIMIT_NOFILE
+#endif
 
 #ifndef _WIN32
 // Another wonderful gift from the world of POSIX compliance is not worth much
@@ -102,6 +111,7 @@ static char *proto_str[] = {
     [fd_info_proto_v3tcp] = "v3tcp",
     [fd_info_proto_http] = "http",
     [fd_info_proto_wakeup] = "wakeup",
+    [fd_info_proto_listen_v3tcp] = "listen_v3tcp",
 };
 
 struct fd_info {
@@ -111,23 +121,43 @@ struct fd_info {
     int8_t connnr;              // which connlist[] is being used as buffer
 };
 
-// A static array of known file descriptors will not scale once full TCP
-// connection support is added, but will work for now
-// the edge's own sockets and the management connections, and the sockets it
-// opens behind a hard NAT (NAT_PUNCH_POOL_MAX + NAT_PUNCH_BOUND)
-#define MAX_HANDLES 96
-static struct fd_info fdlist[MAX_HANDLES];
+// The known file descriptors.  The table starts big enough for an edge's own
+// sockets, the management connections and the sockets it opens behind a hard
+// NAT (NAT_PUNCH_POOL_MAX + NAT_PUNCH_BOUND), and grows when it is full - a
+// supernode's TCP connections need more - up to what select() can take.
+#define FDLIST_INITIAL 96
+#define FDLIST_MAX FD_SETSIZE
+static struct fd_info *fdlist;
+static int fdlist_size;
 static int fdlist_next_search;
 
-#define MAX_CONN 8
+// The buffers of the connections that have them (v3tcp and http).  Each is
+// allocated on its own, so that a pointer to one stays valid when the table
+// grows.
 // TODO: need pools of struct conn, for each expected buffer size
-static struct conn connlist[MAX_CONN];
+#define CONNLIST_INITIAL 8
+static struct conn **connlist;
+static int connlist_size;
 static int connlist_next_search;
+
+// At most this many management connections at once
+#define HTTP_CONN_MAX 8
+
+// TCP connections that are accepted stop 16 descriptors short of what
+// FD_SET() and the process's limit allow, leaving room for everything else
+// that goes into the fd sets: the UDP and listening sockets and the
+// management connections
+#define TCP_FD_HEADROOM 16
+
+// accept() failed, most likely for want of file descriptors: the listening
+// sockets are left alone until then instead of spinning on the pending
+// connection
+static time_t listen_pause_until;
 
 static void metrics_callback (strbuf_t **reply, const struct n3n_metrics_module *module) {
     int slot = 0;
     char buf[16];
-    while(slot < MAX_HANDLES) {
+    while(slot < fdlist_size) {
         if(fdlist[slot].fd == -1) {
             slot++;
             continue;
@@ -139,7 +169,7 @@ static void metrics_callback (strbuf_t **reply, const struct n3n_metrics_module 
             reply,
             module,
             "fd_reads",
-            (char *)&fdlist[slot].stats_reads - (char *)&fdlist,
+            (char *)&fdlist[slot].stats_reads - (char *)module->data,
             2,  // number of tag+val pairs
             "fd",
             buf,
@@ -209,7 +239,7 @@ static struct n3n_metrics_module metrics_module_mallinfo2 = {
 
 static struct n3n_metrics_module metrics_module_dynamic = {
     .name = "mainloop",
-    .data = &fdlist,
+    .data = NULL,       // fdlist, wherever it is at the moment
     .cb = &metrics_callback,
     .type = n3n_metrics_type_cb,
 };
@@ -222,94 +252,181 @@ static struct n3n_metrics_module metrics_module_static = {
 };
 
 static void connlist_init () {
-    int conn = 0;
-    while(conn < MAX_CONN) {
-        conn_init(&connlist[conn], 4000, 1000);
-        conn++;
+    connlist = calloc(CONNLIST_INITIAL, sizeof(*connlist));
+    if(!connlist) {
+        abort();
     }
+    connlist_size = CONNLIST_INITIAL;
     connlist_next_search = 0;
 }
 
 static void connlist_deinit () {
     int conn = 0;
-    while(conn < MAX_CONN) {
-        // TODO: this crosses the layer boundaries
-        free(connlist[conn].request);
-        free(connlist[conn].reply_header);
+    while(conn < connlist_size) {
+        if(connlist[conn]) {
+            // TODO: this crosses the layer boundaries
+            free(connlist[conn]->request);
+            free(connlist[conn]->reply_header);
+            free(connlist[conn]);
+        }
         conn++;
     }
+    free(connlist);
+    connlist = NULL;
+    connlist_size = 0;
 }
 
+// A free entry of connlist[], set up for use; the table grows if there is
+// none.  -1 if it cannot grow any more.
 static int connlist_alloc (enum conn_proto proto) {
-    int conn = connlist_next_search % MAX_CONN;
-    int count = MAX_CONN;
+    int conn = connlist_next_search % connlist_size;
+    int count = connlist_size;
     while(count) {
-        if(connlist[conn].proto == CONN_PROTO_UNK) {
-            connlist[conn].proto = proto;
+        if(!connlist[conn]) {
+            connlist[conn] = calloc(1, sizeof(struct conn));
+            if(!connlist[conn] || (conn_init(connlist[conn], 4000, 1000) != 0)) {
+                abort();
+            }
+        }
+        if(connlist[conn]->proto == CONN_PROTO_UNK) {
+            connlist[conn]->proto = proto;
             connlist_next_search = conn + 1;
             metrics.connlist_alloc++;
             return conn;
         }
-        conn = (conn + 1) % MAX_CONN;
+        conn = (conn + 1) % connlist_size;
         count--;
     }
-    return -1;
+
+    if(connlist_size >= FDLIST_MAX) {
+        return -1;
+    }
+    int new_size = MIN(connlist_size * 2, FDLIST_MAX);
+    struct conn **p = realloc(connlist, new_size * sizeof(*connlist));
+    if(!p) {
+        return -1;
+    }
+    memset(&p[connlist_size], 0, (new_size - connlist_size) * sizeof(*connlist));
+    connlist_next_search = connlist_size;
+    connlist = p;
+    connlist_size = new_size;
+    return connlist_alloc(proto);
+}
+
+// The reply buffer of a v3tcp connection is the mainloop's own, see
+// mainloop_send_v3tcp(); that of an http connection is not
+static void conn_free_reply (struct conn *conn) {
+    if((conn->proto == CONN_PROTO_BE16LEN) && conn->reply) {
+        free(conn->reply);
+        conn->reply = NULL;
+    }
 }
 
 static void connlist_free (int connnr) {
-    if(connnr > MAX_CONN) {
+    if((connnr < 0) || (connnr >= connlist_size)) {
         // TODO: error!
         return;
     }
-    connlist[connnr].fd = -1;
-    connlist[connnr].proto = CONN_PROTO_UNK;
-    connlist[connnr].state = CONN_EMPTY;
+    struct conn *conn = connlist[connnr];
+    conn_free_reply(conn);
+    conn->fd = -1;
+    conn->proto = CONN_PROTO_UNK;
+    conn->state = CONN_EMPTY;
     connlist_next_search = connnr;
     metrics.connlist_free++;
 }
 
-// Used only to initialise the array at startup
-static void fdlist_zero () {
-    int slot = 0;
-    while(slot < MAX_HANDLES) {
+// Mark entries from..to-1 as free
+static void fdlist_clear (int from, int to) {
+    for(int slot = from; slot < to; slot++) {
         fdlist[slot].connnr = -1;
         fdlist[slot].fd = -1;
         fdlist[slot].proto = fd_info_proto_unknown;
-        slot++;
+        fdlist[slot].stats_reads = 0;
     }
+}
+
+// Used only to initialise the array at startup
+static void fdlist_zero () {
+    fdlist = calloc(FDLIST_INITIAL, sizeof(*fdlist));
+    if(!fdlist) {
+        abort();
+    }
+    fdlist_size = FDLIST_INITIAL;
+    fdlist_clear(0, fdlist_size);
     fdlist_next_search = 0;
+    metrics_module_dynamic.data = fdlist;
+}
+
+// Make room for more fds, false if there can be no more
+static bool fdlist_grow () {
+    if(fdlist_size >= FDLIST_MAX) {
+        return false;
+    }
+    int new_size = MIN(fdlist_size * 2, FDLIST_MAX);
+    struct fd_info *p = realloc(fdlist, new_size * sizeof(*fdlist));
+    if(!p) {
+        return false;
+    }
+    fdlist = p;
+    fdlist_clear(fdlist_size, new_size);
+    fdlist_next_search = fdlist_size;
+    fdlist_size = new_size;
+    metrics_module_dynamic.data = fdlist;
+    return true;
 }
 
 static int fdlist_allocslot (int fd, enum fd_info_proto proto) {
-    int slot = fdlist_next_search % MAX_HANDLES;
-    int count = MAX_HANDLES;
+#ifndef _WIN32
+    if(fd >= FD_SETSIZE) {
+        // FD_SET() would write beyond the end of the fd_set
+        traceEvent(TRACE_ERROR, "fd %i is too high for select()", fd);
+        return -1;
+    }
+#endif
+    int slot = fdlist_next_search % fdlist_size;
+    int count = fdlist_size;
     while(count) {
         if(fdlist[slot].fd == -1) {
+            int connnr = -1;
+
+            if(proto == fd_info_proto_v3tcp) {
+                connnr = connlist_alloc(CONN_PROTO_BE16LEN);
+                if(connnr == -1) {
+                    return -1;
+                }
+                conn_accept(connlist[connnr], fd, CONN_PROTO_BE16LEN);
+            }
+
             metrics.register_fd++;
             fdlist[slot].fd = fd;
             fdlist[slot].proto = proto;
             fdlist[slot].stats_reads = 0;
-
-            if(proto == fd_info_proto_v3tcp) {
-                int connnr = connlist_alloc(CONN_PROTO_BE16LEN);
-                assert(connnr != -1);
-
-                fdlist[slot].connnr = connnr;
-                conn_accept(&connlist[connnr], fd, CONN_PROTO_BE16LEN);
-            } else {
-                fdlist[slot].connnr = -1;
-            }
+            fdlist[slot].connnr = connnr;
 
             fdlist_next_search = slot + 1;
             return slot;
         }
-        slot = (slot + 1) % MAX_HANDLES;
+        slot = (slot + 1) % fdlist_size;
         count--;
     }
 
-    // TODO: the moment this starts to fire, we need to revamp the
-    // implementation of the fdlist table
-    assert(slot != -1);
+    if(!fdlist_grow()) {
+        traceEvent(TRACE_ERROR, "no room for fd %i in the mainloop", fd);
+        return -1;
+    }
+    return fdlist_allocslot(fd, proto);
+}
+
+static int fdlist_findslot (int fd) {
+    if(fd == -1) {
+        return -1;
+    }
+    for(int slot = 0; slot < fdlist_size; slot++) {
+        if(fdlist[slot].fd == fd) {
+            return slot;
+        }
+    }
     return -1;
 }
 
@@ -319,7 +436,7 @@ static void fdlist_freefd (int fd) {
         // Cannot release an error fd!
         return;
     }
-    while(slot < MAX_HANDLES) {
+    while(slot < fdlist_size) {
         if(fdlist[slot].fd != fd) {
             slot++;
             continue;
@@ -339,23 +456,52 @@ static void fdlist_freefd (int fd) {
     // - could assert or similar
 }
 
-static int fdlist_fd_set (fd_set *rd, fd_set *wr) {
+// Close the socket of a slot, and its connection if it has one, and forget
+// the slot
+static void fdlist_close_slot (int slot) {
+    int fd = fdlist[slot].fd;
+    int connnr = fdlist[slot].connnr;
+
+    if(connnr != -1) {
+        conn_free_reply(connlist[connnr]);
+        conn_close(connlist[connnr], fd);
+    } else {
+        closesocket(fd);
+    }
+    fdlist_freefd(fd);
+}
+
+static void read_proto3_tcp (struct n3n_runtime_data *eee, int fd,
+                             uint8_t *buf, int size, time_t now);
+
+// A v3tcp connection got closed, or has gone idle: close it, and tell the
+// upper layer that its fd is gone
+static void v3tcp_closed (struct n3n_runtime_data *eee, int slot, time_t now) {
+    int fd = fdlist[slot].fd;
+
+    fdlist_close_slot(slot);
+    read_proto3_tcp(eee, fd, NULL, 0, now);
+}
+
+static int fdlist_fd_set (fd_set *rd, fd_set *wr, time_t now) {
     int max_sock = 0;
     int slot = 0;
-    while(slot < MAX_HANDLES) {
+    while(slot < fdlist_size) {
         if(fdlist[slot].fd == -1) {
             slot++;
             continue;
         }
 
-        // TODO:
-        // - if no empty conn, dont FD_SET on proto TCP listen
+        if((fdlist[slot].proto == fd_info_proto_listen_v3tcp) && (now < listen_pause_until)) {
+            slot++;
+            continue;
+        }
 
         if(fdlist[slot].connnr == -1) {
             FD_SET(fdlist[slot].fd, rd);
             max_sock = MAX(max_sock, fdlist[slot].fd);
         } else {
-            if(connlist[fdlist[slot].connnr].reply_sendpos == 0) {
+            if(connlist[fdlist[slot].connnr]->reply_sendpos == 0) {
                 // Only select for reading if we have finished previous write
                 // FIXME:
                 // this check assumes that the conn_write() that kicks off
@@ -370,7 +516,7 @@ static int fdlist_fd_set (fd_set *rd, fd_set *wr) {
             continue;
         }
 
-        if(conn_iswriter(&connlist[fdlist[slot].connnr])) {
+        if(conn_iswriter(connlist[fdlist[slot].connnr])) {
             FD_SET(fdlist[slot].fd, wr);
         }
 
@@ -379,7 +525,86 @@ static int fdlist_fd_set (fd_set *rd, fd_set *wr) {
     return max_sock;
 }
 
-static void handle_fd (const time_t now, const struct fd_info info, struct n3n_runtime_data *eee) {
+// Whose PDUs come in on a v3 socket: the supernode's or the edge's
+static int read_proto3_udp (struct n3n_runtime_data *eee, int fd,
+                            struct n3n_pktbuf *pkt, time_t now) {
+    if(eee->conf.is_supernode) {
+        return sn_read_proto3_udp(eee, fd, pkt, now);
+    }
+    return edge_read_proto3_udp(eee, fd, pkt, now);
+}
+
+// A PDU that came in on a v3tcp connection; buf NULL: the connection is gone,
+// fd is closed already
+static void read_proto3_tcp (struct n3n_runtime_data *eee, int fd,
+                             uint8_t *buf, int size, time_t now) {
+    if(eee->conf.is_supernode) {
+        sn_read_proto3_tcp(eee, fd, buf, size, now);
+        return;
+    }
+    edge_read_proto3_tcp(eee, fd, buf, size, now);
+}
+
+#ifndef _WIN32
+// The highest fd a TCP connection can be accepted on, see TCP_FD_HEADROOM
+static int tcp_fd_limit () {
+    int limit = FD_SETSIZE;
+    struct rlimit nofile;
+    if((getrlimit(RLIMIT_NOFILE, &nofile) == 0) && (nofile.rlim_cur < (rlim_t)FD_SETSIZE)) {
+        limit = nofile.rlim_cur;
+    }
+    return limit - TCP_FD_HEADROOM;
+}
+#endif
+
+static void accept_v3tcp (struct n3n_runtime_data *eee, int listen_fd, time_t now) {
+    struct sockaddr_storage sas;
+    socklen_t sas_len = sizeof(sas);
+    n3n_sock_str_t sockbuf;
+
+    SOCKET client = accept(listen_fd, (struct sockaddr *)&sas, &sas_len);
+#ifdef _WIN32
+    bool failed = (client == INVALID_SOCKET);
+    // a Windows fd_set holds up to FD_SETSIZE sockets, of any value
+    int used = 0;
+    for(int slot = 0; slot < fdlist_size; slot++) {
+        used += (fdlist[slot].fd != -1);
+    }
+    bool too_many = ((used + TCP_FD_HEADROOM) >= FD_SETSIZE);
+#else
+    bool failed = (client < 0);
+    bool too_many = (client >= tcp_fd_limit());
+#endif
+    if(failed) {
+        // Most likely out of file descriptors. The connection stays pending,
+        // so do not ask select() about the listening sockets for a second
+        // instead of spinning on it.
+        traceEvent(TRACE_WARNING, "accept() failed: %s", strerror(errno));
+        listen_pause_until = now + 1;
+        return;
+    }
+
+    if(too_many || (fdlist_allocslot(client, fd_info_proto_v3tcp) < 0)) {
+        traceEvent(
+            TRACE_WARNING,
+            "denied incoming TCP connection from [%s] due to max connections limit hit",
+            sockaddr_to_str(sockbuf, sizeof(sockbuf), (struct sockaddr *)&sas)
+        );
+        closesocket(client);
+        return;
+    }
+
+    // the length and the PDU go out in one write, see mainloop_send_v3tcp(),
+    // so there is nothing to wait for
+    int nodelay = 1;
+    setsockopt(client, IPPROTO_TCP, TCP_NODELAY, (void *)&nodelay, sizeof(nodelay));
+
+    sn_accepted_proto3_tcp(eee, client, (struct sockaddr *)&sas, sas_len);
+}
+
+static void handle_fd (const time_t now, int slot, struct n3n_runtime_data *eee) {
+    const struct fd_info info = fdlist[slot];
+
     switch(info.proto) {
         case fd_info_proto_unknown:
             // should not happen!
@@ -406,6 +631,16 @@ static void handle_fd (const time_t now, const struct fd_info info, struct n3n_r
                 return;
             }
 
+            int http_conns = 0;
+            for(int i = 0; i < fdlist_size; i++) {
+                http_conns += (fdlist[i].proto == fd_info_proto_http);
+            }
+            if(http_conns >= HTTP_CONN_MAX) {
+                send(client, "HTTP/1.1 503 full\r\n", 19, 0);
+                closesocket(client);
+                return;
+            }
+
             int slotnr = fdlist_allocslot(client, fd_info_proto_http);
             if(slotnr < 0) {
                 // TODO:
@@ -426,10 +661,14 @@ static void handle_fd (const time_t now, const struct fd_info info, struct n3n_r
             }
 
             fdlist[slotnr].connnr = connnr;
-            conn_accept(&connlist[connnr], client, CONN_PROTO_HTTP);
+            conn_accept(connlist[connnr], client, CONN_PROTO_HTTP);
 
             return;
         }
+
+        case fd_info_proto_listen_v3tcp:
+            accept_v3tcp(eee, info.fd, now);
+            return;
 
         case fd_info_proto_v3udp: {
             struct n3n_pktbuf *pkt = n3n_pktbuf_alloc(N2N_PKT_BUF_SIZE);
@@ -439,7 +678,7 @@ static void handle_fd (const time_t now, const struct fd_info info, struct n3n_r
             pkt->owner = n3n_pktbuf_owner_rx_pdu;
 
             int drain = FD_DRAIN_MAX;
-            while(drain && (edge_read_proto3_udp(eee, info.fd, pkt, now) > 0)) {
+            while(drain && (read_proto3_udp(eee, info.fd, pkt, now) > 0)) {
                 drain--;
             }
 
@@ -448,7 +687,7 @@ static void handle_fd (const time_t now, const struct fd_info info, struct n3n_r
         }
 
         case fd_info_proto_v3tcp: {
-            struct conn *conn = &connlist[info.connnr];
+            struct conn *conn = connlist[info.connnr];
             conn_read(conn, info.fd);
 
             switch(conn->state) {
@@ -461,64 +700,57 @@ static void handle_fd (const time_t now, const struct fd_info info, struct n3n_r
 
                 case CONN_ERROR:
                 case CONN_CLOSED:
-                    conn_close(conn, info.fd);
-                    sb_zero(conn->request);
-                    // Let the upper layer realise its connection is gone by
-                    // showing it a zero sized request
-
-                    // TODO: if the upper layer doesnt react properly by
-                    // unregistering the dead filehandle, we leak slots and
-                    // conns here
-
-                    edge_read_proto3_tcp(eee, -1, NULL, -1, now);
+                    v3tcp_closed(eee, slot, now);
                     return;
 
-                case CONN_READY: {
-                    int size = ntohs(*(uint16_t *)&conn->request->str);
+                case CONN_READY:
+                    // the buffer can hold several PDUs: hand over each one
+                    // that is complete
+                    while(conn->state == CONN_READY) {
+                        int size = ntohs(*(uint16_t *)&conn->request->str);
 
-                    edge_read_proto3_tcp(
-                        eee,
-                        info.fd,
-                        (uint8_t *)&conn->request->str[2],
-                        size,
-                        now
-                    );
+                        read_proto3_tcp(
+                            eee,
+                            info.fd,
+                            (uint8_t *)&conn->request->str[2],
+                            size,
+                            now
+                        );
 
-                    if(sb_len(conn->request) == (size + 2)) {
-                        // We read exactly one packet
+                        if((fdlist[slot].fd != info.fd) || (fdlist[slot].connnr != info.connnr)) {
+                            // the upper layer closed the connection meanwhile
+                            return;
+                        }
+
                         // TODO: this crosses layers by reaching inside the
                         // conn object
-                        sb_zero(conn->request);
-                        conn->state = CONN_EMPTY;
-                        return;
+                        int more = sb_len(conn->request) - (size + 2);
+                        if(more <= 0) {
+                            // We read exactly one packet
+                            sb_zero(conn->request);
+                            conn->state = CONN_EMPTY;
+                            return;
+                        }
+
+                        // Our buffer contains data beyond the single packet
+                        traceEvent(TRACE_DEBUG, "packet has %i more bytes", more);
+                        memmove(
+                            conn->request->str,
+                            &conn->request->str[size + 2],
+                            more
+                        );
+                        conn->request->rd_pos = 0;
+                        conn->request->wr_pos = more;
+                        conn->state = CONN_READING;
+                        conn_check_ready(conn);
                     }
-
-                    // Our buffer contains data beyond the single packet
-
-                    // TODO: this crosses layers by reaching inside the
-                    // conn object
-                    int more = sb_len(conn->request) - (size + 2);
-                    traceEvent(TRACE_DEBUG, "packet has %i more bytes", more);
-                    memmove(
-                        conn->request->str,
-                        &conn->request->str[size + 2],
-                        more
-                    );
-                    conn->request->rd_pos = 0;
-                    conn->request->wr_pos = more;
-                    conn->state = CONN_READING;
-
-                    // FIXME: sometimes we will have an entire next packet in
-                    // the buffer, which means we should not wait for the FD
-                    // to be read ready again
                     return;
-                }
             }
             return;
         }
 
         case fd_info_proto_http: {
-            struct conn *conn = &connlist[info.connnr];
+            struct conn *conn = connlist[info.connnr];
             conn_read(conn, info.fd);
 
             switch(conn->state) {
@@ -539,9 +771,7 @@ static void handle_fd (const time_t now, const struct fd_info info, struct n3n_r
 
                 case CONN_ERROR:
                 case CONN_CLOSED:
-                    conn_close(conn, info.fd);
-                    // TODO: freefd() is doing a fd search, we could optimise
-                    fdlist_freefd(info.fd);
+                    fdlist_close_slot(slot);
             }
             return;
         }
@@ -553,21 +783,36 @@ static void handle_fd (const time_t now, const struct fd_info info, struct n3n_r
  * but it didnt end up closing connections - and the original error was traced
  * to an alloc without matching free
  */
-static void fdlist_closeidle (const time_t now) {
-    int slot = 0;
+// Close a connection that has been idle for too long
+static void fdlist_closeidle_slot (const time_t now, int slot, struct n3n_runtime_data *eee) {
+    if(fdlist[slot].connnr == -1) {
+        return;
+    }
+    int timeout = 60;
+    struct conn *conn = connlist[fdlist[slot].connnr];
+    if((now - conn->activity) <= timeout) {
+        return;
+    }
+    // TODO: metrics timeouts ++
+    if(fdlist[slot].proto == fd_info_proto_v3tcp) {
+        v3tcp_closed(eee, slot, now);
+    } else {
+        fdlist_close_slot(slot);
+    }
+}
+
+/* TODO: decide if this quick helper is actually useful and needed
+ * It was added to try and provide an action to do if select returns an error,
+ * but it didnt end up closing connections - and the original error was traced
+ * to an alloc without matching free
+ */
+static void fdlist_closeidle (const time_t now, struct n3n_runtime_data *eee) {
     // A linear scan is not ideal, but until we support things other than
     // select() it will need to suffice
-    while(slot < MAX_HANDLES) {
-        int fd = fdlist[slot].fd;
-        if(fdlist[slot].connnr != -1) {
-            int timeout = 60;
-            struct conn *conn = &connlist[fdlist[slot].connnr];
-            bool closed = conn_closeidle(conn, fd, now, timeout);
-            if(closed) {
-                fdlist_freefd(fd);
-            }
+    for(int slot = 0; slot < fdlist_size; slot++) {
+        if(fdlist[slot].fd != -1) {
+            fdlist_closeidle_slot(now, slot, eee);
         }
-        slot++;
     }
 }
 
@@ -575,7 +820,7 @@ static void fdlist_check_ready (fd_set *rd, fd_set *wr, const time_t now, struct
     int slot = 0;
     // A linear scan is not ideal, but until we support things other than
     // select() it will need to suffice
-    while(slot < MAX_HANDLES) {
+    while(slot < fdlist_size) {
         int fd = fdlist[slot].fd;
         if(fd == -1) {
             slot++;
@@ -583,9 +828,9 @@ static void fdlist_check_ready (fd_set *rd, fd_set *wr, const time_t now, struct
         }
         if(FD_ISSET(fd, rd)) {
             fdlist[slot].stats_reads++;
-            handle_fd(now, fdlist[slot], eee);
+            handle_fd(now, slot, eee);
         }
-        if(FD_ISSET(fd, wr)) {
+        if((fdlist[slot].fd == fd) && FD_ISSET(fd, wr)) {
             // We should not be listening on this socket if there is no
             // connnr assigned, but paranoia..
             if(fdlist[slot].connnr == -1) {
@@ -594,7 +839,7 @@ static void fdlist_check_ready (fd_set *rd, fd_set *wr, const time_t now, struct
                 continue;
             }
 
-            struct conn *conn = &connlist[fdlist[slot].connnr];
+            struct conn *conn = connlist[fdlist[slot].connnr];
 
             // TODO: track the stats on writes?
             conn_write(conn, fd);
@@ -605,13 +850,8 @@ static void fdlist_check_ready (fd_set *rd, fd_set *wr, const time_t now, struct
             }
         }
 
-        if(fdlist[slot].connnr != -1) {
-            int timeout = 60;
-            struct conn *conn = &connlist[fdlist[slot].connnr];
-            bool closed = conn_closeidle(conn, fd, now, timeout);
-            if(closed) {
-                fdlist_freefd(fd);
-            }
+        if(fdlist[slot].fd == fd) {
+            fdlist_closeidle_slot(now, slot, eee);
         }
         slot++;
     }
@@ -631,7 +871,7 @@ int mainloop_runonce (struct n3n_runtime_data *eee) {
 
     FD_ZERO(&rd);
     FD_ZERO(&wr);
-    int maxfd = fdlist_fd_set(&rd, &wr);
+    int maxfd = fdlist_fd_set(&rd, &wr, time(NULL));
 
     // FIXME:
     // unlock the windows tun reader thread before select() and lock it
@@ -657,7 +897,7 @@ int mainloop_runonce (struct n3n_runtime_data *eee) {
 
     if(ready == -1) {
         traceEvent(TRACE_ERROR, "select errno=%i", errno);
-        fdlist_closeidle(now);
+        fdlist_closeidle(now, eee);
         return -1;
     }
 
@@ -697,7 +937,7 @@ int mainloop_runonce (struct n3n_runtime_data *eee) {
 void mainloop_dump (strbuf_t **buf) {
     int i;
     sb_reprintf(buf, "i : fd(read) pr connnr\n");
-    for(i=0; i<MAX_HANDLES; i++) {
+    for(i=0; i<fdlist_size; i++) {
         sb_reprintf(
             buf,
             "%02i: %2i(%4i) %i %i\n",
@@ -709,9 +949,12 @@ void mainloop_dump (strbuf_t **buf) {
         );
     }
     sb_reprintf(buf, "\n");
-    for(i=0; i<MAX_CONN; i++) {
+    for(i=0; i<connlist_size; i++) {
+        if(!connlist[i]) {
+            continue;
+        }
         sb_reprintf(buf,"%i: ",i);
-        conn_dump(buf, &connlist[i]);
+        conn_dump(buf, connlist[i]);
     }
 }
 
@@ -719,32 +962,25 @@ bool mainloop_send_v3tcp (int fd, const void *buf, int bufsize) {
     // TODO:
     // - avoid the linear scan by changing the params to pass a fdlist slottnr
     //   instead of a filehandle
-    int slot = 0;
-    while(slot < MAX_HANDLES) {
-        if(fdlist[slot].fd == fd) {
-            break;
-        }
-        slot++;
-    }
-    if(fdlist[slot].fd != fd) {
+    int slot = fdlist_findslot(fd);
+    if(slot == -1) {
         // Couldnt find this fd
         return false;
     }
 
-    if(fdlist[slot].connnr == -1) {
+    if((fdlist[slot].proto != fd_info_proto_v3tcp) || (fdlist[slot].connnr == -1)) {
         // No buffer associated with this fd
         return false;
     }
 
-    struct conn *conn = &connlist[fdlist[slot].connnr];
+    struct conn *conn = connlist[fdlist[slot].connnr];
 
     if(!conn->reply) {
         conn->reply = sb_malloc(N2N_PKT_BUF_SIZE + 2, N2N_PKT_BUF_SIZE + 2);
     } else {
         if(sb_len(conn->reply)) {
             // send buffer already in use
-            // TODO:
-            // - metrics!
+            metrics.send_queue_fail++;
             return false;
         }
         sb_zero(conn->reply);
@@ -772,6 +1008,15 @@ void mainloop_unregister_fd (int fd) {
     fdlist_freefd(fd);
 }
 
+void mainloop_close_fd (int fd) {
+    int slot = fdlist_findslot(fd);
+    if(slot == -1) {
+        closesocket(fd);
+        return;
+    }
+    fdlist_close_slot(slot);
+}
+
 void n3n_initfuncs_mainloop () {
     connlist_init();
     fdlist_zero();
@@ -786,6 +1031,9 @@ void n3n_initfuncs_mainloop () {
 
 void n3n_deinitfuncs_mainloop () {
     connlist_deinit();
+    free(fdlist);
+    fdlist = NULL;
+    fdlist_size = 0;
     // TODO: once the metrics framework supports it
     // n3n_metrics_unregister(&metrics_module_dynamic);
     // n3n_metrics_unregister(&metrics_module_static);
