@@ -3444,6 +3444,14 @@ int edge_read_from_tap_batch (struct n3n_runtime_data * eee, int max) {
 
 
 /** handle a control message - anything but PACKET - from process_pdu(). */
+// Whether the supernode appends a hash to its REGISTER_SUPER_ACK and _NAK:
+// with user/password authentication and header encryption
+static bool supernode_appends_hash (const struct n3n_runtime_data *eee) {
+
+    return eee->conf.shared_secret && (eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED);
+}
+
+
 void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_control *c) {
 
     n2n_common_t cmn = c->cmn;
@@ -3483,7 +3491,14 @@ void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_control *c) {
             /* Another edge is registering with us */
             n2n_REGISTER_t reg;
 
-            decode_REGISTER(&reg, &cmn, udp_buf, &rem, &idx);
+            if(decode_REGISTER(&reg, &cmn, udp_buf, &rem, &idx) < 0) {
+                traceEvent(TRACE_INFO, "REGISTER section in N2N_UDP too short");
+                return;
+            }
+            if(rem != 0) {
+                traceEvent(TRACE_INFO, "REGISTER section in N2N_UDP too long");
+                return;
+            }
 
             // The hint about the peer's NAT is only meant for the way through
             // the supernode: an older peer can send the bits back directly,
@@ -3577,7 +3592,14 @@ void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_control *c) {
             /* Peer edge is acknowledging our register request */
             n2n_REGISTER_ACK_t ra;
 
-            decode_REGISTER_ACK(&ra, &cmn, udp_buf, &rem, &idx);
+            if(decode_REGISTER_ACK(&ra, &cmn, udp_buf, &rem, &idx) < 0) {
+                traceEvent(TRACE_INFO, "REGISTER_ACK section in N2N_UDP too short");
+                return;
+            }
+            if(rem != 0) {
+                traceEvent(TRACE_INFO, "REGISTER_ACK section in N2N_UDP too long");
+                return;
+            }
 
             if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED) {
                 if(!find_peer_time_stamp_and_verify(
@@ -3630,7 +3652,16 @@ void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_control *c) {
                 return;
             }
 
-            decode_REGISTER_SUPER_ACK(&ra, &cmn, udp_buf, &rem, &idx, tmpbuf);
+            if(decode_REGISTER_SUPER_ACK(&ra, &cmn, udp_buf, &rem, &idx, tmpbuf) < 0) {
+                traceEvent(TRACE_INFO, "REGISTER_SUPER_ACK section in N2N_UDP too short");
+                return;
+            }
+            // with user/password and header encryption, the supernode
+            // appends a hash, which the decoder leaves unread
+            if(rem != (supernode_appends_hash(eee) ? N2N_REG_SUP_HASH_CHECK_LEN : 0)) {
+                traceEvent(TRACE_INFO, "REGISTER_SUPER_ACK section in N2N_UDP of wrong size");
+                return;
+            }
 
             if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED) {
                 if(!find_peer_time_stamp_and_verify(
@@ -3752,7 +3783,16 @@ void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_control *c) {
                 return;
             }
 
-            decode_REGISTER_SUPER_NAK(&nak, &cmn, udp_buf, &rem, &idx);
+            if(decode_REGISTER_SUPER_NAK(&nak, &cmn, udp_buf, &rem, &idx) < 0) {
+                traceEvent(TRACE_INFO, "REGISTER_SUPER_NAK section in N2N_UDP too short");
+                return;
+            }
+            // with user/password and header encryption, the supernode
+            // appends a hash, which the decoder leaves unread
+            if(rem != (supernode_appends_hash(eee) ? N2N_REG_SUP_HASH_CHECK_LEN : 0)) {
+                traceEvent(TRACE_INFO, "REGISTER_SUPER_NAK section in N2N_UDP of wrong size");
+                return;
+            }
 
             if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED) {
                 if(!find_peer_time_stamp_and_verify(
@@ -3812,7 +3852,14 @@ void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_control *c) {
             struct peer_info * scan;
             int skip_add;
 
-            decode_PEER_INFO(&pi, &cmn, udp_buf, &rem, &idx);
+            if(decode_PEER_INFO(&pi, &cmn, udp_buf, &rem, &idx) < 0) {
+                traceEvent(TRACE_INFO, "PEER_INFO section in N2N_UDP too short");
+                return;
+            }
+            if(rem != 0) {
+                traceEvent(TRACE_INFO, "PEER_INFO section in N2N_UDP too long");
+                return;
+            }
 
             if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED) {
                 if(!find_peer_time_stamp_and_verify(
@@ -3902,6 +3949,12 @@ void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_control *c) {
         }
 
         case MSG_TYPE_RE_REGISTER_SUPER: {
+
+            // the common header is all there is
+            if(rem != 0) {
+                traceEvent(TRACE_INFO, "RE_REGISTER_SUPER in N2N_UDP too long");
+                return;
+            }
 
             if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED) {
                 if(!find_peer_time_stamp_and_verify(
@@ -4080,7 +4133,12 @@ void process_pdu (struct n3n_runtime_data *eee,
             /* process PACKET - most frequent so first in list. */
             n2n_PACKET_t pkt;
 
-            decode_PACKET(&pkt, &cmn, udp_buf, &rem, &idx);
+            // whatever follows the header is the payload, its length is
+            // not checked here
+            if(decode_PACKET(&pkt, &cmn, udp_buf, &rem, &idx) < 0) {
+                traceEvent(TRACE_INFO, "PACKET section in N2N_UDP too short");
+                return;
+            }
 
             if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED) {
                 if(!find_peer_time_stamp_and_verify(
