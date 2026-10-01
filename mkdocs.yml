@@ -48,6 +48,7 @@ nav:
       - Testing: develop/testing.md
       - Testing behind NATs: develop/netns_testing.md
       - Roadmap: develop/Roadmap.md
+      - Mobile and TUN (design): develop/MobileAndTun.md
       - Release Process: ReleaseProcess.md
       - Build From Source:
           - Overview: build/index.md
