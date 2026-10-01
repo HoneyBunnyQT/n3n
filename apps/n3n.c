@@ -11,7 +11,7 @@
 #include <stdio.h>      // for printf
 #include <string.h>     // for strcmp, strrchr, strlen
 
-#include "config.h"     // for N3N_HAVE_RELAY
+#include "config.h"     // for N3N_NO_RELAY
 #include "n3n.h"
 
 
@@ -21,7 +21,7 @@ static const struct {
     int (*main)(int argc, char *argv[]);
 } roles[] = {
     { "n3n-edge", "edge", n3n_edge_main },
-#ifdef N3N_HAVE_RELAY
+#ifndef N3N_NO_RELAY
     // not with ./configure --disable-relay
     { "n3n-supernode", "supernode", n3n_supernode_main },
 #endif
