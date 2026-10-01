@@ -51,6 +51,7 @@
 #include "n2n_regex.h"          // for re_matchp, re_compile
 #include "n2n_typedefs.h"
 #include "n2n_wire.h"           // for encode_buf, encode_PEER_INFO, encode_...
+#include "pdu_in.h"             // for pdu_header_plain, pdu_header_decrypt
 #include "pearson.h"            // for pearson_hash_128, pearson_hash_32
 #include "peer_info.h"          // for purge_peer_list, clear_peer_list
 #include "portable_endian.h"    // for be16toh, htobe16
@@ -1780,20 +1781,11 @@ static int pdu_head_find (struct n3n_runtime_data *sss,
     memset(h, 0, sizeof(*h));
     *found = NULL;
 
-    /* check if header is unencrypted. the following check is around 99.99962 percent reliable.
-     * it heavily relies on the structure of packet's common part
-     * changes to wire.c:encode/decode_common need to go together with this code */
     if(udp_size < 24) {
         traceEvent(TRACE_DEBUG, "dropped a packet too short to be valid");
         return -1;
     }
-    // FIXME: if this is using be16toh then it is doing wire processing and
-    // should be located in wire.c with the rest of the wire processing.
-    if((udp_buf[23] == (uint8_t)0x00) // null terminated community name
-       && (udp_buf[00] == N2N_PKT_VERSION) // correct packet version
-       && ((be16toh(*(uint16_t*)&(udp_buf[02])) & N2N_FLAGS_TYPE_MASK) <= MSG_TYPE_MAX_TYPE) // message type
-       && ( be16toh(*(uint16_t*)&(udp_buf[02])) < N2N_FLAGS_OPTIONS_MAX) // flags
-    ) {
+    if(pdu_header_plain(udp_buf, udp_size)) {
         /* most probably unencrypted */
         /* make sure, no downgrading happens here and no unencrypted packets can be
          * injected in a community which definitely deals with encrypted headers */
@@ -1815,19 +1807,11 @@ static int pdu_head_find (struct n3n_runtime_data *sss,
                 continue;
             }
 
-            // match with static (1) or dynamic (2) ctx?
-            // check dynamic first as it is identical to static in normal header encryption mode
-            if(packet_header_decrypt(udp_buf, udp_size,
-                                     comm->community,
-                                     comm->header_encryption_ctx_dynamic, comm->header_iv_ctx_dynamic,
-                                     &h->stamp)) {
-                h->header_enc = 2;
-            }
-            if(!h->header_enc) {
-                pearson_hash_128(h->hash_buf, udp_buf, MAX(0, (int)udp_size - (int)N2N_REG_SUP_HASH_CHECK_LEN));
-                h->header_enc = packet_header_decrypt(udp_buf, MAX(0, (int)udp_size - (int)N2N_REG_SUP_HASH_CHECK_LEN), comm->community,
-                                                      comm->header_encryption_ctx_static, comm->header_iv_ctx_static, &h->stamp);
-            }
+            // with the dynamic (2) or the static (1) keys?
+            h->header_enc = pdu_header_decrypt(udp_buf, udp_size, comm->community,
+                                               comm->header_encryption_ctx_dynamic, comm->header_iv_ctx_dynamic,
+                                               comm->header_encryption_ctx_static, comm->header_iv_ctx_static,
+                                               h->hash_buf, &h->stamp);
 
             if(h->header_enc) {
                 // time stamp verification follows in the packet specific section as it requires to determine the

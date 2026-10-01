@@ -56,6 +56,7 @@
 #include "n2n.h"                     // for n3n_runtime_data, n2n_edge_...
 #include "n2n_wire.h"                // for fill_sockaddr, decod...
 #include "natclass.h"                // for nat_view_add, nat_view_reset, ...
+#include "pdu_in.h"                  // for pdu_header_decrypt
 #include "pearson.h"                 // for pearson_hash_128, pearson_hash_64
 #include "peer_info.h"               // for peer_info, clear_peer_list, ...
 #include "resolve.h"                 // for resolve_create_thread, resolve_c...
@@ -3972,25 +3973,12 @@ void process_pdu (struct n3n_runtime_data *eee,
                (signed int)udp_size, sock_to_cstr(sockbuf1, &sender));
 
     if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED) {
-        // match with static (1) or dynamic (2) ctx?
-        // check dynamic first as it is identical to static in normal header encryption mode
-        if(packet_header_decrypt(udp_buf, udp_size,
-                                 (char *)eee->conf.community_name,
-                                 eee->conf.header_encryption_ctx_dynamic, eee->conf.header_iv_ctx_dynamic,
-                                 &stamp)) {
-            header_enc = 2;     /* not accurate with normal header encryption but does not matter */
-        }
-        if(!header_enc) {
-            // check static now (very likely to be REGISTER_SUPER_ACK, REGISTER_SUPER_NAK or invalid)
-            if(eee->conf.shared_secret) {
-                // hash the still encrypted packet to eventually be able to check it later (required for REGISTER_SUPER_ACK with user/pw auth)
-                pearson_hash_128(hash_buf, udp_buf, MAX(0, (int)udp_size - (int)N2N_REG_SUP_HASH_CHECK_LEN));
-            }
-            header_enc = packet_header_decrypt(udp_buf, MAX(0, (int)udp_size - (int)N2N_REG_SUP_HASH_CHECK_LEN),
-                                               (char *)eee->conf.community_name,
-                                               eee->conf.header_encryption_ctx_static, eee->conf.header_iv_ctx_static,
-                                               &stamp);
-        }
+        // with the dynamic (2) or the static (1) keys?  The hash is only
+        // checked with user/password authentication
+        header_enc = pdu_header_decrypt(udp_buf, udp_size, (char *)eee->conf.community_name,
+                                        eee->conf.header_encryption_ctx_dynamic, eee->conf.header_iv_ctx_dynamic,
+                                        eee->conf.header_encryption_ctx_static, eee->conf.header_iv_ctx_static,
+                                        eee->conf.shared_secret ? hash_buf : NULL, &stamp);
         if(!header_enc) {
             traceEvent(TRACE_DEBUG, "failed to decrypt header");
             return;
