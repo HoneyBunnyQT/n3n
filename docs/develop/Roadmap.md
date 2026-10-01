@@ -185,6 +185,14 @@ while `peer` keeps getting what does not touch the wire, merged into
 - [ ] Path manager: candidates direct / same host / same site / hole
       punched / via relay / via two relays, probed continuously, cost from
       RTT, loss and load, switching while running
+- [ ] Transports as first-class citizens: every way a peer can be reached
+      (UDP, TCP, later others) is announced in its record with the same
+      standing, and any peer may use any of them towards any other - edges
+      and relays alike.  Choosing among them is the path manager's job,
+      preferring UDP; TCP and the rest are what it falls back on, not
+      something only edges get.  (v3 today: TCP only from edge to
+      supernode, the federation over UDP, and the federation's supernode
+      list carries no transport - its entry has a spare byte for it.)
 - [ ] Vivaldi network coordinates to estimate RTTs without probing
 - [ ] Nested NAT (VM in a laptop in a home network): scopes plus a "parent
       relay" chosen like any other relay
