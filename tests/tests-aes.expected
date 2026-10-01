@@ -1,0 +1,6 @@
+AES-128: FIPS-197 vector: ok
+AES-128: CBC, in place and multi: ok
+AES-192: FIPS-197 vector: ok
+AES-192: CBC, in place and multi: ok
+AES-256: FIPS-197 vector: ok
+AES-256: CBC, in place and multi: ok
