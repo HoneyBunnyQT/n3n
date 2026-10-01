@@ -81,9 +81,11 @@ tests and `make lint` pass after each.
 - [x] Step 6: dispatch through a table per message type with a handler per
       role instead of the two big `switch` statements: `edge_pdu_handlers`,
       `sn_pdu_handlers`, `pdu_dispatch()`
-- [ ] Step 7: split `edge_utils.c` / `sn_utils.c` by role and by concern:
-      core (`loop`, `sock`, `pdu_in`, `peers`) and `role_tap`,
-      `role_client`, `role_relay`, `role_federate`
+- [x] Step 7: split `edge_utils.c` / `sn_utils.c` by role and by concern,
+      see docs/develop/SourceLayout.md: `role_client.c`, `punch.c`,
+      `role_tap.c` for the edge, `role_relay.c`, `role_federate.c`,
+      `sn_communities.c` for the supernode; `edge_utils.c` and
+      `sn_utils.c` keep init, sockets, front end and loop of each
 - [ ] Step 8: one binary `n3n`; `n3n-edge` and `n3n-supernode` stay as
       names (links) that pick their roles from `argv[0]`, with unchanged
       options, help and config dumps
@@ -96,6 +98,9 @@ tests and `make lint` pass after each.
 ### Next
 
 - [x] Communities configured the same way for both roles (see Scratchpad)
+- [ ] netns scenarios where a supernode fails over with user/password
+      authentication (and more failover cases).  Once step 9 is done: ask
+      whether to stay on 9 for a while with this, or move on more quickly
 - [ ] `-O` on the command line for an instance (`-O "community home.key=x"`)
 - [ ] The edge reading the community file (the first entry), for a peer
       whose roles share one config
