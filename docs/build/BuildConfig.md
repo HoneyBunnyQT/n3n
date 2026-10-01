@@ -159,8 +159,8 @@ example through the `-march=sandybridge` (you name it) or just `-march=native` f
 So far, the following portions of n3n's code benefit from hardware features:
 
 ```
-AES:               AES-NI
-ChaCha20:          SSE2, SSSE3
+AES:               AES-NI, ARMv8 Cryptography Extension
+ChaCha20:          SSE2, SSSE3, AVX2, AVX512, NEON
 SPECK:             SSE2, SSSE3, AVX2, AVX512, (NEON)
 Random Numbers:    RDSEED, RDRND (not faster but more random seed)
 ```
@@ -168,6 +168,28 @@ Random Numbers:    RDSEED, RDRND (not faster but more random seed)
 The compilations flags could easily be combined:
 
 `./configure CFLAGS="-O3 -march=native"`.
+
+## ARM
+
+On aarch64, NEON is always there, and ChaCha20 uses it without further
+ado.  On 32 bit ARM it needs to be asked for, e.g. with `-mfpu=neon`.
+
+AES uses the AES instructions of ARMv8 (the Cryptography Extension) if the
+compiler may: `-march=native` on a CPU that has them, or explicitly
+`-march=armv8-a+crypto` (on 32 bit ARM `-march=armv8-a
+-mfpu=crypto-neon-fp-armv8`).  Most 64 bit ARM CPUs of phones, servers and
+newer boards have them - the Raspberry Pi 5 does, the Raspberry Pi 3 and 4 do
+not.  Without the flag, AES is the plain C version, which takes several
+times as long.  `grep -w aes /proc/cpuinfo` (on 32 bit ARM: the `Features`
+line) tells whether a CPU has them.
+
+Both are built for little endian ARM only; a big endian ARM host uses the
+plain C versions.
+
+To see what they bring on a particular board, compare `n3n-edge test
+benchmark` of a build with and one without the flags.  Results are welcome
+in an issue, as so far the NEON and ARMv8 versions are only tested for
+correctness (under qemu, see [Testing](../develop/testing.md)).
 
 ## SPECK – ARM NEON Hardware Acceleration
 

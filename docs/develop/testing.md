@@ -107,5 +107,7 @@ scripts/test_qemu.sh qemu-mips -L /usr/mips-linux-gnu
 Only the pattern tests of `tests-wire` are left out: they fill structs with
 byte patterns, which naturally come out differently on a big endian host.
 
-CI runs this for s390x (big endian, 64 bit), mips (big endian, 32 bit) and
-aarch64.
+CI runs this for s390x (big endian, 64 bit), mips (big endian, 32 bit),
+aarch64 (also with the ARMv8 AES instructions and Speck with NEON) and 32
+bit ARM with NEON.  `tests-aes` and `tests-cc20` check known answers of
+whichever implementation of AES and ChaCha20 a build has.

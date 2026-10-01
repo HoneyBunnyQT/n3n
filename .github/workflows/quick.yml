@@ -94,7 +94,7 @@ jobs:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   cross_qemu:
-    name: Tests on ${{ matrix.host }} under qemu
+    name: Tests on ${{ matrix.host }} ${{ matrix.cflags }} under qemu
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -112,6 +112,16 @@ jobs:
           - host: aarch64-linux-gnu
             arch: arm64
             qemu: qemu-aarch64
+          # the AES instructions of ARMv8 and Speck with NEON
+          - host: aarch64-linux-gnu
+            arch: arm64
+            qemu: qemu-aarch64
+            cflags: -march=armv8-a+crypto -DSPECK_ARM_NEON
+          # 32 bit ARM with NEON
+          - host: arm-linux-gnueabihf
+            arch: armhf
+            qemu: qemu-arm
+            cflags: -mfpu=neon
 
     steps:
       - uses: actions/checkout@v7
@@ -132,7 +142,8 @@ jobs:
       - name: Build
         run: |
           ./autogen.sh
-          ./configure --host=${{ matrix.host }}
+          ./configure --host=${{ matrix.host }} \
+              CFLAGS="-g -O2 ${{ matrix.cflags }}"
           make -j4 apps tools
 
       - name: Run the unit and builtin tests

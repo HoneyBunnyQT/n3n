@@ -99,7 +99,14 @@ tests and `make lint` pass after each.
       remove it?
 - [ ] Run a netns scenario between a big endian and a little endian edge
       (qemu-user binaries in one namespace)
-- [ ] ARM NEON: look where the ciphers could gain (see Scratchpad)
+- [x] ARM: AES with the ARMv8 Cryptography Extension (`aes_armce.c`),
+      ChaCha20 with NEON (`cc20_neon.c`), known answer tests for both
+      (`tests-aes`, `tests-cc20`), CI under qemu for both
+- [ ] ARM: benchmark on real boards (Pi 3/4 without AES instructions, Pi 5
+      with): `n3n-edge test benchmark`, with and without the flags; decide
+      whether Speck NEON can be on by default on newer cores
+- [ ] Runtime selection of the implementations (Hamish is working on it):
+      then distribution builds get the ARMv8 AES too, without the flag
 - [ ] epoll in the mainloop instead of `select()` (`mainloop.c` TODO), lifts
       the limit on TCP connections
 - [ ] Batched I/O: `recvmmsg()` / `sendmmsg()`, later UDP GSO/GRO
@@ -170,19 +177,26 @@ Today the edge has one community from `community.name`, `community.key`,
 one name or regular expression per line, optionally with a network, plus
 `*` lines with user names and public keys.
 
-Idea: one way for both.  Options:
+Decided (2026-10-01): a config section per community, and the community file
+stays for long lists.  Open: what if both name the same community.
 
-1. The community file grows per-community settings (key, cipher, header
-   encryption, network, users) and both roles read it; a peer with only the
-   `tap` role takes the first entry and no regular expressions.
-2. Config file sections per community, e.g. `[community "home"]`, with
-   `community_file` kept for the supernode's long lists.
-3. Keep `community.*` options for the first community and the file for any
-   more.
+Proposal:
 
-Leaning towards 2 or 3: a single edge stays a few lines of config, a relay
-with many communities keeps its file.  To decide before step 4, since it
-shapes `rt->relay` and the community table of step 5.
+- The communities are the union of the sections and the file.
+- A community in both: the section's options win, the file fills in what the
+  section does not set (network, users); a line in the log says so.
+- Regular expressions only in the file (they are no community of their own,
+  but a rule which names are welcome).
+- A reload (SIGHUP) re-reads the file; the sections stay as they were
+  started.
+- A peer with only the `tap` role takes exactly one community: one section,
+  or the first entry of the file; more is an error at start, not a silent
+  choice.  (Several TAP devices, one per community, could come later.)
+- The `community.*` options of today stay as the short form of a single
+  section, so existing edge configs keep working.
+
+To decide before step 4, since it shapes `rt->relay` and the community table
+of step 5.
 
 ### Flaky netns scenarios (NAT work)
 
@@ -194,16 +208,20 @@ Seen once each in a few full runs, passing on re-runs:
   NAT for "easy (port changed)" - perhaps both supernodes saw the same port
   drawn from the range of 240
 
-### ARM NEON
+### ARM
 
-- Speck has a NEON version already (`src/crypto/speck_neon.c`)
-- ChaCha20: a NEON version like `cc20_sse2.c` is feasible; OpenSSL has one,
-  so measure against `--with-openssl` first
-- AES: ARMv8 has the crypto extension (`vaeseq_u8` ...), much faster than
-  plain C; worth it on Raspberry Pi 5 / most ARMv8 boards (not on the Pi 4,
-  which lacks the extension)
+- AES: `aes_armce.c` uses AESE/AESMC/AESD/AESIMC when the compiler may
+  (`-march=armv8-a+crypto`, `-march=native` on a Pi 5); the key schedule
+  uses AESE for SubWord, so there is no table.  CBC decryption and
+  `aes_cbc_encrypt_multi()` run four blocks side by side
+- ChaCha20: `cc20_neon.c`, on by default wherever NEON is (all aarch64):
+  four blocks side by side on aarch64, two on 32 bit ARM.  NEON ChaCha20 is
+  what Linux and OpenSSL use on arm64, but numbers from our boards are
+  missing - if it turns out slower somewhere, it gets a switch like Speck's
+- Speck: `speck_neon.c` stays opt-in (`-DSPECK_ARM_NEON`), as on the Pi 3B+
+  it was slower than the scalar code; worth measuring again on newer cores
 - Twofish: table lookups, little to gain from NEON
-- Test with `qemu-aarch64` for correctness, on real boards for speed
+- Pearson hash (header encryption): 64 bit multiplies, scalar is fine
 
 ### Commands
 
