@@ -40,16 +40,12 @@ struct edge_thread_ops {
     int (*read_udp)(struct n3n_runtime_data *eee, SOCKET sock,
                     struct n3n_pktbuf *pkt, time_t now);
     // on the main thread: a PDU that a worker handed over with
-    // edge_threads_post_pdu(), with the note the worker added
-    void (*process_pdu)(struct n3n_runtime_data *eee,
-                        const struct sockaddr *sender, socklen_t sender_len,
-                        uint8_t *buf, size_t size, const void *note);
+    // edge_threads_post_pdu(), its buf, size, sender_sock and sock_size set
+    // again to the copies
+    void (*process_pdu)(struct n3n_runtime_data *eee, struct pdu_ctx *c);
     // whether every worker also reads a queue of the tap device
     int tap;
 };
-
-// the most a note to edge_threads_post_pdu() can hold
-#define EDGE_THREADS_NOTE_MAX 192
 
 // How many threads can handle packets with this configuration, the main
 // thread included: 1 unless it asks for more and they work here.
@@ -65,15 +61,11 @@ int edge_threads_wanted (const n2n_edge_conf_t *conf);
 void edge_threads_main_release (struct n3n_runtime_data *eee);
 void edge_threads_main_acquire (struct n3n_runtime_data *eee);
 
-// From a worker: hand an event or a control message to the main thread. The
-// control message's PDU is copied, so the worker may reuse its buffer.
+// From a worker: hand an event or a PDU to the main thread. The PDU and its
+// sender's address are copied, so the worker may reuse its buffers.
 // Nothing is dropped - see QUEUE_SLOTS in edge_threads.c.
 void edge_threads_post_event (struct n3n_runtime_data *eee, const struct edge_event *ev);
-void edge_threads_post_control (struct n3n_runtime_data *eee, const struct pdu_ctx *c);
-void edge_threads_post_pdu (struct n3n_runtime_data *eee,
-                            const struct sockaddr *sender, socklen_t sender_len,
-                            const uint8_t *buf, size_t size,
-                            const void *note, size_t note_size);
+void edge_threads_post_pdu (struct n3n_runtime_data *eee, const struct pdu_ctx *c);
 
 // On the main thread, holding the lock: apply everything the workers queued.
 void edge_threads_drain (struct n3n_runtime_data *eee);

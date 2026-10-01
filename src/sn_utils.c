@@ -1936,9 +1936,6 @@ static int sort_communities (struct n3n_runtime_data *sss,
 /* What the header of a PDU says, once it is decrypted. Finding it changes
  * nothing, so a packet thread can do that too, and it is all by value, so it
  * can travel to the main thread together with the decrypted PDU. */
-_Static_assert(sizeof(struct pdu_ctx) <= EDGE_THREADS_NOTE_MAX, "a pdu_ctx has to fit into a note");
-
-
 /* Find the community a PDU belongs to and decrypt its header, if encrypted.
  * Returns -1 if the PDU is to be dropped. */
 static int pdu_head_find (struct n3n_runtime_data *sss,
@@ -2184,7 +2181,7 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
     h->from_supernode = from_supernode;
 
     if(n3n_thread_slot && !relay_here(sss, comm, &cmn, from_supernode, udp_buf, rem, idx)) {
-        edge_threads_post_pdu(sss, sender_sock, sock_size, udp_buf, udp_size, h, sizeof(*h));
+        edge_threads_post_pdu(sss, h);
         return 0;
     }
 
@@ -3201,25 +3198,17 @@ static int process_pdu (struct n3n_runtime_data * sss,
 
 /* A PDU a packet thread handed over, with its header already decrypted. It
  * came in over UDP. */
-static void process_pdu_handed_over (struct n3n_runtime_data *sss,
-                                     const struct sockaddr *sender, socklen_t sender_len,
-                                     uint8_t *buf, size_t size, const void *note) {
+static void process_pdu_handed_over (struct n3n_runtime_data *sss, struct pdu_ctx *h) {
 
-    struct pdu_ctx h = *(const struct pdu_ctx *)note;
     struct sn_community *comm = NULL;
 
-    // what points somewhere is set again on this thread
-    h.buf = buf;
-    h.size = size;
-    h.sender_sock = sender;
-    h.sock_size = sender_len;
-    h.now = time(NULL);
+    h->now = time(NULL);
 
-    if(h.in_community) {
+    if(h->in_community) {
         // the community may have gone meanwhile
-        HASH_FIND_COMMUNITY(sss->relay.communities, (char *)h.cmn.community, comm);
+        HASH_FIND_COMMUNITY(sss->relay.communities, (char *)h->cmn.community, comm);
         if(!comm) {
-            traceEvent(TRACE_DEBUG, "dropped a PDU for community '%s' which is gone", h.cmn.community);
+            traceEvent(TRACE_DEBUG, "dropped a PDU for community '%s' which is gone", h->cmn.community);
             return;
         }
     } else {
@@ -3228,11 +3217,11 @@ static void process_pdu_handed_over (struct n3n_runtime_data *sss,
         // this REGISTER_SUPER creates a second community of the same name,
         // and the edges in one never find those in the other. The thread
         // found no community, so it has not decrypted the header either.
-        if(pdu_head_find(sss, &h, &comm) < 0) {
+        if(pdu_head_find(sss, h, &comm) < 0) {
             return;
         }
     }
-    process_pdu_body(sss, &h, comm);
+    process_pdu_body(sss, h, comm);
 }
 
 

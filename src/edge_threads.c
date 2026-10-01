@@ -182,19 +182,15 @@ int edge_threads_wanted (const n2n_edge_conf_t *conf) {
 
 enum queue_kind {
     QUEUE_EVENT = 1,
-    QUEUE_CONTROL,
     QUEUE_PDU,
 };
 
 struct queue_item {
     enum queue_kind kind;
     struct edge_event ev;
-    struct pdu_ctx ctl;
-    struct sockaddr_storage sender;     // PDU
-    socklen_t sender_len;               // PDU
-    uint64_t note[EDGE_THREADS_NOTE_MAX / sizeof(uint64_t)];   // PDU, aligned for any struct
-    size_t len;
-    uint8_t buf[N2N_PKT_BUF_SIZE];      // CONTROL, PDU: the copy of the PDU
+    struct pdu_ctx ctx;                 // PDU
+    struct sockaddr_storage sender;     // PDU: the copy of the sender's address
+    uint8_t buf[N2N_PKT_BUF_SIZE];      // PDU: the copy of the PDU
 };
 
 struct overflow_item {
@@ -343,36 +339,12 @@ void edge_threads_post_event (struct n3n_runtime_data *eee, const struct edge_ev
 }
 
 
-void edge_threads_post_control (struct n3n_runtime_data *eee, const struct pdu_ctx *c) {
+void edge_threads_post_pdu (struct n3n_runtime_data *eee, const struct pdu_ctx *c) {
 
     struct overflow_item *ov;
     struct queue_item *it;
 
-    if(c->size > sizeof(it->buf)) {
-        return;
-    }
-    it = queue_reserve(eee->threads, &ov);
-    if(!it) {
-        return;
-    }
-    it->kind = QUEUE_CONTROL;
-    it->ctl = *c;
-    it->len = c->size;
-    memcpy(it->buf, c->buf, c->size);
-    queue_commit(eee->threads, ov);
-}
-
-
-void edge_threads_post_pdu (struct n3n_runtime_data *eee,
-                            const struct sockaddr *sender, socklen_t sender_len,
-                            const uint8_t *buf, size_t size,
-                            const void *note, size_t note_size) {
-
-    struct overflow_item *ov;
-    struct queue_item *it;
-
-    if((size > sizeof(it->buf)) || (note_size > sizeof(it->note))
-       || (sender_len > sizeof(it->sender))) {
+    if((c->size > sizeof(it->buf)) || (c->sock_size > sizeof(it->sender))) {
         return;
     }
     it = queue_reserve(eee->threads, &ov);
@@ -380,11 +352,11 @@ void edge_threads_post_pdu (struct n3n_runtime_data *eee,
         return;
     }
     it->kind = QUEUE_PDU;
-    memcpy(&it->sender, sender, sender_len);
-    it->sender_len = sender_len;
-    memcpy(it->note, note, note_size);
-    it->len = size;
-    memcpy(it->buf, buf, size);
+    it->ctx = *c;
+    memcpy(it->buf, c->buf, c->size);
+    if(c->sender_sock) {
+        memcpy(&it->sender, c->sender_sock, c->sock_size);
+    }
     queue_commit(eee->threads, ov);
 }
 
@@ -395,14 +367,12 @@ static void queue_item_apply (struct n3n_runtime_data *eee, struct queue_item *i
         case QUEUE_EVENT:
             edge_event_apply(eee, &it->ev);
             break;
-        case QUEUE_CONTROL:
-            it->ctl.buf = it->buf;
-            it->ctl.size = it->len;
-            process_pdu_control(eee, &it->ctl);
-            break;
         case QUEUE_PDU:
-            eee->threads->ops->process_pdu(eee, (struct sockaddr *)&it->sender, it->sender_len,
-                                           it->buf, it->len, it->note);
+            it->ctx.buf = it->buf;
+            if(it->ctx.sender_sock) {
+                it->ctx.sender_sock = (struct sockaddr *)&it->sender;
+            }
+            eee->threads->ops->process_pdu(eee, &it->ctx);
             break;
     }
 }
@@ -947,13 +917,7 @@ void edge_threads_main_acquire (struct n3n_runtime_data *eee) {
 void edge_threads_post_event (struct n3n_runtime_data *eee, const struct edge_event *ev) {
 }
 
-void edge_threads_post_control (struct n3n_runtime_data *eee, const struct pdu_ctx *c) {
-}
-
-void edge_threads_post_pdu (struct n3n_runtime_data *eee,
-                            const struct sockaddr *sender, socklen_t sender_len,
-                            const uint8_t *buf, size_t size,
-                            const void *note, size_t note_size) {
+void edge_threads_post_pdu (struct n3n_runtime_data *eee, const struct pdu_ctx *c) {
 }
 
 void edge_threads_drain (struct n3n_runtime_data *eee) {

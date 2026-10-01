@@ -3115,6 +3115,7 @@ void edge_send_packet2net (struct n3n_runtime_data * eee,
 // what the workers of an edge do
 static const struct edge_thread_ops edge_thread_ops = {
     .read_udp = edge_read_proto3_udp,
+    .process_pdu = process_pdu_control,
     .tap = 1,
 };
 
@@ -4182,7 +4183,7 @@ void process_pdu (struct n3n_runtime_data *eee,
 
             if(n3n_thread_slot) {
                 // a packet thread: the main thread handles it, from a copy
-                edge_threads_post_control(eee, &c);
+                edge_threads_post_pdu(eee, &c);
                 return;
             }
             process_pdu_control(eee, &c);
