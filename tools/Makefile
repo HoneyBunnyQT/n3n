@@ -21,6 +21,8 @@ TESTS+=tests-auth
 TESTS+=tests-peers
 TESTS+=tests-aes
 TESTS+=tests-cc20
+TESTS+=tests-wire-fuzz
+TESTS+=tests-wire-numsn
 
 .PHONY: all clean install
 all: $(TOOLS) $(TESTS)
