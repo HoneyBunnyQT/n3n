@@ -37,7 +37,7 @@ static struct n3n_conf_option section_community[] = {
     {
         .name = "cipher",
         .type = n3n_conf_transform,
-        .offset = offsetof(n2n_edge_conf_t, transop_id),
+        .offset = offsetof(n2n_edge_conf_t, community.transop_id),
         .desc = "The name of the cipher to use",
         .help = "Choose from any of the registered ciphers for payload "
                 "encryption (requires a key). "
@@ -46,14 +46,14 @@ static struct n3n_conf_option section_community[] = {
     {
         .name = "compression",
         .type = n3n_conf_compression,
-        .offset = offsetof(n2n_edge_conf_t, compression),
+        .offset = offsetof(n2n_edge_conf_t, community.compression),
         .desc = "Compress outgoing data packets",
         .help = "0=none, 1=lzo1x, 2=zstd (only if supported)",
     },
     {
         .name = "header_encryption",
         .type = n3n_conf_headerenc,
-        .offset = offsetof(n2n_edge_conf_t, header_encryption),
+        .offset = offsetof(n2n_edge_conf_t, community.header_encryption),
         .desc = "Enable header encryption",
         .help = "All edges within the same community must this set the same "
                 "and the supernode needs to have the community defined",
@@ -61,7 +61,7 @@ static struct n3n_conf_option section_community[] = {
     {
         .name = "key",
         .type = n3n_conf_strdup,
-        .offset = offsetof(n2n_edge_conf_t, encrypt_key),
+        .offset = offsetof(n2n_edge_conf_t, community.encrypt_key),
         .desc = "The encryption key (ASCII)",
         .help = "All edges within the same community must use the same key. "
                 "If no key is specified then the edge uses cleartext mode "
@@ -71,7 +71,7 @@ static struct n3n_conf_option section_community[] = {
         .name = "name",
         .type = n3n_conf_strncpy,
         .length = N2N_COMMUNITY_SIZE,
-        .offset = offsetof(n2n_edge_conf_t, community_name),
+        .offset = offsetof(n2n_edge_conf_t, community.community_name),
         .desc = "The name of the community to join",
         .help = "All edges within the same community appear on the same LAN "
                 "(layer 2 network segment).  Community name is "

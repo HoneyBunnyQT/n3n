@@ -127,7 +127,7 @@ int sn_selection_criterion_common_data_default (struct n3n_runtime_data *eee) {
             uint64_t tmp = 0;
 
             tmp = HASH_COUNT(eee->client.pending_peers);
-            if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED) {
+            if(eee->conf.community.header_encryption == HEADER_ENCRYPTION_ENABLED) {
                 tmp *= 2;
             }
             eee->client.sn_selection_criterion_common_data = tmp / HASH_COUNT(eee->client.supernodes);

@@ -233,7 +233,7 @@ char* intoa (uint32_t /* host order */ addr, char* buf, uint16_t buf_len) {
 
 int edge_verify_conf (const n2n_edge_conf_t *conf) {
 
-    if(conf->community_name[0] == 0)
+    if(conf->community.community_name[0] == 0)
         return -1;
 
     if(!resolve_hostnames_str_get(RESOLVE_LIST_SUPERNODE, 0)) {
@@ -244,8 +244,8 @@ int edge_verify_conf (const n2n_edge_conf_t *conf) {
     if(conf->client.register_interval < 1)
         return -3;
 
-    if(((conf->encrypt_key == NULL) && (conf->transop_id != N2N_TRANSFORM_ID_NULL)) ||
-       ((conf->encrypt_key != NULL) && (conf->transop_id == N2N_TRANSFORM_ID_NULL)))
+    if(((conf->community.encrypt_key == NULL) && (conf->community.transop_id != N2N_TRANSFORM_ID_NULL)) ||
+       ((conf->community.encrypt_key != NULL) && (conf->community.transop_id == N2N_TRANSFORM_ID_NULL)))
         return -4;
 
     return 0;
@@ -884,7 +884,7 @@ void supernode_disconnect (struct n3n_runtime_data *eee) {
  */
 struct n3n_runtime_data* edge_init (const n2n_edge_conf_t *conf, int *rv) {
 
-    n2n_transform_t transop_id = conf->transop_id;
+    n2n_transform_t transop_id = conf->community.transop_id;
     struct n3n_runtime_data *eee = calloc(1, sizeof(struct n3n_runtime_data));
     int rc = -1;
     uint8_t tmp_key[N2N_AUTH_CHALLENGE_SIZE];
@@ -972,9 +972,9 @@ struct n3n_runtime_data* edge_init (const n2n_edge_conf_t *conf, int *rv) {
     }
 
     // set the key schedule (context) for header encryption if enabled
-    if(conf->header_encryption == HEADER_ENCRYPTION_ENABLED) {
+    if(conf->community.header_encryption == HEADER_ENCRYPTION_ENABLED) {
         traceEvent(TRACE_NORMAL, "Header encryption is enabled.");
-        packet_header_setup_key((char *)(eee->conf.community_name),
+        packet_header_setup_key((char *)(eee->conf.community.community_name),
                                 &(eee->conf.header_encryption_ctx_static),
                                 &(eee->conf.header_encryption_ctx_dynamic),
                                 &(eee->conf.header_iv_ctx_static),
@@ -1643,7 +1643,7 @@ void send_query_peer (struct n3n_runtime_data * eee,
     cmn.ttl = N2N_DEFAULT_TTL;
     cmn.pc = MSG_TYPE_QUERY_PEER;
     cmn.flags = 0;
-    memcpy(cmn.community, eee->conf.community_name, N2N_COMMUNITY_SIZE);
+    memcpy(cmn.community, eee->conf.community.community_name, N2N_COMMUNITY_SIZE);
 
     memcpy(query.srcMac, eee->tap.device.mac_addr, sizeof(n2n_mac_t));
     memcpy(query.targetMac, dst_mac, sizeof(n2n_mac_t));
@@ -1655,7 +1655,7 @@ void send_query_peer (struct n3n_runtime_data * eee,
 
         traceEvent(TRACE_DEBUG, "send QUERY_PEER to supernode");
 
-        if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED) {
+        if(eee->conf.community.header_encryption == HEADER_ENCRYPTION_ENABLED) {
             packet_header_encrypt(pktbuf, idx, idx,
                                   eee->conf.header_encryption_ctx_dynamic, eee->conf.header_iv_ctx_dynamic,
                                   time_stamp());
@@ -1666,7 +1666,7 @@ void send_query_peer (struct n3n_runtime_data * eee,
     } else {
         traceEvent(TRACE_DEBUG, "send PING to supernodes");
 
-        if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED) {
+        if(eee->conf.community.header_encryption == HEADER_ENCRYPTION_ENABLED) {
             packet_header_encrypt(pktbuf, idx, idx,
                                   eee->conf.header_encryption_ctx_dynamic, eee->conf.header_iv_ctx_dynamic,
                                   time_stamp());
@@ -1731,7 +1731,7 @@ void send_register_super (struct n3n_runtime_data *eee) {
         cmn.flags = N2N_FLAGS_SOCKET;
         memcpy(&(reg.sock), &(eee->client.advertised_sock), sizeof(n3n_sock_t));
     }
-    memcpy(cmn.community, eee->conf.community_name, N2N_COMMUNITY_SIZE);
+    memcpy(cmn.community, eee->conf.community.community_name, N2N_COMMUNITY_SIZE);
 
     eee->client.curr_sn->last_cookie = n3n_rand();
 
@@ -1749,7 +1749,7 @@ void send_register_super (struct n3n_runtime_data *eee) {
     traceEvent(TRACE_DEBUG, "send REGISTER_SUPER to [%s]",
                sock_to_cstr(sockbuf, &(eee->client.curr_sn->sock)));
 
-    if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED) {
+    if(eee->conf.community.header_encryption == HEADER_ENCRYPTION_ENABLED) {
         packet_header_encrypt(pktbuf, idx, idx,
                               eee->conf.header_encryption_ctx_static, eee->conf.header_iv_ctx_static,
                               time_stamp());
@@ -1781,7 +1781,7 @@ static void send_unregister_super (struct n3n_runtime_data *eee) {
     cmn.ttl = N2N_DEFAULT_TTL;
     cmn.pc = MSG_TYPE_UNREGISTER_SUPER;
     cmn.flags = 0;
-    memcpy(cmn.community, eee->conf.community_name, N2N_COMMUNITY_SIZE);
+    memcpy(cmn.community, eee->conf.community.community_name, N2N_COMMUNITY_SIZE);
     get_local_auth(eee, &(unreg.auth));
 
     memcpy(unreg.srcMac, eee->tap.device.mac_addr, sizeof(n2n_mac_t));
@@ -1792,7 +1792,7 @@ static void send_unregister_super (struct n3n_runtime_data *eee) {
     traceEvent(TRACE_DEBUG, "send UNREGISTER_SUPER to [%s]",
                sock_to_cstr(sockbuf, &(eee->client.curr_sn->sock)));
 
-    if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED)
+    if(eee->conf.community.header_encryption == HEADER_ENCRYPTION_ENABLED)
         packet_header_encrypt(pktbuf, idx, idx,
                               eee->conf.header_encryption_ctx_dynamic, eee->conf.header_iv_ctx_dynamic,
                               time_stamp());
@@ -1871,7 +1871,7 @@ static size_t encode_register_pkt (struct n3n_runtime_data * eee,
     cmn.ttl = N2N_DEFAULT_TTL;
     cmn.pc = MSG_TYPE_REGISTER;
     cmn.flags = 0;
-    memcpy(cmn.community, eee->conf.community_name, N2N_COMMUNITY_SIZE);
+    memcpy(cmn.community, eee->conf.community.community_name, N2N_COMMUNITY_SIZE);
 
     reg.cookie = cookie;
     memcpy(reg.srcMac, eee->tap.device.mac_addr, sizeof(n2n_mac_t));
@@ -1887,7 +1887,7 @@ static size_t encode_register_pkt (struct n3n_runtime_data * eee,
     idx = 0;
     encode_REGISTER(pktbuf, &idx, &cmn, &reg);
 
-    if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED)
+    if(eee->conf.community.header_encryption == HEADER_ENCRYPTION_ENABLED)
         packet_header_encrypt(pktbuf, idx, idx,
                               eee->conf.header_encryption_ctx_dynamic, eee->conf.header_iv_ctx_dynamic,
                               time_stamp());
@@ -2169,7 +2169,7 @@ static void send_register_ack (struct n3n_runtime_data * eee,
     cmn.ttl = N2N_DEFAULT_TTL;
     cmn.pc = MSG_TYPE_REGISTER_ACK;
     cmn.flags = 0;
-    memcpy(cmn.community, eee->conf.community_name, N2N_COMMUNITY_SIZE);
+    memcpy(cmn.community, eee->conf.community.community_name, N2N_COMMUNITY_SIZE);
     ack.cookie = reg->cookie;
     memcpy(ack.srcMac, eee->tap.device.mac_addr, N2N_MAC_SIZE);
     memcpy(ack.dstMac, reg->srcMac, N2N_MAC_SIZE);
@@ -2180,7 +2180,7 @@ static void send_register_ack (struct n3n_runtime_data * eee,
     traceEvent(TRACE_INFO, "send REGISTER_ACK to [%s]",
                sock_to_cstr(sockbuf, remote_peer));
 
-    if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED)
+    if(eee->conf.community.header_encryption == HEADER_ENCRYPTION_ENABLED)
         packet_header_encrypt(pktbuf, idx, idx,
                               eee->conf.header_encryption_ctx_dynamic, eee->conf.header_iv_ctx_dynamic,
                               time_stamp());
@@ -2566,12 +2566,12 @@ static int handle_PACKET (struct n3n_runtime_data * eee,
     n2n_transform_t rx_transop_id = (n2n_transform_t)pkt->transform;
     uint8_t rx_compression_id = pkt->compression;
 
-    if(rx_transop_id != eee->conf.transop_id) {
+    if(rx_transop_id != eee->conf.community.transop_id) {
         traceEvent(
             TRACE_WARNING,
             "invalid transop ID: expected %s (%u), got %s (%u) from %s [%s]",
-            n3n_transform_id2str(eee->conf.transop_id),
-            eee->conf.transop_id,
+            n3n_transform_id2str(eee->conf.community.transop_id),
+            eee->conf.community.transop_id,
             n3n_transform_id2str(rx_transop_id),
             rx_transop_id,
             macaddr_str(mac_buf, pkt->srcMac),
@@ -2940,7 +2940,7 @@ size_t edge_encode_packet_head (struct n3n_runtime_data *eee,
     cmn.ttl = N2N_DEFAULT_TTL;
     cmn.pc = MSG_TYPE_PACKET;
     cmn.flags = 0; /* no options, not from supernode, no socket */
-    memcpy(cmn.community, eee->conf.community_name, N2N_COMMUNITY_SIZE);
+    memcpy(cmn.community, eee->conf.community.community_name, N2N_COMMUNITY_SIZE);
 
     memcpy(pkt.srcMac, eee->tap.device.mac_addr, N2N_MAC_SIZE);
     memcpy(pkt.dstMac, out_destMac, N2N_MAC_SIZE);
@@ -2950,10 +2950,10 @@ size_t edge_encode_packet_head (struct n3n_runtime_data *eee,
     // compression needs to be tried before encode_PACKET is called for compression indication gets encoded there
     pkt.compression = N2N_COMPRESSION_ID_NONE;
 
-    if(eee->conf.compression) {
+    if(eee->conf.community.compression) {
         int32_t compression_len;
 
-        switch(eee->conf.compression) {
+        switch(eee->conf.community.compression) {
             case N2N_COMPRESSION_ID_LZO:
                 compression_len = eee->client.transop_lzo.fwd(&eee->client.transop_lzo,
                                                               compression_buf, compression_buf_size,
@@ -3015,7 +3015,7 @@ size_t edge_encode_packet_tail (struct n3n_runtime_data *eee,
     traceEvent(TRACE_DEBUG, "encode PACKET of %u bytes, %u bytes data, %u bytes overhead, transform %u",
                (u_int)idx, (u_int)len, (u_int)(idx - len), eee->client.transop.transform_id);
 
-    if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED)
+    if(eee->conf.community.header_encryption == HEADER_ENCRYPTION_ENABLED)
         // in case of user-password auth, also encrypt the iv of payload assuming ChaCha20 and SPECK having the same iv size
         packet_header_encrypt(pktbuf, headerIdx + (NULL != eee->conf.shared_secret) * MIN(idx - headerIdx, N2N_SPECK_IVEC_SIZE), idx,
                               eee->conf.header_encryption_ctx_dynamic, eee->conf.header_iv_ctx_dynamic,
@@ -3377,7 +3377,7 @@ int edge_read_from_tap_batch (struct n3n_runtime_data * eee, int max) {
 // with user/password authentication and header encryption
 static bool supernode_appends_hash (const struct n3n_runtime_data *eee) {
 
-    return eee->conf.shared_secret && (eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED);
+    return eee->conf.shared_secret && (eee->conf.community.header_encryption == HEADER_ENCRYPTION_ENABLED);
 }
 
 
@@ -3443,7 +3443,7 @@ void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_control *c) {
 
             via_multicast &= is_null_mac(reg.dstMac);
 
-            if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED) {
+            if(eee->conf.community.header_encryption == HEADER_ENCRYPTION_ENABLED) {
                 if(!find_peer_time_stamp_and_verify(
                        eee->client.pending_peers,
                        eee->client.known_peers,
@@ -3530,7 +3530,7 @@ void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_control *c) {
                 return;
             }
 
-            if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED) {
+            if(eee->conf.community.header_encryption == HEADER_ENCRYPTION_ENABLED) {
                 if(!find_peer_time_stamp_and_verify(
                        eee->client.pending_peers,
                        eee->client.known_peers,
@@ -3592,7 +3592,7 @@ void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_control *c) {
                 return;
             }
 
-            if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED) {
+            if(eee->conf.community.header_encryption == HEADER_ENCRYPTION_ENABLED) {
                 if(!find_peer_time_stamp_and_verify(
                        eee->client.pending_peers,
                        eee->client.known_peers,
@@ -3723,7 +3723,7 @@ void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_control *c) {
                 return;
             }
 
-            if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED) {
+            if(eee->conf.community.header_encryption == HEADER_ENCRYPTION_ENABLED) {
                 if(!find_peer_time_stamp_and_verify(
                        eee->client.pending_peers,
                        eee->client.known_peers,
@@ -3790,7 +3790,7 @@ void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_control *c) {
                 return;
             }
 
-            if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED) {
+            if(eee->conf.community.header_encryption == HEADER_ENCRYPTION_ENABLED) {
                 if(!find_peer_time_stamp_and_verify(
                        eee->client.pending_peers,
                        eee->client.known_peers,
@@ -3885,7 +3885,7 @@ void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_control *c) {
                 return;
             }
 
-            if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED) {
+            if(eee->conf.community.header_encryption == HEADER_ENCRYPTION_ENABLED) {
                 if(!find_peer_time_stamp_and_verify(
                        eee->client.pending_peers,
                        eee->client.known_peers,
@@ -3972,10 +3972,10 @@ void process_pdu (struct n3n_runtime_data *eee,
     traceEvent(TRACE_DEBUG, "Rx VPN packet of size %d from [%s]",
                (signed int)udp_size, sock_to_cstr(sockbuf1, &sender));
 
-    if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED) {
+    if(eee->conf.community.header_encryption == HEADER_ENCRYPTION_ENABLED) {
         // with the dynamic (2) or the static (1) keys?  The hash is only
         // checked with user/password authentication
-        header_enc = pdu_header_decrypt(udp_buf, udp_size, (char *)eee->conf.community_name,
+        header_enc = pdu_header_decrypt(udp_buf, udp_size, (char *)eee->conf.community.community_name,
                                         eee->conf.header_encryption_ctx_dynamic, eee->conf.header_iv_ctx_dynamic,
                                         eee->conf.header_encryption_ctx_static, eee->conf.header_iv_ctx_static,
                                         eee->conf.shared_secret ? hash_buf : NULL, &stamp);
@@ -4024,7 +4024,7 @@ void process_pdu (struct n3n_runtime_data *eee,
         }
     }
 
-    if(0 != memcmp(cmn.community, eee->conf.community_name, N2N_COMMUNITY_SIZE)) {
+    if(0 != memcmp(cmn.community, eee->conf.community.community_name, N2N_COMMUNITY_SIZE)) {
         // The community in the packet is not matching ours
 
         if(from_supernode) {
@@ -4056,7 +4056,7 @@ void process_pdu (struct n3n_runtime_data *eee,
                 return;
             }
 
-            if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED) {
+            if(eee->conf.community.header_encryption == HEADER_ENCRYPTION_ENABLED) {
                 if(!find_peer_time_stamp_and_verify(
                        eee->client.pending_peers,
                        eee->client.known_peers,
@@ -4530,7 +4530,7 @@ void edge_term_conf (n2n_edge_conf_t *conf) {
     speck_deinit(conf->shared_secret_ctx);
 
     free(conf->relay.community_file);
-    free(conf->encrypt_key);
+    free(conf->community.encrypt_key);
     free(conf->federation_public_key);
     free(conf->mgmt_password);
     free(conf->public_key);
@@ -4757,9 +4757,9 @@ void edge_init_conf_defaults (n2n_edge_conf_t *conf, char *sessionname) {
     // Cannot rely on having unix domain sockets on windows
     conf->mgmt_port = N2N_EDGE_MGMT_PORT;
 #endif
-    conf->transop_id = N2N_TRANSFORM_ID_NULL;
-    conf->header_encryption = HEADER_ENCRYPTION_NONE;
-    conf->compression = N2N_COMPRESSION_ID_NONE;
+    conf->community.transop_id = N2N_TRANSFORM_ID_NULL;
+    conf->community.header_encryption = HEADER_ENCRYPTION_NONE;
+    conf->community.compression = N2N_COMPRESSION_ID_NONE;
     conf->client.allow_p2p = true;
     conf->client.local_discovery = true;
     conf->threads = 1;
@@ -4817,11 +4817,11 @@ int quick_edge_init (char *device_name, char *community_name,
     /* Setup the configuration */
     edge_init_conf_defaults(&conf,"edge");
     n3n_config_load_env(&conf);
-    conf.encrypt_key = encrypt_key;
-    conf.transop_id = N2N_TRANSFORM_ID_AES;
-    conf.compression = N2N_COMPRESSION_ID_NONE;
+    conf.community.encrypt_key = encrypt_key;
+    conf.community.transop_id = N2N_TRANSFORM_ID_AES;
+    conf.community.compression = N2N_COMPRESSION_ID_NONE;
     conf.tap.mtu = DEFAULT_MTU;
-    snprintf((char*)conf.community_name, sizeof(conf.community_name), "%s", community_name);
+    snprintf((char*)conf.community.community_name, sizeof(conf.community.community_name), "%s", community_name);
     resolve_hostnames_str_add(
         RESOLVE_LIST_SUPERNODE,
         supernode_ip_address_port

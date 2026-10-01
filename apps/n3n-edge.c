@@ -924,11 +924,11 @@ int main (int argc, char* argv[]) {
 
     // --- additional crypto setup; REVISIT: move to edge_init()?
     // payload
-    if(conf.transop_id == N2N_TRANSFORM_ID_NULL) {
-        if(conf.encrypt_key) {
+    if(conf.community.transop_id == N2N_TRANSFORM_ID_NULL) {
+        if(conf.community.encrypt_key) {
             // make sure that AES is default cipher if key only (and no cipher) is specified
             traceEvent(TRACE_WARNING, "switching to AES as key was provided and no cipher set");
-            conf.transop_id = N2N_TRANSFORM_ID_AES;
+            conf.community.transop_id = N2N_TRANSFORM_ID_AES;
         }
     }
     // user auth
@@ -959,9 +959,9 @@ int main (int argc, char* argv[]) {
             speck_init(&conf.shared_secret_ctx, *(conf.shared_secret), 128);
         }
         // force header encryption
-        if(conf.header_encryption != HEADER_ENCRYPTION_ENABLED) {
+        if(conf.community.header_encryption != HEADER_ENCRYPTION_ENABLED) {
             traceEvent(TRACE_NORMAL, "enabling header encryption for edge authentication");
-            conf.header_encryption = HEADER_ENCRYPTION_ENABLED;
+            conf.community.header_encryption = HEADER_ENCRYPTION_ENABLED;
         }
     }
 
@@ -976,8 +976,8 @@ int main (int argc, char* argv[]) {
     traceEvent(TRACE_NORMAL, "using %s", OpenSSL_version(0));
 #endif
 
-    traceEvent(TRACE_NORMAL, "using compression: %s.", n3n_compression_id2str(conf.compression));
-    traceEvent(TRACE_NORMAL, "using %s cipher.", n3n_transform_id2str(conf.transop_id));
+    traceEvent(TRACE_NORMAL, "using compression: %s.", n3n_compression_id2str(conf.community.compression));
+    traceEvent(TRACE_NORMAL, "using %s cipher.", n3n_transform_id2str(conf.community.transop_id));
 
 #ifndef _WIN32
     /* If running suid root then we need to setuid before using the force. */
@@ -986,7 +986,7 @@ int main (int argc, char* argv[]) {
     /* setgid(0); */
 #endif
 
-    if(conf.encrypt_key && !strcmp((char*)conf.community_name, conf.encrypt_key))
+    if(conf.community.encrypt_key && !strcmp((char*)conf.community.community_name, conf.community.encrypt_key))
         traceEvent(TRACE_WARNING, "community and encryption key must differ, otherwise security will be compromised");
 
     if((eee = edge_init(&conf, &rc)) == NULL) {

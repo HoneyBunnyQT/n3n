@@ -40,9 +40,9 @@ int main () {
     edge_init_conf_defaults(&conf,"edge");
     n3n_config_load_env(&conf);
     conf.tap.allow_routing = true;                                                               // Whether to allow the edge to route packets to other edges
-    snprintf((char *)conf.community_name, sizeof(conf.community_name), "%s", "mycommunity"); // Community to connect to
+    snprintf((char *)conf.community.community_name, sizeof(conf.community.community_name), "%s", "mycommunity"); // Community to connect to
     conf.tap.allow_multicast = true;                                                             // Whether to enable multicast
-    conf.encrypt_key = strdup("mysecret");                                                   // Secret to decrypt & encrypt with
+    conf.community.encrypt_key = strdup("mysecret");                                                   // Secret to decrypt & encrypt with
     // conf.bind_address = sockaddr; // can be used to bind to a local port
     conf.client.register_interval = 1;                                                              // Interval for both UDP NAT hole punching and supernode registration
     conf.client.register_ttl = 1;                                                                   // Interval for UDP NAT hole punching through supernode
@@ -51,7 +51,7 @@ int main () {
     resolve_hostnames_str_add(RESOLVE_LIST_SUPERNODE, "localhost:1234");
 
     conf.tos = 16;                                                                           // Type of service for sent packets
-    conf.transop_id = N2N_TRANSFORM_ID_TWOFISH;                                              // Use the twofish encryption
+    conf.community.transop_id = N2N_TRANSFORM_ID_TWOFISH;                                              // Use the twofish encryption
 
     if(edge_verify_conf(&conf) != 0) {
         return -1;

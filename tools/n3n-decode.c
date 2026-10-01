@@ -202,7 +202,7 @@ static int run_packet_loop () {
             continue;
         }
 
-        if(strncmp((char*)conf.community_name, (char*)common.community, N2N_COMMUNITY_SIZE) != 0) {
+        if(strncmp((char*)conf.community.community_name, (char*)common.community, N2N_COMMUNITY_SIZE) != 0) {
             traceEvent(TRACE_INFO, "Skipping packet with non-matching community");
             continue;
         }
@@ -256,13 +256,13 @@ int main (int argc, char* argv[]) {
 
         switch(c) {
             case 'c':
-                strncpy((char*)conf.community_name, optarg, sizeof(conf.community_name)-1);
+                strncpy((char*)conf.community.community_name, optarg, sizeof(conf.community.community_name)-1);
                 break;
             case 'i':
                 ifname = strdup(optarg);
                 break;
             case 'k':
-                conf.encrypt_key = strdup(optarg);
+                conf.community.encrypt_key = strdup(optarg);
                 break;
             case 'B':
                 bpf_filter = strdup(optarg);
@@ -284,7 +284,7 @@ int main (int argc, char* argv[]) {
         }
     }
 
-    if((ifname == NULL) || (conf.encrypt_key == NULL) || (conf.community_name[0] == '\0'))
+    if((ifname == NULL) || (conf.community.encrypt_key == NULL) || (conf.community.community_name[0] == '\0'))
         help();
 
 #ifdef N2N_HAVE_AES
@@ -367,7 +367,7 @@ int main (int argc, char* argv[]) {
     /* Cleanup */
     pcap_close(handle);
 
-    if(conf.encrypt_key) free(conf.encrypt_key);
+    if(conf.community.encrypt_key) free(conf.community.encrypt_key);
     if(bpf_filter) free(bpf_filter);
     if(ifname) free(ifname);
 

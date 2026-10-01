@@ -323,8 +323,8 @@ static int setup_aes_key (transop_aes_t *priv, const uint8_t *password, ssize_t 
 int n2n_transop_aes_init (const n2n_edge_conf_t *conf, n2n_trans_op_t *ttt) {
 
     transop_aes_t *priv;
-    const u_char *encrypt_key = (const u_char *)conf->encrypt_key;
-    size_t encrypt_key_len = strlen(conf->encrypt_key);
+    const u_char *encrypt_key = (const u_char *)conf->community.encrypt_key;
+    size_t encrypt_key_len = strlen(conf->community.encrypt_key);
 
     memset(ttt, 0, sizeof(*ttt));
     ttt->transform_id = N2N_TRANSFORM_ID_AES;

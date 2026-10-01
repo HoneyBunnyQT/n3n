@@ -80,12 +80,12 @@ int main (int argc, char * argv[]) {
 
     /* Init configuration */
     edge_init_conf_defaults(&conf,"_TEST");
-    strncpy((char *)conf.community_name, "abc123def456", sizeof(conf.community_name));
-    conf.encrypt_key = strdup("SoMEVer!S$cUREPassWORD");
+    strncpy((char *)conf.community.community_name, "abc123def456", sizeof(conf.community.community_name));
+    conf.community.encrypt_key = strdup("SoMEVer!S$cUREPassWORD");
 
     char *test_name = "environment";
-    printf("%s: community_name = \"%s\"\n", test_name, conf.community_name);
-    printf("%s: encrypt_key = \"%s\"\n", test_name, conf.encrypt_key);
+    printf("%s: community_name = \"%s\"\n", test_name, conf.community.community_name);
+    printf("%s: encrypt_key = \"%s\"\n", test_name, conf.community.encrypt_key);
     printf(
         "%s: input size = 0x%x\n",
         test_name,
@@ -158,7 +158,7 @@ static void run_transop_benchmark (const char *op_name, n2n_trans_op_t *op_fn, n
     // encryption
     memset(mac_buf, 0, sizeof(mac_buf));
 
-    nw = do_encode_packet( pktbuf, N2N_PKT_BUF_SIZE, conf->community_name);
+    nw = do_encode_packet( pktbuf, N2N_PKT_BUF_SIZE, conf->community.community_name);
     n3n_srand_stable_default();
     nw += op_fn->fwd(op_fn,
                      pktbuf+nw, N2N_PKT_BUF_SIZE-nw,

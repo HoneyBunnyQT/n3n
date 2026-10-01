@@ -39,8 +39,8 @@ static void *bench_setup (void *const _ctx) {
     struct peer_info *peer;
 
     edge_init_conf_defaults(&ctx->eee.conf,"edge");
-    strcpy(ctx->eee.conf.community_name, "test");
-    ctx->eee.conf.transop_id = N2N_TRANSFORM_ID_NULL;
+    strcpy(ctx->eee.conf.community.community_name, "test");
+    ctx->eee.conf.community.transop_id = N2N_TRANSFORM_ID_NULL;
     ctx->eee.client.last_sup = 1;
     ctx->eee.client.curr_sn = peer_info_malloc(null_mac);
     ctx->eee.client.curr_sn->sock.family = AF_INVALID;

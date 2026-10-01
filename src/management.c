@@ -524,7 +524,7 @@ static void jsonrpc_get_mac (char *id, struct n3n_runtime_data *eee, conn_t *con
 static void jsonrpc_get_communities (char *id, struct n3n_runtime_data *eee, conn_t *conn, const char *params) {
     if(!eee->relay.communities) {
         // This is an edge
-        if(eee->conf.header_encryption != HEADER_ENCRYPTION_NONE) {
+        if(eee->conf.community.header_encryption != HEADER_ENCRYPTION_NONE) {
             jsonrpc_error(id, conn, 403, "Forbidden", 0);
             return;
         }
@@ -533,7 +533,7 @@ static void jsonrpc_get_communities (char *id, struct n3n_runtime_data *eee, con
         sb_reprintf(
             &conn->request,
             "[{\"community\":\"%s\"}]",
-            eee->conf.community_name
+            eee->conf.community.community_name
         );
         jsonrpc_result_tail(conn, 200);
         return;
@@ -659,7 +659,7 @@ static void jsonrpc_get_edges (char *id, struct n3n_runtime_data *eee, conn_t *c
             &conn->request,
             peer,
             "pSp",
-            eee->conf.community_name,
+            eee->conf.community.community_name,
             eee->client.nat_peers
         );
 
@@ -684,7 +684,7 @@ static void jsonrpc_get_edges (char *id, struct n3n_runtime_data *eee, conn_t *c
             &conn->request,
             peer,
             "p2p",
-            eee->conf.community_name,
+            eee->conf.community.community_name,
             eee->client.nat_peers
         );
 

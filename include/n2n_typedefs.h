@@ -472,9 +472,18 @@ struct n3n_conf_relay {
     n2n_ip_subnet_t sn_max_auto_ip_net;                        /* Address range of auto_ip service. */
 };
 
-typedef struct n2n_edge_conf {
-    // The community - to become one entry of a table of communities
+/* The settings of a community: of the one an edge joins, and of each one
+ * a supernode knows by a section of the configuration */
+struct n3n_conf_community {
     n2n_community_t community_name;                  /**< The community. 16 full octets. */
+    uint8_t header_encryption;                       /**< Header encryption indicator. */
+    uint8_t transop_id;                              /**< The transop to use. */
+    uint8_t compression;                             /**< Compress outgoing data packets before encryption */
+    char                     *encrypt_key;
+};
+
+typedef struct n2n_edge_conf {
+    struct n3n_conf_community community;             /**< The community joined, or the unnamed one */
     n2n_desc_t dev_desc;                             /**< The device description (hint) */
     n2n_private_public_key_t *public_key;            /**< edge's public key (for user/password based authentication) */
     n2n_private_public_key_t *shared_secret;         /**< shared secret derived from federation public key, username and password */
@@ -484,10 +493,6 @@ typedef struct n2n_edge_conf {
     struct speck_context_t *header_encryption_ctx_dynamic; /**< Header encryption cipher context. */
     struct speck_context_t *header_iv_ctx_static;    /**< Header IV ecnryption cipher context, REMOVE as soon as separate fileds for checksum and replay protection available */
     struct speck_context_t *header_iv_ctx_dynamic;   /**< Header IV ecnryption cipher context, REMOVE as soon as separate fileds for checksum and replay protection available */
-    uint8_t header_encryption;                       /**< Header encryption indicator. */
-    uint8_t transop_id;                              /**< The transop to use. */
-    uint8_t compression;                             /**< Compress outgoing data packets before encryption */
-    char                     *encrypt_key;
 
     // What all roles use: sockets, the management interface, the daemon
     bool pmtu_discovery;                             /**< Enable the Path MTU discovery. */

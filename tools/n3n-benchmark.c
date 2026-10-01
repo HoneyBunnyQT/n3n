@@ -76,8 +76,8 @@ int main (int argc, char * argv[]) {
     /* Init configuration */
     edge_init_conf_defaults(&conf,"_TEST");
 
-    strncpy((char*)conf.community_name, "abc123def456", sizeof(conf.community_name));
-    conf.encrypt_key = strdup("SoMEVer!S$cUREPassWORD");
+    strncpy((char*)conf.community.community_name, "abc123def456", sizeof(conf.community.community_name));
+    conf.community.encrypt_key = strdup("SoMEVer!S$cUREPassWORD");
 
     /* Init transops */
     n2n_transop_null_init(&conf, &transop_null);
@@ -230,7 +230,7 @@ static void run_transop_benchmark (const char *op_name, n2n_trans_op_t *op_fn, n
     tdiff = 0;
     gettimeofday( &t1, NULL );
     while(tdiff < target_usec) {
-        nw = do_encode_packet( pktbuf, N2N_PKT_BUF_SIZE, conf->community_name);
+        nw = do_encode_packet( pktbuf, N2N_PKT_BUF_SIZE, conf->community.community_name);
         nw += op_fn->fwd(op_fn,
                          pktbuf+nw, N2N_PKT_BUF_SIZE-nw,
                          PKT_CONTENT, sizeof(PKT_CONTENT), mac_buf);
