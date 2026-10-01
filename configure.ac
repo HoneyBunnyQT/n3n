@@ -118,7 +118,7 @@ AC_ARG_ENABLE([relay],
 # Only the edge-only build is marked, so that a tree configured before this
 # option existed still builds the supernode
 AS_IF([test "x$enable_relay" = xno],
-    [AC_DEFINE([N3N_NO_RELAY], [1], [Define to 1 to build the edge only, without the supernode (the relay role).])],
+    [AC_DEFINE([N3N_NO_RELAY], [1], [Define to 1 to build the edge only, without the supernode.])],
 )
 
 AC_ARG_ENABLE([pthread],
