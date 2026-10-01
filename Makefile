@@ -144,6 +144,7 @@ OBJS=\
 	src/resolve.o \
 	src/sn_selection.o \
 	src/sn_utils.o \
+	src/sock.o \
 	src/thread_local.o \
 	src/transform.o \
 	src/transform_aes.o \

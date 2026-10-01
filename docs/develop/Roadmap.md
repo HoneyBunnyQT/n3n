@@ -46,9 +46,11 @@ Each step is a commit (or a few) of its own and changes no behaviour; all
 tests and `make lint` pass after each.
 
 - [x] Format the C code as uncrustify 0.77.1 does, and check it so in CI
-- [ ] Step 1: one send layer.  `sendto_fd()`, `sendto_sock()` exist in
-      `edge_utils.c` and in `sn_utils.c`, slightly different; also
-      `get_local_auth()` and `handle_remote_auth()`
+- [x] Step 1: one send layer, `src/sock.c`: picking the socket of
+      connection.bind for a family or the calling thread, and sending from
+      it.  (`get_local_auth()` and `handle_remote_auth()`, found in both
+      files, are no duplicates but the two halves of the handshake - edge and
+      supernode side; they move with their roles in step 7)
 - [ ] Step 2: the supernode runs on `mainloop.c` like the edge, instead of its
       own `select()` loop in `run_sn_loop()`
 - [ ] Step 3: periodic work (registrations, purges, sorting, resolving)

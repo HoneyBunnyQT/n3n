@@ -60,6 +60,7 @@
 #include "peer_info.h"               // for peer_info, clear_peer_list, ...
 #include "resolve.h"                 // for resolve_create_thread, resolve_c...
 #include "sn_selection.h"            // for sn_selection_criterion_common_da...
+#include "sock.h"                    // for bind_entry_for_family, sendto_bind, ...
 #include "counter.h"                 // for SHARED_STORE, SHARED_LOAD
 #include "edge_threads.h"            // for edge_threads_post_event, ...
 #include "stats.h"                   // for STATS_INC, n3n_stats_sum
@@ -312,19 +313,6 @@ void reset_sup_attempts (struct n3n_runtime_data *eee) {
 }
 
 
-/* The first of the edge's UDP sockets that can send to a family: an IPv4 one
- * for IPv4, or an IPv6 one that takes mapped IPv4 addresses too; -1 if none. */
-static int family_entry (const struct n3n_runtime_data *eee, int family) {
-
-    for(int i = 0; i < eee->bind_count; i++) {
-        if((eee->bind_family[i] == family) || ((family == AF_INET) && !eee->bind_v6only[i])) {
-            return i;
-        }
-    }
-    return -1;
-}
-
-
 // Detect the local address by probing a connection to the supernode: the
 // address the kernel would send from towards the supernode, of whichever
 // family the supernode's address is, and the port of the socket for that
@@ -350,7 +338,7 @@ static int detect_local_ip_address (n3n_sock_t* out_sock, const struct n3n_runti
 
     // always detect local port even/especially if chosen by OS...
     SOCKET sock = eee->sock;
-    int i = family_entry(eee, eee->curr_sn->sock.family);
+    int i = bind_entry_for_family(eee, eee->curr_sn->sock.family);
     if(i >= 0) {
         sock = eee->bind_sock[i];
     }
@@ -500,7 +488,7 @@ static int open_udp_sockets (struct n3n_runtime_data *eee) {
     // the NAT maps new sockets anew; each family's samples are about the
     // socket that sends to that family
     for(int f = 0; f < 2; f++) {
-        int i = family_entry(eee, f ? AF_INET6 : AF_INET);
+        int i = bind_entry_for_family(eee, f ? AF_INET6 : AF_INET);
         struct sockaddr_storage sa;
         socklen_t len = sizeof(sa);
         uint16_t port = 0;
@@ -1192,7 +1180,7 @@ static void register_with_new_peer (struct n3n_runtime_data *eee,
                 n3n_sock_t sock = scan->sock;
                 int alter = 16; /* TODO: set by command line or more reliable prediction method */
                 // the socket these REGISTERs leave from, and its hop limit
-                int i = family_entry(eee, sock.family);
+                int i = bind_entry_for_family(eee, sock.family);
                 SOCKET ttl_sock = (i >= 0) ? eee->bind_sock[i] : eee->sock;
                 int level = IPPROTO_IP, name = IP_TTL;
 #ifdef IPV6_UNICAST_HOPS
@@ -1511,57 +1499,6 @@ static void check_known_peer_sock_change (struct n3n_runtime_data *eee,
 
 /* ************************************** */
 
-/** Send a datagram to a socket file descriptor */
-static void sendto_fd (struct n3n_runtime_data *eee, SOCKET sock, const void *buf,
-                       size_t len, struct sockaddr *dest, socklen_t dest_len) {
-
-    ssize_t sent = 0;
-
-    sent = sendto(sock, buf, len, 0 /*flags*/,
-                  dest, dest_len);
-
-    if(sent != -1) {
-        // sendto success
-        traceEvent(TRACE_DEBUG, "sent=%d", (signed int)sent);
-        return;
-    }
-
-    // We only get here if sendto failed, so errno must be valid
-
-    char * errstr = strerror(errno);
-
-    if(!errstr) {
-        traceEvent(TRACE_WARNING, "bad strerror");
-    }
-
-    int level = TRACE_WARNING;
-    // downgrade to TRACE_DEBUG in case of custom AF_INVALID,
-    // i.e. supernode not resolved yet
-    if(errno == EAFNOSUPPORT /* 93 */) {
-        level = TRACE_DEBUG;
-    }
-
-#ifdef _WIN32
-    int werrno = WSAGetLastError();
-    if(werrno == WSAEAFNOSUPPORT /* 10047 */) {
-        level = TRACE_DEBUG;
-    }
-    traceEvent(level, "WSAGetLastError(): %u", WSAGetLastError());
-#endif
-
-    n3n_sock_str_t sockbuf;
-    traceEvent(level, "%s(%s) failed (%d) %s",
-               __func__,
-               sockaddr_to_str(sockbuf, sizeof(sockbuf), dest),
-               errno, errstr);
-
-    /*
-     * TODO: metrics for errors
-     */
-    return;
-}
-
-
 /** Send a datagram to a socket defined by a n3n_sock_t */
 static void sendto_sock (struct n3n_runtime_data *eee, const void * buf,
                          size_t len, const n3n_sock_t * dest) {
@@ -1615,29 +1552,20 @@ static void sendto_sock (struct n3n_runtime_data *eee, const void * buf,
         const struct punch_bound *b = punch_bound_find(eee, dest);
         if(b) {
             peer_addr_len = fill_sockaddr((struct sockaddr *)&dest_addr, sizeof(dest_addr), &b->dest);
-            sendto_fd(eee, b->fd, buf, len, (struct sockaddr *)&dest_addr, peer_addr_len);
+            sendto_logged(b->fd, buf, len, (struct sockaddr *)&dest_addr, peer_addr_len);
             return;
         }
     }
 
-    int i = family_entry(eee, dest->family);
+    int i = bind_entry_for_family(eee, dest->family);
     if(i < 0) {
         // e.g. an IPv6 peer, and this edge bound to an IPv4 address only
         traceEvent(TRACE_DEBUG, "no socket for address family %d", dest->family);
         return;
     }
 
-    // an IPv6 socket that takes IPv4 too wants it as a mapped address
-    peer_addr_len = prepare_sockaddr_for_send(&dest_addr, eee->bind_family[i], (const struct sockaddr *)&peer_addr_storage);
-    if(peer_addr_len == 0) {
-        // unknown or unsupported family we cannot send (unlikely after previous check though)
-        traceEvent(TRACE_DEBUG, "found unknown address family %d", peer_addr_storage.ss_family);
-        return;
-    }
-
     // a packet thread sends from its own socket for that address
-    SOCKET sock = n3n_thread_slot ? edge_threads_bind_sock(eee, i) : eee->bind_sock[i];
-    sendto_fd(eee, sock, buf, len, (struct sockaddr *) &dest_addr, peer_addr_len);
+    sendto_bind(eee, i, buf, len, (const struct sockaddr *)&peer_addr_storage);
 }
 
 
@@ -2060,7 +1988,7 @@ static int punch_open_sock (struct n3n_runtime_data *eee, int family, int *ttl0)
 
     struct sockaddr_storage sa;
     socklen_t len = sizeof(sa);
-    int i = family_entry(eee, family);
+    int i = bind_entry_for_family(eee, family);
 
     int sock = socket(family, SOCK_DGRAM, IPPROTO_UDP);
     if(sock < 0) {
@@ -2185,7 +2113,7 @@ static void punch_pool_round (struct n3n_runtime_data *eee, struct peer_info *pe
     idx = encode_register_pkt(eee, pktbuf, peer->mac_addr, N2N_REGULAR_REG_COOKIE);
     for(int i = 0; i < p->count; i++) {
         if(p->fd[i] >= 0) {
-            sendto_fd(eee, p->fd[i], pktbuf, idx, (struct sockaddr *)&sa, sa_len);
+            sendto_logged(p->fd[i], pktbuf, idx, (struct sockaddr *)&sa, sa_len);
         }
     }
     traceEvent(TRACE_INFO, "sent REGISTERs from %d sockets to %s [%s]",

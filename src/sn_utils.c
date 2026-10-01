@@ -42,6 +42,7 @@
 #include "counter.h"            // for COUNTER_INC, SHARED_LOAD, SHARED_STORE
 #include "crypto/speck.h"       // for speck_128_encrypt, speck_context_t
 #include "edge_threads.h"       // for edge_threads_post_pdu, edge_threads_sock, ...
+#include "sock.h"               // for bind_entry_of_sock, sendto_logged, ...
 #include "header_encryption.h"  // for packet_header_encrypt, packet_header_...
 #include "management.h"         // for process_mgmt
 #include "minmax.h"                  // for MIN, MAX
@@ -560,10 +561,6 @@ int load_allowed_sn_community (struct n3n_runtime_data *sss) {
 /* *************************************************** */
 
 
-/** Send a datagram to a file descriptor socket.
- *
- *    @return -1 on error otherwise number of bytes sent
- */
 /* The UDP socket the calling thread sends from: a packet thread has its own,
  * bound to the same address and port as the main one. */
 static SOCKET udp_sock (struct n3n_runtime_data *sss) {
@@ -572,30 +569,10 @@ static SOCKET udp_sock (struct n3n_runtime_data *sss) {
 }
 
 
-// Which address of connection.bind a UDP socket is for: the main thread's
-// socket for it, or a packet thread's own on the same port; -1 for anything
-// else, i.e. a TCP connection.
-static int bind_entry (struct n3n_runtime_data *sss, SOCKET socket_fd) {
-
-    if(socket_fd < 0) {
-        return -1;
-    }
-    for(int i = 0; i < sss->bind_count; i++) {
-        if(socket_fd == sss->bind_sock[i]) {
-            return i;
-        }
-        if(n3n_thread_slot && (socket_fd == edge_threads_bind_sock(sss, i))) {
-            return i;
-        }
-    }
-    return -1;
-}
-
-
 // is this one of the TCP connections, rather than a UDP socket?
 static bool is_tcp (struct n3n_runtime_data *sss, SOCKET socket_fd) {
 
-    return (socket_fd >= 0) && (bind_entry(sss, socket_fd) < 0);
+    return (socket_fd >= 0) && (bind_entry_of_sock(sss, socket_fd) < 0);
 }
 
 
@@ -603,17 +580,9 @@ static bool is_tcp (struct n3n_runtime_data *sss, SOCKET socket_fd) {
 // destinations as mapped addresses, an IPv4 one only plain ones.
 static int sock_family (struct n3n_runtime_data *sss, SOCKET socket_fd) {
 
-    int i = bind_entry(sss, socket_fd);
+    int i = bind_entry_of_sock(sss, socket_fd);
 
     return sss->bind_family[(i < 0) ? 0 : i];
-}
-
-
-// The calling thread's UDP socket for an address of connection.bind: a
-// packet thread has one of its own for each, on the same port.
-static SOCKET entry_sock (struct n3n_runtime_data *sss, int i) {
-
-    return n3n_thread_slot ? edge_threads_bind_sock(sss, i) : sss->bind_sock[i];
 }
 
 
@@ -622,12 +591,9 @@ static SOCKET entry_sock (struct n3n_runtime_data *sss, int i) {
 // IPv4, or an IPv6 one that takes mapped IPv4 addresses.
 static SOCKET family_sock (struct n3n_runtime_data *sss, int family) {
 
-    for(int i = 0; i < sss->bind_count; i++) {
-        if((sss->bind_family[i] == family) || ((family == AF_INET) && !sss->bind_v6only[i])) {
-            return entry_sock(sss, i);
-        }
-    }
-    return udp_sock(sss);
+    int i = bind_entry_for_family(sss, family);
+
+    return (i >= 0) ? bind_thread_sock(sss, i) : udp_sock(sss);
 }
 
 
@@ -643,41 +609,30 @@ static SOCKET peer_sock (struct n3n_runtime_data *sss, const struct peer_info *p
     if(is_tcp(sss, peer->socket_fd)) {
         return peer->socket_fd;
     }
-    i = bind_entry(sss, peer->socket_fd);
+    i = bind_entry_of_sock(sss, peer->socket_fd);
     if(i >= 0) {
-        return entry_sock(sss, i);
+        return bind_thread_sock(sss, i);
     }
     return family_sock(sss, peer->sock.family);
 }
 
 
+// Send a datagram on a socket.  A TCP connection that fails is closed, and its
+// edge forgotten.  The bytes sent, or -1.
 static ssize_t sendto_fd (struct n3n_runtime_data *sss,
                           SOCKET socket_fd,
                           const struct sockaddr *socket, socklen_t socket_len,
                           const uint8_t *pktbuf,
                           size_t pktsize) {
 
-    ssize_t sent = 0;
+    ssize_t sent = sendto_logged(socket_fd, pktbuf, pktsize, socket, socket_len);
     n2n_tcp_connection_t *conn;
 
-    sent = sendto(socket_fd, (void *)pktbuf, pktsize, 0 /* flags */,
-                  socket, socket_len);
-
-    if((sent <= 0) && (errno)) {
-        char * c = strerror(errno);
-        traceEvent(TRACE_ERROR, "sendto failed (%d) %s", errno, c);
-#ifdef _WIN32
-        traceEvent(TRACE_ERROR, "WSAGetLastError(): %u", WSAGetLastError());
-#endif
-        // if the erroneous connection is tcp, i.e. not the regular sock...
-        if(is_tcp(sss, socket_fd)) {
-            // ...forget about the corresponding peer and the connection
-            HASH_FIND_INT(sss->tcp_connections, &socket_fd, conn);
-            close_tcp_connection(sss, conn);
-            return -1;
-        }
-    } else {
-        traceEvent(TRACE_DEBUG, "sendto_fd sent=%d", (signed int)sent);
+    // if the erroneous connection is tcp, i.e. not the regular sock...
+    if((sent < 0) && is_tcp(sss, socket_fd)) {
+        // ...forget about the corresponding peer and the connection
+        HASH_FIND_INT(sss->tcp_connections, &socket_fd, conn);
+        close_tcp_connection(sss, conn);
     }
 
     return sent;
@@ -3139,7 +3094,7 @@ static int sn_read_udp (struct n3n_runtime_data *sss,
 
     // what comes in on a thread's socket is handled as if it came in on the
     // main thread's for the same address, which is what gets remembered
-    int i = bind_entry(sss, sock);
+    int i = bind_entry_of_sock(sss, sock);
     process_pdu(sss, (struct sockaddr *)&sas, ss_size, sss->bind_sock[(i < 0) ? 0 : i],
                 n3n_pktbuf_getbufptr(*pktbuf), bread, now);
     return 1;
