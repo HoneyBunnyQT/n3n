@@ -129,6 +129,22 @@ SCENARIOS = [
         "relayed by supernodes that handle PACKETs on several threads",
         Site(["hard-range"]), Site(["hard-range"]),
         "relayed", sn_conf={"daemon": {"threads": 3}}),
+    Scenario(
+        "header-enc",
+        "encrypted headers, the supernodes know the community from a file",
+        Site(["easy-kept"]), Site(["hard-range"]),
+        "direct", auth="header", tags=["quick"]),
+    Scenario(
+        "userpw",
+        "encrypted headers and user/password authentication",
+        Site(["easy-kept"]), Site(["hard-range"]),
+        "direct", auth="userpw", tags=["quick"]),
+    Scenario(
+        "userpw-relayed",
+        "user/password authentication, relayed by the federation",
+        Site(["hard-range"], supernodes=["sn1"]),
+        Site(["hard-range"], supernodes=["sn2"]),
+        "relayed", auth="userpw"),
 ]
 
 BY_NAME = {s.name: s for s in SCENARIOS}

@@ -35,6 +35,7 @@ import json
 import os
 import re
 import signal
+import subprocess
 import sys
 import time
 
@@ -52,6 +53,7 @@ TRAFFIC_PORT = 9000
 COMMUNITY = "nettest"
 KEY = "nettest-secret"
 FEDERATION = "nettestfed"
+PASSWORD = "nettest-password"
 
 FLOW_WARM = 1
 FLOW_MEAS = 2
@@ -77,7 +79,7 @@ class Site:
 class Scenario:
     def __init__(self, name, desc, a, b, expect, traffic="both",
                  tags=(), conf=None, connect_timeout=None, failover=None,
-                 sn_conf=None):
+                 sn_conf=None, auth=None):
         self.name = name
         self.desc = desc
         self.sites = {"a": a, "b": b}
@@ -86,6 +88,10 @@ class Scenario:
         self.tags = set(tags)
         self.conf = conf or {}          # for all edges
         self.sn_conf = sn_conf or {}    # for all supernodes
+        # None, "header" (header encryption: the supernodes know the
+        # community from a community file) or "userpw" (also user/password
+        # authentication: the file lists a user for each edge)
+        self.auth = auth
         self.connect_timeout = connect_timeout
         # After the warm-up, kill (SIGKILL) the supernode this site's edge
         # is registered at, and measure once the edges moved to the other
@@ -262,8 +268,29 @@ class Run:
     def _session(self, name):
         return "{}{}".format(self.prefix, name)
 
+    def _keygen(self, *args):
+        """What "n3n-edge tools keygen" says, without the line's prefix"""
+        argv = [self.st.edge_bin, "tools", "keygen"] + list(args)
+        out = subprocess.run(argv, capture_output=True, text=True).stdout
+        out = out.strip()
+        return out.split()[-1].split("=")[-1]
+
+    def _community_file(self):
+        """The community file of the supernodes, None if they need none"""
+        if not self.sc.auth:
+            return None
+        lines = [COMMUNITY]
+        if self.sc.auth == "userpw":
+            lines += ["* {} {}".format(sname, self._keygen(sname, PASSWORD))
+                      for sname in sorted(self.sc.sites)]
+        path = os.path.join(self.workdir, "community.list")
+        with open(path, "w") as f:
+            f.write("\n".join(lines) + "\n")
+        return path
+
     def start_supernodes(self):
         names = sorted(self.supernodes)
+        community_file = self._community_file()
         for i, name in enumerate(names, start=1):
             sn = self.supernodes[name]
             peers = [("peer", "{}:{}".format(self.supernodes[o]["ip"],
@@ -277,6 +304,9 @@ class Run:
                 "daemon": [("background", False)],
                 "logging": [("verbose", self.st.verbose)],
             }
+            if community_file:
+                sections["supernode"].append(
+                    ("community_file", community_file))
             for section, options in self.sc.sn_conf.items():
                 sections.setdefault(section, [])
                 sections[section] = [
@@ -314,6 +344,15 @@ class Run:
                 "macaddr": e["mac"],
             },
         }
+        if self.sc.auth:
+            conf["community"]["header_encryption"] = True
+        if self.sc.auth == "userpw":
+            # it takes ChaCha20 or Speck; the description is the user name
+            conf["community"]["cipher"] = "ChaCha20"
+            conf["auth"] = {
+                "password": PASSWORD,
+                "pubkey": self._keygen(FEDERATION),
+            }
         for overrides in (self.sc.conf, site.conf):
             for section, options in overrides.items():
                 conf.setdefault(section, {}).update(options)
