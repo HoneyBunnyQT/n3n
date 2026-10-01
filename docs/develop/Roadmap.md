@@ -89,6 +89,16 @@ tests and `make lint` pass after each.
 - [ ] Run the netns NAT scenarios in CI (`make test.netns`)
 - [ ] Fuzzing of the PDU decoders (`wire.c`) and of header decryption
 - [ ] ASan/UBSan builds in CI, TSan for the threads
+- [x] Big endian, 32 bit and strict alignment: unit and builtin tests under
+      qemu for s390x, mips and aarch64 in CI (`scripts/test_qemu.sh`).
+      Found and fixed: Speck (also header encryption) and ChaCha20 broken
+      on big endian, unaligned loads in AES, Pearson, the tap path, the
+      benchmarks' key length on 32 bit, libatomic for 64 bit atomics
+- [ ] Endianness of the hand written SIMD versions (NEON on big endian ARM
+      is rare) and of `src/crypto/speck.c`, which is not built at all -
+      remove it?
+- [ ] Run a netns scenario between a big endian and a little endian edge
+      (qemu-user binaries in one namespace)
 - [ ] ARM NEON: look where the ciphers could gain (see Scratchpad)
 - [ ] epoll in the mainloop instead of `select()` (`mainloop.c` TODO), lifts
       the limit on TCP connections
@@ -143,6 +153,9 @@ tests and `make lint` pass after each.
   structures and macros (`HASH_ADD`, `HASH_FIND`, `HASH_ITER`, ...) as the
   rest of the code does, wherever they fit: their loops read more easily
   than hand-written ones.
+- 2026-10-01: Fixes found along the way are commits of their own, with
+  messages that stand alone, so that they can be taken upstream; the
+  branch `fixes` collects them on top of `main`.
 - 2026-10-01: Roles are chosen at run time; leaving the relay code out of a
   build is an option for later, decided in one place.
 
@@ -203,6 +216,7 @@ sudo make test.netns                             # NAT scenarios, needs root
 sudo tests/netns/run.py -q                       # all of them
 sudo tests/netns/run.py -q --wrap 'valgrind --error-exitcode=99 --leak-check=full --errors-for-leak-kinds=definite' tcp-tcp hard-hard
 make lint                                        # everything CI lints
+scripts/test_qemu.sh qemu-mips -L /usr/mips-linux-gnu   # cross built tree, see testing.md
 scripts/indent.sh -i src/edge_utils.c            # reformat one file
 ```
 
