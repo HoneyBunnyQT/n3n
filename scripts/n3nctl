@@ -55,13 +55,15 @@ class UnixHandler(urllib.request.BaseHandler):
 
 
 class JsonRPC:
-    def __init__(self, url):
+    def __init__(self, url, role=None):
         self.debug = False
 
         if url is None:
             raise ValueError("need url")
 
-        self.url = url + "/v1"
+        # without a role, the process's own: the supernode of a supernode
+        # with supernode.tap
+        self.url = url + "/v1" + ("/" + role if role else "")
         self.timeout = 5
         self.id = 0
         self.username = "unused"
@@ -377,6 +379,10 @@ def main():
                     help='Management API URL')
     ap.add_argument('-k', '--key', action='store',
                     help='Password for mgmt commands')
+    ap.add_argument('-r', '--role', action='store',
+                    choices=['edge', 'supernode'],
+                    help='Ask this role of the process: "edge" for the edge '
+                    'of a supernode with supernode.tap')
     ap.add_argument('-d', '--debug', action='store_true',
                     help='Also show raw internal data')
     ap.add_argument('--raw', action='store_true',
@@ -438,7 +444,7 @@ def main():
     else:
         func = subcmds[args.cmd]['func']
 
-    rpc = JsonRPC(args.mgmturl)
+    rpc = JsonRPC(args.mgmturl, args.role)
     rpc.debug = args.debug
     rpc.password = args.key
 
