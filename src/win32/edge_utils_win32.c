@@ -22,7 +22,7 @@
 #include <iphlpapi.h>
 #include <n3n/logging.h>    // for traceEvent
 
-#include "../edge_utils.h"      // for edge_read_from_tap
+#include "../role_tap.h"        // for edge_read_from_tap
 #include "edge_utils_win32.h"
 
 /* ************************************** */
