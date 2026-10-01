@@ -7,6 +7,7 @@
  */
 
 #include <n3n/logging.h>        // for traceEvent
+#include <stdlib.h>             // for calloc, free
 #include <string.h>             // for memcpy, memset
 
 #include "edge_utils.h"         // for edge_process_pdu
@@ -32,11 +33,12 @@
 static struct n3n_runtime_data *link_relay;
 static struct n3n_runtime_data *link_edge;
 
+// allocated only once there is a link: most processes never have one
 static struct local_link_pdu {
     bool to_edge;
     size_t size;
     uint8_t buf[N2N_PKT_BUF_SIZE];
-} queue[LOCAL_LINK_SLOTS];
+} *queue;
 static unsigned int queue_head;     // the next to hand on
 static unsigned int queue_tail;     // the next free one
 
@@ -46,6 +48,14 @@ void local_link_init (struct n3n_runtime_data *relay, struct n3n_runtime_data *e
     link_relay = relay;
     link_edge = edge;
     queue_head = queue_tail = 0;
+
+    if(relay && edge && !queue) {
+        queue = calloc(LOCAL_LINK_SLOTS, sizeof(*queue));
+    }
+    if(!(relay && edge)) {
+        free(queue);
+        queue = NULL;
+    }
 }
 
 
@@ -75,7 +85,7 @@ static bool queue_pdu (bool to_edge, const uint8_t *buf, size_t size) {
 
     struct local_link_pdu *p;
 
-    if(!link_relay || !link_edge) {
+    if(!link_relay || !link_edge || !queue) {
         return false;
     }
     if((size > sizeof(p->buf)) || (queue_tail - queue_head >= LOCAL_LINK_SLOTS)) {
