@@ -111,6 +111,14 @@ AS_IF([test "x$enable_cap" != xno],
     )],
 )
 
+AC_ARG_ENABLE([relay],
+    [AS_HELP_STRING([--disable-relay],
+        [build the edge only, without the supernode (the relay role)])],
+    [], [enable_relay=yes])
+AS_IF([test "x$enable_relay" != xno],
+    [AC_DEFINE([N3N_HAVE_RELAY], [1], [Define to 1 to build the supernode (the relay role).])],
+)
+
 AC_ARG_ENABLE([pthread],
     [AS_HELP_STRING([--enable-pthread], [support for pthread])],
     [], [enable_pthread=no])
@@ -172,6 +180,7 @@ AC_SUBST(host_os)
 AC_SUBST(EXE)
 AC_SUBST(WINDRES)
 AC_SUBST(with_openssl)
+AC_SUBST(enable_relay)
 AC_CONFIG_HEADERS(include/config.h)
 AC_CONFIG_FILES(config.mak)
 

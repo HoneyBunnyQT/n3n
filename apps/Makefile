@@ -23,11 +23,16 @@ APPS+=n3n
 
 # and its names for each role: links to it, copies where there are no links
 LINKS+=n3n-edge
+ifneq ($(CONFIG_RELAY),no)
 LINKS+=n3n-supernode
+ROLES+=n3n-supernode.c
+endif
 
 EXAMPLES+=example_edge_embed_quick_edge_init
 EXAMPLES+=example_edge_embed
+ifneq ($(CONFIG_RELAY),no)
 EXAMPLES+=example_sn_embed
+endif
 
 LDLIBS+=-ln3n
 LDLIBS+=$(LDLIBS_LOCAL)
@@ -41,7 +46,7 @@ examples: $(EXAMPLES)
 # makefile outside the build environment
 $(APPS) $(EXAMPLES): ../src/libn3n.a
 
-n3n: n3n.c n3n-edge.c n3n-supernode.c
+n3n: n3n.c n3n-edge.c $(ROLES)
 
 $(LINKS): n3n
 	@echo "  LN      $@"
@@ -56,11 +61,9 @@ install: $(addsuffix $(EXE),$(APPS))
 	$(INSTALL) -d $(CONFIG_SBINDIR)
 	$(INSTALL_PROG) n3n$(EXE) $(CONFIG_SBINDIR)/
 ifeq ($(EXE),)
-	ln -sf n3n $(CONFIG_SBINDIR)/n3n-supernode
-	ln -sf n3n $(CONFIG_SBINDIR)/n3n-edge
+	for l in $(LINKS); do ln -sf n3n $(CONFIG_SBINDIR)/$$l; done
 else
-	$(INSTALL_PROG) n3n$(EXE) $(CONFIG_SBINDIR)/n3n-supernode$(EXE)
-	$(INSTALL_PROG) n3n$(EXE) $(CONFIG_SBINDIR)/n3n-edge$(EXE)
+	for l in $(LINKS); do $(INSTALL_PROG) n3n$(EXE) $(CONFIG_SBINDIR)/$$l$(EXE); done
 endif
 
 %: %.c
@@ -70,7 +73,7 @@ endif
 # See comments in the topdir Makefile about how to generate coverage data.
 # gcc names the coverage data of a binary built in one step <binary>-<source>
 gcov:
-	gcov n3n-n3n n3n-n3n-edge n3n-n3n-supernode
+	gcov n3n-n3n n3n-n3n-edge $(ROLES:%.c=n3n-%)
 
 clean:
 	rm -f $(APPS) $(LINKS) $(EXAMPLES)

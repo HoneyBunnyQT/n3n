@@ -93,6 +93,26 @@ jobs:
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
+  edge_only:
+    name: Build with the edge only (--disable-relay)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Fix Checkout
+        run: |
+          git fetch --force --tags
+
+      - name: Build and run the tests that need no supernode
+        run: |
+          ./autogen.sh
+          ./configure --disable-relay
+          make -j4 all
+          test ! -e apps/n3n-supernode
+          make test.units test.builtin
+
   cross_qemu:
     name: Tests on ${{ matrix.host }} ${{ matrix.cflags }} under qemu
     runs-on: ubuntu-24.04

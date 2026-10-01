@@ -70,6 +70,15 @@ Enable threading using the pthread library.  This is needed for edges and
 supernodes to handle packets on several threads - see
 [Threads](../advanced/Threads.md).
 
+### `--disable-relay`
+
+Build the edge only, without the supernode (the relay role).  The `n3n`
+program then has only the edge role: `n3n-edge` is installed, `n3n-supernode`
+is not, and `n3n` lists only `edge`.  For devices that are only ever an edge,
+such as small routers: the code is about a sixth smaller (on x86_64, 377 KB
+instead of 453 KB of program text).  The `[supernode]` options still show in
+the config dump, they are just not used.
+
 ### `--enable-cap`
 
 Use the libcap to provide reduction of the security privileges needed in the

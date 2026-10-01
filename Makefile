@@ -8,6 +8,7 @@ export AR
 export CC
 export CFLAGS
 export CONFIG_HOST_OS
+export CONFIG_RELAY
 export EXE
 export INSTALL
 export INSTALL_DOC
@@ -149,11 +150,7 @@ OBJS=\
 	src/resolve.o \
 	src/role_client.o \
 	src/role_tap.o \
-	src/role_federate.o \
-	src/role_relay.o \
 	src/sn_selection.o \
-	src/sn_communities.o \
-	src/sn_utils.o \
 	src/sock.o \
 	src/thread_local.o \
 	src/transform.o \
@@ -171,6 +168,17 @@ OBJS=\
 	src/tuntap_osx.o \
 	src/wire.o \
 
+# The relay role, the supernode: not with ./configure --disable-relay
+RELAY_OBJS=\
+	src/role_federate.o \
+	src/role_relay.o \
+	src/sn_communities.o \
+	src/sn_utils.o \
+
+ifneq ($(CONFIG_RELAY),no)
+OBJS+=$(RELAY_OBJS)
+endif
+
 ifneq (,$(findstring mingw,$(CONFIG_HOST_OS)))
 OBJS+=src/win32/edge_rc.o
 OBJS+=src/win32/edge_utils_win32.o
@@ -183,7 +191,7 @@ endif
 # Set the DEPS and CLEAN_FILES last - after setting the OBJS
 DEPS+=$(OBJS:%.o=%.d)
 
-CLEAN_FILES+=$(OBJS)
+CLEAN_FILES+=$(OBJS) $(RELAY_OBJS)
 CLEAN_FILES+=$(DEPS)
 
 src/management.o: src/management_index.html.h
