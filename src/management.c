@@ -758,7 +758,7 @@ static void jsonrpc_get_info (char *id, struct n3n_runtime_data *eee, conn_t *co
                 eee->conf.is_supernode,
                 is_null_mac(eee->tap.device.mac_addr) ? "" : macaddr_str(mac_buf, eee->tap.device.mac_addr),
                 ip_address,
-                sock_to_cstr(sockbuf, eee->conf.is_edge ? &eee->client.advertised_sock : &eee->conf.preferred_sock),
+                sock_to_cstr(sockbuf, eee->conf.is_edge ? &eee->client.advertised_sock : &eee->conf.client.preferred_sock),
                 nat_view_str(nat4, sizeof(nat4), &eee->client.nat[0]),
                 nat_view_str(nat6, sizeof(nat6), &eee->client.nat[1])
     );

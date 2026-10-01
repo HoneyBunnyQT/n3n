@@ -114,7 +114,7 @@ int edge_threads_possible (const n2n_edge_conf_t *conf) {
     // other systems do not spread one port's traffic over several sockets
     return 1;
 #endif
-    if(conf->connect_tcp) {
+    if(conf->client.connect_tcp) {
         return 1;
     }
     if(threads > N3N_THREADS_MAX) {
@@ -642,7 +642,7 @@ void edge_threads_open_early (struct n3n_runtime_data *eee) {
     if(threads > N3N_THREADS_MAX) {
         threads = N3N_THREADS_MAX;
     }
-    if((threads <= 1) || eee->conf.connect_tcp || (eee->sock < 0)) {
+    if((threads <= 1) || eee->conf.client.connect_tcp || (eee->sock < 0)) {
         return;
     }
     early_nsock = eee->bind_count ? eee->bind_count : 1;
@@ -734,7 +734,7 @@ static int threads_start (struct n3n_runtime_data *eee, int threads,
     traceEvent(TRACE_WARNING, "threads are only supported on Linux, using one");
     return 1;
 #endif
-    if(eee->conf.connect_tcp) {
+    if(eee->conf.client.connect_tcp) {
         traceEvent(TRACE_WARNING, "threads do not work with a TCP connection to the supernode, using one");
         return 1;
     }

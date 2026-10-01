@@ -95,7 +95,7 @@ static struct n3n_conf_option section_connection[] = {
     {
         .name = "advertise_addr",
         .type = n3n_conf_n2n_sock_addr,
-        .offset = offsetof(n2n_edge_conf_t, preferred_sock),
+        .offset = offsetof(n2n_edge_conf_t, client.preferred_sock),
         .desc = "Set local address to advertise",
         .help = "Defaulting to auto, edges on the same network find each "
                 "other by multicast (see local_discovery) and no address is "
@@ -111,7 +111,7 @@ static struct n3n_conf_option section_connection[] = {
     {
         .name = "allow_p2p",
         .type = n3n_conf_bool,
-        .offset = offsetof(n2n_edge_conf_t, allow_p2p),
+        .offset = offsetof(n2n_edge_conf_t, client.allow_p2p),
         .desc = "Control use of peer-to-peer packets",
         .help = "Defaulting to true, this setting can be used to enable or "
                 "disable the use of peer-to-peer connections.  This might "
@@ -146,7 +146,7 @@ static struct n3n_conf_option section_connection[] = {
     {
         .name = "connect_tcp",
         .type = n3n_conf_bool,
-        .offset = offsetof(n2n_edge_conf_t, connect_tcp),
+        .offset = offsetof(n2n_edge_conf_t, client.connect_tcp),
         .desc = "Control use of TCP connections to supernode",
         .help = "Defaulting to false, this is used to enable the use of a "
                 "TCP connection to the supernode.  If set, the allow_p2p "
@@ -165,7 +165,7 @@ static struct n3n_conf_option section_connection[] = {
     {
         .name = "local_discovery",
         .type = n3n_conf_bool,
-        .offset = offsetof(n2n_edge_conf_t, local_discovery),
+        .offset = offsetof(n2n_edge_conf_t, client.local_discovery),
         .desc = "Look for peers on the local network",
         .help = "Defaulting to true, the edge sends its registration to a "
                 "multicast group and listens there, so that edges on the "
@@ -188,7 +188,7 @@ static struct n3n_conf_option section_connection[] = {
     {
         .name = "punch_ports",
         .type = n3n_conf_uint32,
-        .offset = offsetof(n2n_edge_conf_t, punch_ports),
+        .offset = offsetof(n2n_edge_conf_t, client.punch_ports),
         .desc = "Ports to try per round towards a peer behind a hard NAT",
         .help = "A peer behind a NAT that maps a new public port for "
                 "every destination cannot be reached on the port the "
@@ -201,7 +201,7 @@ static struct n3n_conf_option section_connection[] = {
     {
         .name = "punch_sockets",
         .type = n3n_conf_uint32,
-        .offset = offsetof(n2n_edge_conf_t, punch_sockets),
+        .offset = offsetof(n2n_edge_conf_t, client.punch_sockets),
         .desc = "Sockets to open towards a peer that guesses our port",
         .help = "Behind a NAT that maps a new public port for every "
                 "destination, the edge opens this many more sockets "
@@ -214,7 +214,7 @@ static struct n3n_conf_option section_connection[] = {
     {
         .name = "punch_ttl",
         .type = n3n_conf_uint32,
-        .offset = offsetof(n2n_edge_conf_t, punch_ttl),
+        .offset = offsetof(n2n_edge_conf_t, client.punch_ttl),
         .desc = "The TTL of the REGISTERs from those sockets",
         .help = "They are only there to make the NAT open a port, so they "
                 "need not reach the peer.  With a TTL just big enough to "
@@ -227,7 +227,7 @@ static struct n3n_conf_option section_connection[] = {
     {
         .name = "register_interval",
         .type = n3n_conf_uint32,
-        .offset = offsetof(n2n_edge_conf_t, register_interval),
+        .offset = offsetof(n2n_edge_conf_t, client.register_interval),
         .desc = "Supernode registration interval",
         .help = "specifies the interval in seconds between consecutive "
                 "REGISTER_SUPER packets - used to keep a NAT hole open "
@@ -238,7 +238,7 @@ static struct n3n_conf_option section_connection[] = {
     {
         .name = "register_pkt_ttl",
         .type = n3n_conf_uint32,
-        .offset = offsetof(n2n_edge_conf_t, register_ttl),
+        .offset = offsetof(n2n_edge_conf_t, client.register_ttl),
         .desc = "The TTL for the hole punching packet.",
         .help = "A value of zero will avoid forcing any TTL - this is the "
                 "default.  This is an advanced setting to make sure that the "
@@ -256,7 +256,7 @@ static struct n3n_conf_option section_connection[] = {
     {
         .name = "supernode_selection",
         .type = n3n_conf_sn_selection,
-        .offset = offsetof(n2n_edge_conf_t, sn_selection_strategy),
+        .offset = offsetof(n2n_edge_conf_t, client.sn_selection_strategy),
         .desc = "How to select a supernode",
         .help = "There are multiple strategies available for how to select "
                 "the current supernode. Default is to select the supernode "
@@ -319,7 +319,7 @@ static struct n3n_conf_option section_filter[] = {
     {
         .name = "allow_multicast",
         .type = n3n_conf_bool,
-        .offset = offsetof(n2n_edge_conf_t, allow_multicast),
+        .offset = offsetof(n2n_edge_conf_t, tap.allow_multicast),
         .desc = "Optionally enable multicast traffic",
         .help = "Amungst other things, multicast is used for IPv6 neighbour "
                 "discovery.  If not allowed, then these multicast packets "
@@ -328,7 +328,7 @@ static struct n3n_conf_option section_filter[] = {
     {
         .name = "allow_routing",
         .type = n3n_conf_bool,
-        .offset = offsetof(n2n_edge_conf_t, allow_routing),
+        .offset = offsetof(n2n_edge_conf_t, tap.allow_routing),
         .desc = "enable IP packet forwarding/routing",
         .help = "Without this option, IP packets arriving over n2n are "
                 "dropped if they are not for the IP address of the edge "
@@ -337,7 +337,7 @@ static struct n3n_conf_option section_filter[] = {
     {
         .name = "rule",
         .type = n3n_conf_filter_rule,
-        .offset = offsetof(n2n_edge_conf_t, network_traffic_filter_rules),
+        .offset = offsetof(n2n_edge_conf_t, tap.network_traffic_filter_rules),
         .desc = "Add a new traffic filter rule",
         .help = "Each rule config option adds a new rule. "
                 "rule_str format: `src_ip/len:[b_port,e_port],dst_ip/len:[s_port,e_port],TCP+/-,UDP+/-,ICMP+/-` "
@@ -401,7 +401,7 @@ static struct n3n_conf_option section_supernode[] = {
     {
         .name = "auto_ip_max",
         .type = n3n_conf_ip_subnet,
-        .offset = offsetof(n2n_edge_conf_t, sn_max_auto_ip_net),
+        .offset = offsetof(n2n_edge_conf_t, relay.sn_max_auto_ip_net),
         .desc = "End of the auto ip subnet range",
         .help = "Used when the supernode is issuing IPv4 address (see the "
                 "auto_ip_min option for details).",
@@ -409,7 +409,7 @@ static struct n3n_conf_option section_supernode[] = {
     {
         .name = "auto_ip_min",
         .type = n3n_conf_ip_subnet,
-        .offset = offsetof(n2n_edge_conf_t, sn_min_auto_ip_net),
+        .offset = offsetof(n2n_edge_conf_t, relay.sn_min_auto_ip_net),
         .desc = "Start of the auto ip subnet range",
         .help = "When the supernode is issuing IPv4 addresses to the edges "
                 "(with the edge tuntap.address_mode option) this configures "
@@ -421,7 +421,7 @@ static struct n3n_conf_option section_supernode[] = {
     {
         .name = "community_file",
         .type = n3n_conf_strdup,
-        .offset = offsetof(n2n_edge_conf_t, community_file),
+        .offset = offsetof(n2n_edge_conf_t, relay.community_file),
         .desc = "Community list filename",
         .help = "Optionally, the supernode can be configured with a list of "
                 "allowed communities, defined ip address ranges for each one "
@@ -432,7 +432,7 @@ static struct n3n_conf_option section_supernode[] = {
         .name = "federation",
         .type = n3n_conf_strncpy,
         .length = sizeof(n2n_community_t)-1,    // Leave room for prefix
-        .offset = offsetof(n2n_edge_conf_t, sn_federation),
+        .offset = offsetof(n2n_edge_conf_t, relay.sn_federation),
         .desc = "name of the supernode's federation",
         .help = "This is a shared key amungst all the supernodes belonging to "
                 "the same federated group.  It defaults to 'Federation', but "
@@ -443,7 +443,7 @@ static struct n3n_conf_option section_supernode[] = {
     {
         .name = "macaddr",
         .type = n3n_conf_macaddr,
-        .offset = offsetof(n2n_edge_conf_t, sn_mac_addr),
+        .offset = offsetof(n2n_edge_conf_t, relay.sn_mac_addr),
         .desc = "fixed MAC address for the supernode",
         .help = "This is used as an identifier for the supernode in protocol "
                 "packets.  If not configed, a random value will be selected.",
@@ -459,7 +459,7 @@ static struct n3n_conf_option section_supernode[] = {
     {
         .name = "spoofing_protection",
         .type = n3n_conf_bool,
-        .offset = offsetof(n2n_edge_conf_t, spoofing_protection),
+        .offset = offsetof(n2n_edge_conf_t, relay.spoofing_protection),
         .desc = "Configure spoofing protection",
         .help = "MAC and IP address spoofing protection for all "
                 "non-username-password-authenticating communities. "
@@ -469,7 +469,7 @@ static struct n3n_conf_option section_supernode[] = {
         .name = "version",
         .type = n3n_conf_strncpy,
         .length = sizeof(n2n_version_t),
-        .offset = offsetof(n2n_edge_conf_t, version),
+        .offset = offsetof(n2n_edge_conf_t, relay.version),
         .desc = "Version text",
         .help = "Modify the supernode version string which is distributed to "
                 "edges and shown in the management port output "
@@ -536,7 +536,7 @@ static struct n3n_conf_option section_tuntap[] = {
     {
         .name = "address",
         .type = n3n_conf_ip_subnet,
-        .offset = offsetof(n2n_edge_conf_t, tuntap_v4),
+        .offset = offsetof(n2n_edge_conf_t, tap.tuntap_v4),
         .desc = "Set the tuntap IP address",
         .help = "By default, the supernode will assign an address. The "
                 "address defined here may be ignored depending on the value "
@@ -547,7 +547,7 @@ static struct n3n_conf_option section_tuntap[] = {
     {
         .name = "address_mode",
         .type = n3n_conf_ip_mode,
-        .offset = offsetof(n2n_edge_conf_t, tuntap_ip_mode),
+        .offset = offsetof(n2n_edge_conf_t, tap.tuntap_ip_mode),
         .desc = "Define how the tuntap address is set",
         .help = "By default, the 'auto' mode allows the supernode to issue "
                 "an IP address.  Other options are: 'static' - where the "
@@ -559,14 +559,14 @@ static struct n3n_conf_option section_tuntap[] = {
         .name = "macaddr",
         .type = n3n_conf_strncpy,
         .length = N2N_MACNAMSIZ,
-        .offset = offsetof(n2n_edge_conf_t, device_mac),
+        .offset = offsetof(n2n_edge_conf_t, tap.device_mac),
         .desc = "Set the TAP interface MAC address",
         .help = "By default a random MAC address is used.",
     },
     {
         .name = "metric",
         .type = n3n_conf_uint32,
-        .offset = offsetof(n2n_edge_conf_t, metric),
+        .offset = offsetof(n2n_edge_conf_t, tap.metric),
         .desc = "Set the TAP interface metric",
         .help = "(Windows only) Defaults to 0 (auto), e.g. set to 1 for "
                 "better multiplayer game detection.",
@@ -574,7 +574,7 @@ static struct n3n_conf_option section_tuntap[] = {
     {
         .name = "mtu",
         .type = n3n_conf_uint32,
-        .offset = offsetof(n2n_edge_conf_t, mtu),
+        .offset = offsetof(n2n_edge_conf_t, tap.mtu),
         .desc = "Set the TAP interface MTU",
         .help = "The default is chosen to work in most cases.",
     },
@@ -582,7 +582,7 @@ static struct n3n_conf_option section_tuntap[] = {
         .name = "name",
         .type = n3n_conf_strncpy,
         .length = N2N_IFNAMSIZ,
-        .offset = offsetof(n2n_edge_conf_t, tuntap_dev_name),
+        .offset = offsetof(n2n_edge_conf_t, tap.tuntap_dev_name),
         .desc = "TAP device name",
         .help = "On Linux, this creates a new TAP device with this name. And "
                 "defaults to the sessionname. "

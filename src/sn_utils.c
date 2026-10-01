@@ -310,7 +310,7 @@ int load_allowed_sn_community (struct n3n_runtime_data *sss) {
     uint8_t bitlen;
     in_addr_t net;
     uint32_t mask;
-    FILE *fd = fopen(sss->conf.community_file, "r");
+    FILE *fd = fopen(sss->conf.relay.community_file, "r");
 
     struct sn_community *comm, *tmp_comm, *last_added_comm = NULL;
     struct peer_info *edge, *tmp_edge;
@@ -324,7 +324,7 @@ int load_allowed_sn_community (struct n3n_runtime_data *sss) {
     int has_net;
 
     if(fd == NULL) {
-        traceEvent(TRACE_WARNING, "File %s not found", sss->conf.community_file);
+        traceEvent(TRACE_WARNING, "File %s not found", sss->conf.relay.community_file);
         return -1;
     }
 
@@ -523,15 +523,15 @@ int load_allowed_sn_community (struct n3n_runtime_data *sss) {
     fclose(fd);
 
     if((num_regex + num_communities) == 0) {
-        traceEvent(TRACE_WARNING, "file %s does not contain any valid community names or regular expressions", sss->conf.community_file);
+        traceEvent(TRACE_WARNING, "file %s does not contain any valid community names or regular expressions", sss->conf.relay.community_file);
         return -2;
     }
 
     traceEvent(TRACE_NORMAL, "loaded %u fixed-name communities from %s",
-               num_communities, sss->conf.community_file);
+               num_communities, sss->conf.relay.community_file);
 
     traceEvent(TRACE_NORMAL, "loaded %u regular expressions for community name matching from %s",
-               num_regex, sss->conf.community_file);
+               num_regex, sss->conf.relay.community_file);
 
     // calculate allowed user's shared secrets (shared with federation)
     calculate_shared_secrets(sss);
@@ -829,7 +829,7 @@ static void try_forward (struct n3n_runtime_data * sss,
                 sss,
                 NULL,
                 cmn,
-                sss->conf.sn_mac_addr,
+                sss->conf.relay.sn_mac_addr,
                 from_supernode,
                 pktbuf,
                 pktsize,
@@ -876,10 +876,10 @@ void sn_init_conf_defaults (struct n3n_runtime_data *sss, char *sessionname) {
     }
 
     conf->is_supernode = true;
-    conf->spoofing_protection = true;
+    conf->relay.spoofing_protection = true;
 
-    strncpy(conf->version, VERSION, sizeof(n2n_version_t));
-    conf->version[sizeof(n2n_version_t) - 1] = '\0';
+    strncpy(conf->relay.version, VERSION, sizeof(n2n_version_t));
+    conf->relay.version[sizeof(n2n_version_t) - 1] = '\0';
 
     // room for a full list and its end, as n3n_conf_sockaddr makes it:
     // open_bind_sockets() may add to it
@@ -892,9 +892,9 @@ void sn_init_conf_defaults (struct n3n_runtime_data *sss, char *sessionname) {
     conf->mgmt_password = strdup(N3N_MGMT_PASSWORD);
 
     /* Random auth token */
-    conf->auth.scheme = n2n_auth_simple_id;
-    memrnd(conf->auth.token, N2N_AUTH_ID_TOKEN_SIZE);
-    conf->auth.token_size = N2N_AUTH_ID_TOKEN_SIZE;
+    conf->client.auth.scheme = n2n_auth_simple_id;
+    memrnd(conf->client.auth.token, N2N_AUTH_ID_TOKEN_SIZE);
+    conf->client.auth.token_size = N2N_AUTH_ID_TOKEN_SIZE;
 
     /* Initialize the federation name */
     // TODO: the edge has a separate function for getenv() defaults
@@ -902,7 +902,7 @@ void sn_init_conf_defaults (struct n3n_runtime_data *sss, char *sessionname) {
     if(!federation) {
         federation = FEDERATION_NAME_DEFAULT;
     }
-    strncpy(conf->sn_federation, federation, sizeof(conf->sn_federation));
+    strncpy(conf->relay.sn_federation, federation, sizeof(conf->relay.sn_federation));
 
 #ifndef _WIN32
     struct passwd *pw = NULL;
@@ -933,9 +933,9 @@ void sn_init_conf_defaults (struct n3n_runtime_data *sss, char *sessionname) {
     /* Random MAC address */
     sss->conf.threads = 1;
 
-    memrnd(sss->conf.sn_mac_addr, N2N_MAC_SIZE);
-    sss->conf.sn_mac_addr[0] &= ~0x01; /* Clear multicast bit */
-    sss->conf.sn_mac_addr[0] |= 0x02;    /* Set locally-assigned bit */
+    memrnd(sss->conf.relay.sn_mac_addr, N2N_MAC_SIZE);
+    sss->conf.relay.sn_mac_addr[0] &= ~0x01; /* Clear multicast bit */
+    sss->conf.relay.sn_mac_addr[0] |= 0x02;    /* Set locally-assigned bit */
 
     // [::] stands for IPv4 too, see open_bind_sockets()
     struct sockaddr_in6 *sa = (struct sockaddr_in6 *)conf->bind_address;
@@ -944,10 +944,10 @@ void sn_init_conf_defaults (struct n3n_runtime_data *sss, char *sessionname) {
     sa->sin6_addr = in6addr_any;
 
     sss->sock = -1;
-    conf->sn_min_auto_ip_net.net_addr = inet_addr(N2N_SN_MIN_AUTO_IP_NET_DEFAULT);
-    conf->sn_min_auto_ip_net.net_bitlen = N2N_SN_AUTO_IP_NET_BIT_DEFAULT;
-    conf->sn_max_auto_ip_net.net_addr = inet_addr(N2N_SN_MAX_AUTO_IP_NET_DEFAULT);
-    conf->sn_max_auto_ip_net.net_bitlen = N2N_SN_AUTO_IP_NET_BIT_DEFAULT;
+    conf->relay.sn_min_auto_ip_net.net_addr = inet_addr(N2N_SN_MIN_AUTO_IP_NET_DEFAULT);
+    conf->relay.sn_min_auto_ip_net.net_bitlen = N2N_SN_AUTO_IP_NET_BIT_DEFAULT;
+    conf->relay.sn_max_auto_ip_net.net_addr = inet_addr(N2N_SN_MAX_AUTO_IP_NET_DEFAULT);
+    conf->relay.sn_max_auto_ip_net.net_bitlen = N2N_SN_AUTO_IP_NET_BIT_DEFAULT;
 
     sss->relay.federation = (struct sn_community *)calloc(1, sizeof(struct sn_community));
     if(!sss->relay.federation) {
@@ -1070,7 +1070,7 @@ void sn_term (struct n3n_runtime_data *sss) {
 
     free(sss->conf.bind_address);
 
-    free(sss->conf.community_file);
+    free(sss->conf.relay.community_file);
 
     free(sss->conf.mgmt_password);
 
@@ -1213,7 +1213,7 @@ static int auth_edge (const n2n_auth_t *present, const n2n_auth_t *presented, n2
 static int get_local_auth (struct n3n_runtime_data *sss, n2n_auth_t *auth) {
 
     // n2n_auth_simple_id scheme
-    memcpy(auth, &(sss->conf.auth), sizeof(n2n_auth_t));
+    memcpy(auth, &(sss->conf.client.auth), sizeof(n2n_auth_t));
 
     return 0;
 }
@@ -1342,7 +1342,7 @@ static int update_edge (struct n3n_runtime_data *sss,
                 // MAC/IP address spoofing protection for id based auth
                 // communities. This will be obsolete when handling public
                 // keys only (v4.0?)
-                if((reg->auth.scheme == n2n_auth_simple_id) && (!sss->conf.spoofing_protection))
+                if((reg->auth.scheme == n2n_auth_simple_id) && (!sss->conf.relay.spoofing_protection))
                     scan->auth.scheme = n2n_auth_none;
 
                 HASH_ADD_PEER(comm->edges, scan);
@@ -1523,18 +1523,18 @@ int assign_one_ip_subnet (struct n3n_runtime_data *sss,
     in_addr_t net;
 
 
-    mask = bitlen2mask(sss->conf.sn_min_auto_ip_net.net_bitlen);
-    net_min = ntohl(sss->conf.sn_min_auto_ip_net.net_addr);
-    net_max = ntohl(sss->conf.sn_max_auto_ip_net.net_addr);
+    mask = bitlen2mask(sss->conf.relay.sn_min_auto_ip_net.net_bitlen);
+    net_min = ntohl(sss->conf.relay.sn_min_auto_ip_net.net_addr);
+    net_max = ntohl(sss->conf.relay.sn_max_auto_ip_net.net_addr);
 
     // number of possible sub-networks
     no_subnets   = net_max - net_min;
-    no_subnets >>= (32 - sss->conf.sn_min_auto_ip_net.net_bitlen);
+    no_subnets >>= (32 - sss->conf.relay.sn_min_auto_ip_net.net_bitlen);
     no_subnets  += 1;
 
     // proposal for sub-network to choose
     net_id    = pearson_hash_32((const uint8_t *)comm->community, N2N_COMMUNITY_SIZE) % no_subnets;
-    net_id    = net_min + (net_id << (32 - sss->conf.sn_min_auto_ip_net.net_bitlen));
+    net_id    = net_min + (net_id << (32 - sss->conf.relay.sn_min_auto_ip_net.net_bitlen));
 
     // check for availability starting from net_id, then downwards, ...
     net_increment = (~mask+1);
@@ -1556,7 +1556,7 @@ int assign_one_ip_subnet (struct n3n_runtime_data *sss,
 
     if(success) {
         comm->auto_ip_net.net_addr = net_id_i;
-        comm->auto_ip_net.net_bitlen = sss->conf.sn_min_auto_ip_net.net_bitlen;
+        comm->auto_ip_net.net_bitlen = sss->conf.relay.sn_min_auto_ip_net.net_bitlen;
         net = htonl(comm->auto_ip_net.net_addr);
         struct in_addr *tmp = (struct in_addr *)&net;
         traceEvent(TRACE_INFO, "assigned sub-network %s/%u to community '%s'",
@@ -1624,7 +1624,7 @@ static int re_register_and_purge_supernodes (struct n3n_runtime_data *sss, struc
 
             reg.key_time = sss->relay.dynamic_key_time;
 
-            memcpy(reg.edgeMac, sss->conf.sn_mac_addr, sizeof(n2n_mac_t));
+            memcpy(reg.edgeMac, sss->conf.relay.sn_mac_addr, sizeof(n2n_mac_t));
 
             idx = 0;
             encode_REGISTER_SUPER(pktbuf, &idx, &cmn, &reg);
@@ -2336,7 +2336,7 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
                 }
             }
 
-            if(!memcmp(reg.edgeMac, sss->conf.sn_mac_addr, sizeof(n2n_mac_t))) {
+            if(!memcmp(reg.edgeMac, sss->conf.relay.sn_mac_addr, sizeof(n2n_mac_t))) {
                 traceEvent(TRACE_DEBUG, "Rx REGISTER_SUPER from self, ignoring");
                 return -1;
             }
@@ -2347,7 +2347,7 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
             memcpy(cmn2.community, cmn.community, sizeof(n2n_community_t));
 
             ack.cookie = reg.cookie;
-            memcpy(ack.srcMac, sss->conf.sn_mac_addr, sizeof(n2n_mac_t));
+            memcpy(ack.srcMac, sss->conf.relay.sn_mac_addr, sizeof(n2n_mac_t));
 
             if(!comm->is_federation) { /* alternatively, do not send zero tap ip address in federation REGISTER_SUPER */
                 if((reg.dev_addr.net_addr == 0) || (reg.dev_addr.net_addr == 0xFFFFFFFF) || (reg.dev_addr.net_bitlen == 0) ||
@@ -2838,13 +2838,13 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
 
                 pi.aflags = 0;
                 memcpy(pi.mac, query.targetMac, sizeof(n2n_mac_t));
-                memcpy(pi.srcMac, sss->conf.sn_mac_addr, sizeof(n2n_mac_t));
+                memcpy(pi.srcMac, sss->conf.relay.sn_mac_addr, sizeof(n2n_mac_t));
 
                 memcpy(&pi.sock, &sender, sizeof(sender));
 
                 pi.load = sn_selection_criterion_gather_data(sss);
 
-                snprintf(pi.version, sizeof(pi.version), "%s", sss->conf.version);
+                snprintf(pi.version, sizeof(pi.version), "%s", sss->conf.relay.version);
                 pi.uptime = now - sss->start_time;
 
                 encode_PEER_INFO(encbuf, &encx, &cmn2, &pi);

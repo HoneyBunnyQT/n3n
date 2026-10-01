@@ -240,7 +240,7 @@ int edge_verify_conf (const n2n_edge_conf_t *conf) {
         return -5;
     }
 
-    if(conf->register_interval < 1)
+    if(conf->client.register_interval < 1)
         return -3;
 
     if(((conf->encrypt_key == NULL) && (conf->transop_id != N2N_TRANSFORM_ID_NULL)) ||
@@ -305,7 +305,7 @@ static int is_ip6_discovery (const void * buf, size_t bufsize) {
 
 // reset number of supernode connection attempts: try only once for already more realiable tcp connections
 void reset_sup_attempts (struct n3n_runtime_data *eee) {
-    if(eee->conf.connect_tcp) {
+    if(eee->conf.client.connect_tcp) {
         eee->client.sup_attempts = 1;
     } else {
         eee->client.sup_attempts = N2N_EDGE_SUP_ATTEMPTS;
@@ -509,7 +509,7 @@ static void note_nat (struct n3n_runtime_data *eee, const n3n_sock_t *sn, const 
     char buf[40];
     n3n_sock_str_t sockbuf;
 
-    if(eee->conf.connect_tcp || (seen->family != sn->family) ||
+    if(eee->conf.client.connect_tcp || (seen->family != sn->family) ||
        ((sn->family != AF_INET) && (sn->family != AF_INET6))) {
         return;
     }
@@ -646,7 +646,7 @@ static void punch_note_rx (struct n3n_runtime_data *eee, SOCKET sock,
             if(b->dest.family) {
                 punch_bound_close(eee, b);
             }
-            if(eee->conf.punch_ttl) {
+            if(eee->conf.client.punch_ttl) {
                 int level, name;
                 ttl_option(p->dest.family, &level, &name);
                 setsockopt(sock, level, name, (char *)&p->ttl0, sizeof(p->ttl0));
@@ -691,7 +691,7 @@ static void punch_sweep (struct n3n_runtime_data *eee, time_t now) {
 
     for(int i = 0; i < NAT_PUNCH_POOLS; i++) {
         struct punch_pool *p = &eee->client.punch_pool[i];
-        if(p->used && (p->won || (now - p->used > 2 * (time_t)eee->conf.register_interval + 1))) {
+        if(p->used && (p->won || (now - p->used > 2 * (time_t)eee->conf.client.register_interval + 1))) {
             punch_pool_close(eee, p);
         }
     }
@@ -734,7 +734,7 @@ void supernode_connect (struct n3n_runtime_data *eee) {
     n3n_sock_t local_sock;
     n3n_sock_str_t sockbuf;
 
-    if(eee->conf.connect_tcp) {
+    if(eee->conf.client.connect_tcp) {
         // It might be already closed, but we can simply ignore errors and
         // carry on
         close_sockets(eee);
@@ -744,7 +744,7 @@ void supernode_connect (struct n3n_runtime_data *eee) {
         return;
     }
 
-    if(!eee->conf.connect_tcp) {
+    if(!eee->conf.client.connect_tcp) {
         if(open_udp_sockets(eee) != 0) {
             traceEvent(TRACE_ERROR, "failed to bind main UDP port");
             return;
@@ -847,17 +847,17 @@ void supernode_connect (struct n3n_runtime_data *eee) {
     // - detect: the address we send from towards the supernode, and our port
     eee->client.advertised_sock.family = AF_INVALID;
 
-    if(eee->conf.preferred_sock.family == AF_INVALID) {
+    if(eee->conf.client.preferred_sock.family == AF_INVALID) {
         return;
     }
     if(detect_local_ip_address(&local_sock, eee) != 0) {
         return;
     }
 
-    if(is_empty_ip_address(&eee->conf.preferred_sock)) {
+    if(is_empty_ip_address(&eee->conf.client.preferred_sock)) {
         eee->client.advertised_sock = local_sock;
     } else {
-        eee->client.advertised_sock = eee->conf.preferred_sock;
+        eee->client.advertised_sock = eee->conf.client.preferred_sock;
         eee->client.advertised_sock.port = local_sock.port;
     }
     traceEvent(TRACE_INFO, "advertising local socket [%s]",
@@ -898,10 +898,10 @@ struct n3n_runtime_data* edge_init (const n2n_edge_conf_t *conf, int *rv) {
 #ifdef _WIN32
     // TODO: more investigations in interface naming/renaming on windows
 #else
-    if(eee->conf.tuntap_dev_name[0] == 0) {
+    if(eee->conf.tap.tuntap_dev_name[0] == 0) {
         snprintf(
-            eee->conf.tuntap_dev_name,
-            sizeof(eee->conf.tuntap_dev_name),
+            eee->conf.tap.tuntap_dev_name,
+            sizeof(eee->conf.tap.tuntap_dev_name),
             "%s",
             conf->sessionname
         );
@@ -924,7 +924,7 @@ struct n3n_runtime_data* edge_init (const n2n_edge_conf_t *conf, int *rv) {
     // - one for resolver, one for rx, one for tx, one spare
     // (We might need more for multi-peer buffered TCP connections, or for
     // multi-queue / multi-thread
-    n3n_pktbuf_initialise(eee->conf.mtu, 4);
+    n3n_pktbuf_initialise(eee->conf.tap.mtu, 4);
 
     eee->client.curr_sn = eee->client.supernodes;
     eee->start_time = time(NULL);
@@ -992,17 +992,17 @@ struct n3n_runtime_data* edge_init (const n2n_edge_conf_t *conf, int *rv) {
     // setup authentication scheme
     if(!conf->shared_secret) {
         // id-based scheme
-        eee->conf.auth.scheme = n2n_auth_simple_id;
+        eee->conf.client.auth.scheme = n2n_auth_simple_id;
         // random authentication token
-        memrnd(eee->conf.auth.token, N2N_AUTH_ID_TOKEN_SIZE);
-        eee->conf.auth.token_size = N2N_AUTH_ID_TOKEN_SIZE;
+        memrnd(eee->conf.client.auth.token, N2N_AUTH_ID_TOKEN_SIZE);
+        eee->conf.client.auth.token_size = N2N_AUTH_ID_TOKEN_SIZE;
     } else {
         // user-password scheme
-        eee->conf.auth.scheme = n2n_auth_user_password;
+        eee->conf.client.auth.scheme = n2n_auth_user_password;
         // 'token' stores public key and the last random challenge being set upon sending REGISTER_SUPER
-        memcpy(eee->conf.auth.token, eee->conf.public_key, N2N_PRIVATE_PUBLIC_KEY_SIZE);
+        memcpy(eee->conf.client.auth.token, eee->conf.public_key, N2N_PRIVATE_PUBLIC_KEY_SIZE);
         // random part of token (challenge) will be generated and filled in at each REGISTER_SUPER
-        eee->conf.auth.token_size = N2N_AUTH_PW_TOKEN_SIZE;
+        eee->conf.client.auth.token_size = N2N_AUTH_PW_TOKEN_SIZE;
         // make sure that only stream ciphers are being used
         if((transop_id != N2N_TRANSFORM_ID_CHACHA20)
            && (transop_id != N2N_TRANSFORM_ID_SPECK)) {
@@ -1034,7 +1034,7 @@ struct n3n_runtime_data* edge_init (const n2n_edge_conf_t *conf, int *rv) {
 
     // TODO: skip creating this if there are no filters to add
     eee->tap.network_traffic_filter = create_network_traffic_filter();
-    network_traffic_filter_add_rule(eee->tap.network_traffic_filter, eee->conf.network_traffic_filter_rules);
+    network_traffic_filter_add_rule(eee->tap.network_traffic_filter, eee->conf.tap.network_traffic_filter_rules);
 
     //edge_init_success:
     *rv = 0;
@@ -1095,8 +1095,8 @@ static int is_valid_peer_sock (const n3n_sock_t *sock) {
  */
 static void register_with_local_peers (struct n3n_runtime_data * eee) {
 #ifndef SKIP_MULTICAST_PEERS_DISCOVERY
-    if(eee->conf.allow_p2p && eee->conf.local_discovery) {
-        if(eee->client.multicast_joined_v4 && (eee->conf.preferred_sock.family == (uint8_t)AF_INVALID)) {
+    if(eee->conf.client.allow_p2p && eee->conf.client.local_discovery) {
+        if(eee->client.multicast_joined_v4 && (eee->conf.client.preferred_sock.family == (uint8_t)AF_INVALID)) {
             /* send registration to the local multicast group */
             traceEvent(TRACE_DEBUG, "registering with IPv4 multicast group %s:%u",
                        N2N_MULTICAST_GROUP, N2N_MULTICAST_PORT);
@@ -1148,7 +1148,7 @@ static void register_with_new_peer (struct n3n_runtime_data *eee,
         scan = peer_info_malloc(mac);
 
         scan->sock = *peer;
-        scan->timeout = eee->conf.register_interval; /* TODO: should correspond to the peer supernode registration timeout */
+        scan->timeout = eee->conf.client.register_interval; /* TODO: should correspond to the peer supernode registration timeout */
         if(via_multicast)
             scan->local = 1;
 
@@ -1168,10 +1168,10 @@ static void register_with_new_peer (struct n3n_runtime_data *eee,
              * So we can alternatively set TTL so that the packet sent to peer never really reaches
              * The register_ttl is basically nat level + 1. Set it to 1 means host like DMZ.
              */
-            if(eee->conf.register_ttl == 1) {
+            if(eee->conf.client.register_ttl == 1) {
                 /* We are DMZ host or port is directly accessible. Just let peer to send back the ack */
 #ifndef _WIN32
-            } else if(eee->conf.register_ttl > 1) {
+            } else if(eee->conf.client.register_ttl > 1) {
                 /* Setting register_ttl usually implies that the edge knows the internal net topology
                  * clearly, we can apply aggressive port prediction to support incoming Symmetric NAT
                  */
@@ -1192,14 +1192,14 @@ static void register_with_new_peer (struct n3n_runtime_data *eee,
 
                 getsockopt(ttl_sock, level, name, (void *) (char *) &curTTL, &lenTTL);
                 setsockopt(ttl_sock, level, name,
-                           (void *) (char *) &eee->conf.register_ttl,
-                           sizeof(eee->conf.register_ttl));
+                           (void *) (char *) &eee->conf.client.register_ttl,
+                           sizeof(eee->conf.client.register_ttl));
                 for(; alter > 0; alter--, sock.port++) {
                     send_register(eee, &sock, mac, N2N_PORT_REG_COOKIE);
                 }
                 setsockopt(ttl_sock, level, name, (void *) (char *) &curTTL, sizeof(curTTL));
 #endif
-            } else { /* eee->conf.register_ttl == 0 */
+            } else { /* eee->conf.client.register_ttl == 0 */
                 /* Normal STUN */
                 send_register(eee, &(scan->sock), mac, N2N_REGULAR_REG_COOKIE);
             }
@@ -1347,13 +1347,13 @@ static void peer_set_p2p_confirmed (struct n3n_runtime_data * eee,
 // provides the current / a new local auth token
 static int get_local_auth (struct n3n_runtime_data *eee, n2n_auth_t *auth) {
 
-    switch(eee->conf.auth.scheme) {
+    switch(eee->conf.client.auth.scheme) {
         case n2n_auth_simple_id:
-            memcpy(auth, &(eee->conf.auth), sizeof(n2n_auth_t));
+            memcpy(auth, &(eee->conf.client.auth), sizeof(n2n_auth_t));
             break;
         case n2n_auth_user_password:
             // start from the locally stored complete auth token (including type and size fields)
-            memcpy(auth, &(eee->conf.auth), sizeof(n2n_auth_t));
+            memcpy(auth, &(eee->conf.client.auth), sizeof(n2n_auth_t));
 
             // the token data consists of
             //    32 bytes public key
@@ -1362,7 +1362,7 @@ static int get_local_auth (struct n3n_runtime_data *eee, n2n_auth_t *auth) {
             // generate a new random auth challenge every time
             memrnd(auth->token + N2N_PRIVATE_PUBLIC_KEY_SIZE, N2N_AUTH_CHALLENGE_SIZE);
             // store it in local auth token (for comparison later)
-            memcpy(eee->conf.auth.token + N2N_PRIVATE_PUBLIC_KEY_SIZE, auth->token + N2N_PRIVATE_PUBLIC_KEY_SIZE, N2N_AUTH_CHALLENGE_SIZE);
+            memcpy(eee->conf.client.auth.token + N2N_PRIVATE_PUBLIC_KEY_SIZE, auth->token + N2N_PRIVATE_PUBLIC_KEY_SIZE, N2N_AUTH_CHALLENGE_SIZE);
             // encrypt the challenge for transmission
             speck_128_encrypt(auth->token + N2N_PRIVATE_PUBLIC_KEY_SIZE, (speck_context_t*)eee->conf.shared_secret_ctx);
             break;
@@ -1379,7 +1379,7 @@ static int handle_remote_auth (struct n3n_runtime_data *eee, struct peer_info *p
 
     uint8_t tmp_token[N2N_AUTH_MAX_TOKEN_SIZE];
 
-    switch(eee->conf.auth.scheme) {
+    switch(eee->conf.client.auth.scheme) {
         case n2n_auth_simple_id:
             // no action required
             break;
@@ -1396,13 +1396,13 @@ static int handle_remote_auth (struct n3n_runtime_data *eee, struct peer_info *p
             speck_128_decrypt(tmp_token, (speck_context_t*)eee->conf.shared_secret_ctx);
 
             // compare to original challenge
-            if(0 != memcmp(tmp_token, eee->conf.auth.token + N2N_PRIVATE_PUBLIC_KEY_SIZE, N2N_AUTH_CHALLENGE_SIZE))
+            if(0 != memcmp(tmp_token, eee->conf.client.auth.token + N2N_PRIVATE_PUBLIC_KEY_SIZE, N2N_AUTH_CHALLENGE_SIZE))
                 return -1;
 
             // decrypt the received challenge in which the dynamic key is wrapped
             speck_128_decrypt(tmp_token + N2N_PRIVATE_PUBLIC_KEY_SIZE, (speck_context_t*)eee->conf.shared_secret_ctx);
             // un-XOR the original challenge
-            memxor(tmp_token + N2N_PRIVATE_PUBLIC_KEY_SIZE, eee->conf.auth.token + N2N_PRIVATE_PUBLIC_KEY_SIZE, N2N_AUTH_CHALLENGE_SIZE);
+            memxor(tmp_token + N2N_PRIVATE_PUBLIC_KEY_SIZE, eee->conf.client.auth.token + N2N_PRIVATE_PUBLIC_KEY_SIZE, N2N_AUTH_CHALLENGE_SIZE);
             // un-XOR the shared secret
             memxor(tmp_token + N2N_PRIVATE_PUBLIC_KEY_SIZE, *(eee->conf.shared_secret), N2N_AUTH_CHALLENGE_SIZE);
             // setup for use as dynamic key
@@ -1524,7 +1524,7 @@ static void sendto_sock (struct n3n_runtime_data *eee, const void * buf,
     // - also check n3n_sock_t type == SOCK_STREAM as a TCP indicator?
 
     // if the connection is tcp, i.e. not the regular sock...
-    if(eee->conf.connect_tcp) {
+    if(eee->conf.client.connect_tcp) {
         mainloop_send_v3tcp(eee->sock, buf, len);
         /*
          * TODO: metrics for errors
@@ -1576,8 +1576,8 @@ static void sendto_sock (struct n3n_runtime_data *eee, const void * buf,
 static void check_join_multicast_group (struct n3n_runtime_data *eee) {
 
 #ifndef SKIP_MULTICAST_PEERS_DISCOVERY
-    if((eee->conf.allow_p2p) && (eee->conf.local_discovery)
-       && (eee->conf.preferred_sock.family == (uint8_t)AF_INVALID)) {
+    if((eee->conf.client.allow_p2p) && (eee->conf.client.local_discovery)
+       && (eee->conf.client.preferred_sock.family == (uint8_t)AF_INVALID)) {
         if(!eee->client.multicast_joined_v4) {
             struct ip_mreq mreq;
             mreq.imr_multiaddr.s_addr = inet_addr(N2N_MULTICAST_GROUP);
@@ -1671,8 +1671,8 @@ void send_query_peer (struct n3n_runtime_data * eee,
                                   time_stamp());
         }
 
-        n_o_pings = eee->conf.number_max_sn_pings;
-        eee->conf.number_max_sn_pings = NUMBER_SN_PINGS_REGULAR;
+        n_o_pings = eee->conf.client.number_max_sn_pings;
+        eee->conf.client.number_max_sn_pings = NUMBER_SN_PINGS_REGULAR;
 
         // ping the 'floor(n/2)' top supernodes and 'ceiling(n/2)' of the remaining
         n_o_top_sn  = n_o_pings >> 1;
@@ -1736,7 +1736,7 @@ void send_register_super (struct n3n_runtime_data *eee) {
 
     reg.cookie = eee->client.curr_sn->last_cookie;
     reg.dev_addr.net_addr = ntohl(eee->tap.device.ip_addr);
-    reg.dev_addr.net_bitlen = eee->conf.tuntap_v4.net_bitlen;
+    reg.dev_addr.net_bitlen = eee->conf.tap.tuntap_v4.net_bitlen;
     memcpy(reg.dev_desc, eee->conf.dev_desc, N2N_DESC_SIZE);
     get_local_auth(eee, &(reg.auth));
 
@@ -1845,7 +1845,7 @@ static void sort_supernodes (struct n3n_runtime_data *eee, time_t now) {
     sn_selection_criterion_common_data_default(eee);
 
     // send PING to all the supernodes
-    if(!eee->conf.connect_tcp)
+    if(!eee->conf.client.connect_tcp)
         send_query_peer(eee, null_mac);
     eee->client.last_sweep = now;
 
@@ -1880,7 +1880,7 @@ static size_t encode_register_pkt (struct n3n_runtime_data * eee,
         memcpy(reg.dstMac, peer_mac, sizeof(n2n_mac_t));
     }
     reg.dev_addr.net_addr = ntohl(eee->tap.device.ip_addr);
-    reg.dev_addr.net_bitlen = eee->conf.tuntap_v4.net_bitlen;
+    reg.dev_addr.net_bitlen = eee->conf.tap.tuntap_v4.net_bitlen;
     memcpy(reg.dev_desc, eee->conf.dev_desc, N2N_DESC_SIZE);
 
     idx = 0;
@@ -1904,7 +1904,7 @@ static void send_register (struct n3n_runtime_data * eee,
     size_t idx;
     n3n_sock_str_t sockbuf;
 
-    if(!eee->conf.allow_p2p) {
+    if(!eee->conf.client.allow_p2p) {
         traceEvent(TRACE_DEBUG, "skipping register as P2P is disabled");
         return;
     }
@@ -1951,7 +1951,7 @@ static void punch_hard_peer (struct n3n_runtime_data *eee, struct peer_info *pee
     }
     if(!nat_hint_range(np->hint, &lo, &size) || (size > NAT_PUNCH_MAX_RANGE) ||
        ((sock.family != AF_INET) && (sock.family != AF_INET6)) || is_empty_ip_address(&sock) ||
-       (now - np->punched < eee->conf.register_interval)) {
+       (now - np->punched < eee->conf.client.register_interval)) {
         return;
     }
     // A stride through the range rounded up to a power of two meets every
@@ -1962,7 +1962,7 @@ static void punch_hard_peer (struct n3n_runtime_data *eee, struct peer_info *pee
         np->start = n3n_rand();
         np->stride = n3n_rand() | 1;
     }
-    while(sent < eee->conf.punch_ports) {
+    while(sent < eee->conf.client.punch_ports) {
         unsigned int i = (np->start + np->tried * np->stride) & (span - 1);
         np->tried++;
         if((i < size) && (lo + i >= 1024)) {
@@ -2016,9 +2016,9 @@ static int punch_open_sock (struct n3n_runtime_data *eee, int family, int *ttl0)
     }
     set_sock_options(eee, sock, family, true);
 
-    if(eee->conf.punch_ttl) {
+    if(eee->conf.client.punch_ttl) {
         int level, name;
-        int ttl = eee->conf.punch_ttl;
+        int ttl = eee->conf.client.punch_ttl;
         socklen_t ttl_len = sizeof(*ttl0);
         ttl_option(family, &level, &name);
         getsockopt(sock, level, name, (char *)ttl0, &ttl_len);
@@ -2052,7 +2052,7 @@ static void punch_pool_round (struct n3n_runtime_data *eee, struct peer_info *pe
     macstr_t mac_buf;
     n3n_sock_str_t sockbuf;
 
-    if(!eee->conf.punch_sockets || (eee->client.punch_bound_count && punch_bound_find(eee, dest))) {
+    if(!eee->conf.client.punch_sockets || (eee->client.punch_bound_count && punch_bound_find(eee, dest))) {
         // the REGISTER straight to the peer already leaves from the socket
         // it got through to before
         return;
@@ -2071,7 +2071,7 @@ static void punch_pool_round (struct n3n_runtime_data *eee, struct peer_info *pe
     }
 
     if(!p) {
-        int want = MIN((int)eee->conf.punch_sockets, NAT_PUNCH_POOL_MAX - eee->client.punch_pool_fds);
+        int want = MIN((int)eee->conf.client.punch_sockets, NAT_PUNCH_POOL_MAX - eee->client.punch_pool_fds);
 
         for(int i = 0; i < NAT_PUNCH_POOLS; i++) {
             if(!eee->client.punch_pool[i].used) {
@@ -2130,7 +2130,7 @@ static void punch_round (struct n3n_runtime_data *eee, struct peer_info *peer, t
     struct nat_peer *np = nat_peer_find(eee->client.nat_peers, peer->mac_addr, false);
     int f = peer->sock.family;
 
-    if(!np || !eee->conf.punch_ports || eee->conf.connect_tcp || !eee->conf.allow_p2p) {
+    if(!np || !eee->conf.client.punch_ports || eee->conf.client.connect_tcp || !eee->conf.client.allow_p2p) {
         return;
     }
 
@@ -2139,7 +2139,7 @@ static void punch_round (struct n3n_runtime_data *eee, struct peer_info *peer, t
         punch_hard_peer(eee, peer, np, now);
     } else if((theirs != NAT_SEVERAL_ADDRESSES) && ((f == AF_INET) || (f == AF_INET6)) &&
               !is_empty_ip_address(&peer->sock) && (eee->client.nat[f == AF_INET6].nat_class == NAT_HARD) &&
-              (now - np->punched >= eee->conf.register_interval)) {
+              (now - np->punched >= eee->conf.client.register_interval)) {
         send_register(eee, &peer->sock, peer->mac_addr, N2N_REGULAR_REG_COOKIE);
         punch_pool_round(eee, peer, now);
         np->punched = now;
@@ -2160,7 +2160,7 @@ static void send_register_ack (struct n3n_runtime_data * eee,
     n2n_REGISTER_ACK_t ack;
     n3n_sock_str_t sockbuf;
 
-    if(!eee->conf.allow_p2p) {
+    if(!eee->conf.client.allow_p2p) {
         traceEvent(TRACE_DEBUG, "skipping register ACK as P2P is disabled");
         return;
     }
@@ -2244,11 +2244,11 @@ void update_supernode_reg (struct n3n_runtime_data * eee, time_t now) {
     int cnt = 0;
     int off = 0;
 
-    if((eee->client.sn_wait && (now > (eee->client.last_register_req + (eee->conf.register_interval / 10))))
+    if((eee->client.sn_wait && (now > (eee->client.last_register_req + (eee->conf.client.register_interval / 10))))
        ||(eee->client.sn_wait == 2)) { /* immediately re-register in case of RE_REGISTER_SUPER */
         /* fall through */
         traceEvent(TRACE_DEBUG, "update_supernode_reg: doing fast retry.");
-    } else if(now < (eee->client.last_register_req + eee->conf.register_interval))
+    } else if(now < (eee->client.last_register_req + eee->conf.client.register_interval))
         return; /* Too early */
 
     // determine time offset to apply on last_register_req for
@@ -2256,7 +2256,7 @@ void update_supernode_reg (struct n3n_runtime_data * eee, time_t now) {
     if(eee->client.sn_wait == 2) {
         // remaining 1/4 is greater than 1/10 fast retry allowance;
         // '%' might be expensive but does not happen all too often
-        off = n3n_rand() % ((eee->conf.register_interval * 3) / 4);
+        off = n3n_rand() % ((eee->conf.client.register_interval * 3) / 4);
     }
 
     check_join_multicast_group(eee);
@@ -2355,13 +2355,13 @@ static int check_query_peer_info (struct n3n_runtime_data *eee, time_t now, cons
     if(!scan) {
         scan = peer_info_malloc(mac);
 
-        scan->timeout = eee->conf.register_interval; /* TODO: should correspond to the peer supernode registration timeout */
+        scan->timeout = eee->conf.client.register_interval; /* TODO: should correspond to the peer supernode registration timeout */
         scan->last_seen = now; /* Don't change this it marks the pending peer for removal. */
 
         HASH_ADD_PEER(eee->client.pending_peers, scan);
     }
 
-    if(now - scan->last_sent_query > eee->conf.register_interval) {
+    if(now - scan->last_sent_query > eee->conf.client.register_interval) {
         send_register(eee, &(eee->client.curr_sn->sock), mac, forwarded_reg_cookie(eee));
         send_query_peer(eee, scan->mac_addr);
         scan->last_sent_query = now;
@@ -2522,7 +2522,7 @@ static int query_peer_fast (struct n3n_runtime_data *eee, time_t now, const n2n_
 
     HASH_FIND_PEER(eee->client.pending_peers, mac, scan);
 
-    return scan && !(now - scan->last_sent_query > eee->conf.register_interval);
+    return scan && !(now - scan->last_sent_query > eee->conf.client.register_interval);
 }
 
 
@@ -2632,13 +2632,13 @@ static int handle_PACKET (struct n3n_runtime_data * eee,
 
     is_multicast = (is_ip6_discovery(eth_payload, eth_size) || is_ethMulticast(eth_payload, eth_size));
 
-    if(!eee->conf.allow_multicast && is_multicast) {
+    if(!eee->conf.tap.allow_multicast && is_multicast) {
         traceEvent(TRACE_INFO, "dropping RX multicast");
         STATS_INC(eee, rx_multicast_drop);
         return(-1);
     }
 
-    if((!eee->conf.allow_routing) && (!is_multicast)) {
+    if((!eee->conf.tap.allow_routing) && (!is_multicast)) {
         /* Check if it is a routed packet */
 
         if((ntohs(eh->type) == 0x0800) && (eth_size >= ETH_FRAMESIZE + IP4_MIN_SIZE)) {
@@ -2665,7 +2665,7 @@ static int handle_PACKET (struct n3n_runtime_data * eee,
     }
 
 #ifdef HAVE_BRIDGING_SUPPORT
-    if((eee->conf.allow_routing) && (!is_multi_broadcast(eh->shost))) {
+    if((eee->conf.tap.allow_routing) && (!is_multi_broadcast(eh->shost))) {
         struct host_info *host = NULL;
 
         HASH_FIND(hh, eee->tap.known_hosts, eh->shost, sizeof(n2n_mac_t), host);
@@ -2900,7 +2900,7 @@ size_t edge_encode_packet_head (struct n3n_runtime_data *eee,
     memcpy(&eh, tap_pkt, sizeof(ether_hdr_t));
 
     /* Discard IP packets that are not originated by this host */
-    if(!(eee->conf.allow_routing)) {
+    if(!(eee->conf.tap.allow_routing)) {
         if(ntohs(eh.type) == 0x0800) {
             /* This is an IP packet from the local source address - not forwarded. */
             // the address is not aligned within the frame
@@ -2927,7 +2927,7 @@ size_t edge_encode_packet_head (struct n3n_runtime_data *eee,
     memcpy(out_destMac, eh.dhost, N2N_MAC_SIZE);
 #ifdef HAVE_BRIDGING_SUPPORT
     /* find the destMac behind which edge, and change dest to this edge */
-    if((eee->conf.allow_routing) && (!is_multi_broadcast(out_destMac))) {
+    if((eee->conf.tap.allow_routing) && (!is_multi_broadcast(out_destMac))) {
         struct host_info *host = NULL;
         HASH_FIND(hh, eee->tap.known_hosts, out_destMac, sizeof(n2n_mac_t), host);
         if(host) {
@@ -3089,20 +3089,20 @@ int edge_tap_open (struct n3n_runtime_data *eee) {
 
 #ifdef __linux__
     return tuntap_open_queues(&eee->tap.device, edge_threads_possible(&eee->conf),
-                              eee->conf.tuntap_dev_name,
-                              eee->conf.tuntap_ip_mode,
-                              eee->conf.tuntap_v4,
-                              eee->conf.device_mac,
-                              eee->conf.mtu,
-                              eee->conf.metric);
+                              eee->conf.tap.tuntap_dev_name,
+                              eee->conf.tap.tuntap_ip_mode,
+                              eee->conf.tap.tuntap_v4,
+                              eee->conf.tap.device_mac,
+                              eee->conf.tap.mtu,
+                              eee->conf.tap.metric);
 #else
     return tuntap_open(&eee->tap.device,
-                       eee->conf.tuntap_dev_name,
-                       eee->conf.tuntap_ip_mode,
-                       eee->conf.tuntap_v4,
-                       eee->conf.device_mac,
-                       eee->conf.mtu,
-                       eee->conf.metric);
+                       eee->conf.tap.tuntap_dev_name,
+                       eee->conf.tap.tuntap_ip_mode,
+                       eee->conf.tap.tuntap_v4,
+                       eee->conf.tap.device_mac,
+                       eee->conf.tap.mtu,
+                       eee->conf.tap.metric);
 #endif
 }
 
@@ -3185,7 +3185,7 @@ static int edge_tap_take (struct n3n_runtime_data * eee,
     traceEvent(TRACE_DEBUG, "Rx TAP packet (%4d) for %s",
                (signed int)len, macaddr_str(mac_buf, mac));
 
-    if(!eee->conf.allow_multicast &&
+    if(!eee->conf.tap.allow_multicast &&
        (is_ip6_discovery(eth_pkt, len) ||
         is_ethMulticast(eth_pkt, len))) {
         traceEvent(TRACE_INFO, "dropping Tx multicast");
@@ -3674,10 +3674,10 @@ void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_control *c) {
                 payload++;
             }
 
-            if(eee->conf.tuntap_ip_mode == TUNTAP_IP_MODE_SN_ASSIGN) {
+            if(eee->conf.tap.tuntap_ip_mode == TUNTAP_IP_MODE_SN_ASSIGN) {
                 if((ra.dev_addr.net_addr != 0) && (ra.dev_addr.net_bitlen != 0)) {
-                    eee->conf.tuntap_v4.net_addr = htonl(ra.dev_addr.net_addr);
-                    eee->conf.tuntap_v4.net_bitlen = ra.dev_addr.net_bitlen;
+                    eee->conf.tap.tuntap_v4.net_addr = htonl(ra.dev_addr.net_addr);
+                    eee->conf.tap.tuntap_v4.net_bitlen = ra.dev_addr.net_bitlen;
                 }
             }
 
@@ -3697,7 +3697,7 @@ void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_control *c) {
             }
 
             // NOTE: the register_interval should be chosen by the edge node based on its NAT configuration.
-            // eee->conf.register_interval = ra.lifetime;
+            // eee->conf.client.register_interval = ra.lifetime;
 
             break;
         }
@@ -3949,7 +3949,7 @@ void process_pdu (struct n3n_runtime_data *eee,
      * IP transport version the packet arrived on. May need to UDP sockets. */
 
     // TODO: pass the sender to process_pdu, dont calculate it here
-    if(eee->conf.connect_tcp)
+    if(eee->conf.client.connect_tcp)
         // TCP expects that we know our comm partner and does not deliver the sender
         memcpy(&sender, &(eee->client.curr_sn->sock), sizeof(sender));
     else {
@@ -4320,7 +4320,7 @@ static void print_edge_stats (const struct n3n_runtime_data *eee) {
     traceEvent(
         TRACE_INFO,
         "  traffic filter rules: %i",
-        HASH_COUNT(eee->conf.network_traffic_filter_rules)
+        HASH_COUNT(eee->conf.tap.network_traffic_filter_rules)
     );
     traceEvent(
         TRACE_INFO,
@@ -4394,7 +4394,7 @@ static void edge_tick_purge_hosts (struct n3n_runtime_data *eee, time_t now) {
 
     struct host_info *host, *host_tmp;
 
-    if(!eee->conf.allow_routing) {
+    if(!eee->conf.tap.allow_routing) {
         return;
     }
     HASH_ITER(hh, eee->tap.known_hosts, host, host_tmp) {
@@ -4414,7 +4414,7 @@ static void edge_tick_dhcp (struct n3n_runtime_data *eee, time_t now) {
     // - a notifier so we dont need to poll for changes
     // - ipv6 support
     // - multi-homing support
-    if(eee->conf.tuntap_ip_mode == TUNTAP_IP_MODE_DHCP) {
+    if(eee->conf.tap.tuntap_ip_mode == TUNTAP_IP_MODE_DHCP) {
         traceEvent(TRACE_INFO, "re-checking dynamic IP address");
         tuntap_get_address(&(eee->tap.device));
     }
@@ -4512,10 +4512,10 @@ int run_edge_loop (struct n3n_runtime_data *eee) {
 
 void edge_term_conf (n2n_edge_conf_t *conf) {
 
-    if(conf->network_traffic_filter_rules) {
+    if(conf->tap.network_traffic_filter_rules) {
         filter_rule_t *el = 0, *tmp = 0;
-        HASH_ITER(hh, conf->network_traffic_filter_rules, el, tmp) {
-            HASH_DEL(conf->network_traffic_filter_rules, el);
+        HASH_ITER(hh, conf->tap.network_traffic_filter_rules, el, tmp) {
+            HASH_DEL(conf->tap.network_traffic_filter_rules, el);
             free(el);
         }
     }
@@ -4541,7 +4541,7 @@ void edge_term_conf (n2n_edge_conf_t *conf) {
     speck_deinit((speck_context_t*)conf->header_iv_ctx_static);
     speck_deinit(conf->shared_secret_ctx);
 
-    free(conf->community_file);
+    free(conf->relay.community_file);
     free(conf->encrypt_key);
     free(conf->federation_public_key);
     free(conf->mgmt_password);
@@ -4580,7 +4580,7 @@ void edge_term (struct n3n_runtime_data * eee) {
     clear_peer_list(&eee->client.supernodes);
 
 #ifdef HAVE_BRIDGING_SUPPORT
-    if(eee->conf.allow_routing) {
+    if(eee->conf.tap.allow_routing) {
         struct host_info *host, *host_tmp;
         HASH_ITER(hh, eee->tap.known_hosts, host, host_tmp) {
             HASH_DEL(eee->tap.known_hosts, host);
@@ -4662,8 +4662,8 @@ static int edge_init_sockets (struct n3n_runtime_data *eee) {
 #ifndef SKIP_MULTICAST_PEERS_DISCOVERY
     // TODO:
     // We used to gate multicast listening on:
-    // if((eee->conf.allow_p2p)
-    //    && (eee->conf.preferred_sock.family == (uint8_t)AF_INVALID))
+    // if((eee->conf.client.allow_p2p)
+    //    && (eee->conf.client.preferred_sock.family == (uint8_t)AF_INVALID))
     // So, perhaps we should do that here?
 
     if(eee->client.udp_multicast_sock_v4 >= 0) {
@@ -4679,7 +4679,7 @@ static int edge_init_sockets (struct n3n_runtime_data *eee) {
 
     // Without the sockets, nothing sent to the multicast group reaches this
     // edge either - not even what another n3n on this host has joined it for
-    if(!eee->conf.local_discovery) {
+    if(!eee->conf.client.local_discovery) {
         traceEvent(TRACE_NORMAL, "local peer discovery is switched off");
         return 0;
     }
@@ -4764,7 +4764,7 @@ void edge_init_conf_defaults (n2n_edge_conf_t *conf, char *sessionname) {
     conf->is_edge = true;
 
     conf->bind_address = NULL;
-    conf->preferred_sock.family = AF_INVALID;
+    conf->client.preferred_sock.family = AF_INVALID;
 #ifdef _WIN32
     // Cannot rely on having unix domain sockets on windows
     conf->mgmt_port = N2N_EDGE_MGMT_PORT;
@@ -4772,27 +4772,27 @@ void edge_init_conf_defaults (n2n_edge_conf_t *conf, char *sessionname) {
     conf->transop_id = N2N_TRANSFORM_ID_NULL;
     conf->header_encryption = HEADER_ENCRYPTION_NONE;
     conf->compression = N2N_COMPRESSION_ID_NONE;
-    conf->allow_p2p = true;
-    conf->local_discovery = true;
+    conf->client.allow_p2p = true;
+    conf->client.local_discovery = true;
     conf->threads = 1;
-    conf->register_interval = REGISTER_SUPER_INTERVAL_DFL;
-    conf->punch_ports = NAT_PUNCH_PORTS_DFL;
-    conf->punch_sockets = NAT_PUNCH_SOCKETS_DFL;
+    conf->client.register_interval = REGISTER_SUPER_INTERVAL_DFL;
+    conf->client.punch_ports = NAT_PUNCH_PORTS_DFL;
+    conf->client.punch_sockets = NAT_PUNCH_SOCKETS_DFL;
 
     // Ensure we can notice if the config has set a dev name
-    conf->tuntap_dev_name[0] = '\0';
+    conf->tap.tuntap_dev_name[0] = '\0';
 
-    conf->tuntap_ip_mode = TUNTAP_IP_MODE_SN_ASSIGN;
-    conf->tuntap_v4.net_bitlen = N2N_EDGE_DEFAULT_V4MASKLEN;
+    conf->tap.tuntap_ip_mode = TUNTAP_IP_MODE_SN_ASSIGN;
+    conf->tap.tuntap_v4.net_bitlen = N2N_EDGE_DEFAULT_V4MASKLEN;
 
     /* reserve possible last char as null terminator. */
     gethostname((char*)conf->dev_desc, N2N_DESC_SIZE-1);
 
     conf->mgmt_password = strdup(N3N_MGMT_PASSWORD);
 
-    conf->sn_selection_strategy = SN_SELECTION_STRATEGY_LOAD;
-    conf->metric = 0;
-    conf->mtu = DEFAULT_MTU;
+    conf->client.sn_selection_strategy = SN_SELECTION_STRATEGY_LOAD;
+    conf->tap.metric = 0;
+    conf->tap.mtu = DEFAULT_MTU;
 
     conf->test_benchmark_seconds = 1;
     conf->test_benchmark_threads = 1;
@@ -4832,7 +4832,7 @@ int quick_edge_init (char *device_name, char *community_name,
     conf.encrypt_key = encrypt_key;
     conf.transop_id = N2N_TRANSFORM_ID_AES;
     conf.compression = N2N_COMPRESSION_ID_NONE;
-    conf.mtu = DEFAULT_MTU;
+    conf.tap.mtu = DEFAULT_MTU;
     snprintf((char*)conf.community_name, sizeof(conf.community_name), "%s", community_name);
     resolve_hostnames_str_add(
         RESOLVE_LIST_SUPERNODE,
@@ -4850,7 +4850,7 @@ int quick_edge_init (char *device_name, char *community_name,
     /* Open the tuntap device */
     if(tuntap_open(&tuntap, device_name, TUNTAP_IP_MODE_STATIC,
                    subnet,
-                   device_mac, conf.mtu,
+                   device_mac, conf.tap.mtu,
                    0) < 0)
         return(-2);
 

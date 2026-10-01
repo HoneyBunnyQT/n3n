@@ -1004,7 +1004,7 @@ int main (int argc, char* argv[]) {
     SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
 #endif
 
-    switch(eee->conf.tuntap_ip_mode) {
+    switch(eee->conf.tap.tuntap_ip_mode) {
         case TUNTAP_IP_MODE_SN_ASSIGN:
             traceEvent(TRACE_NORMAL, "automatically assign IP address by supernode");
             break;
@@ -1025,7 +1025,7 @@ int main (int argc, char* argv[]) {
 
     // find at least one supernode alive to faster establish connection.
     // exceptions:
-    if(eee->conf.connect_tcp) {
+    if(eee->conf.client.connect_tcp) {
         traceEvent(TRACE_DEBUG, "skip PING to supernode: TCP mode");
         runlevel = 2;
     }
@@ -1055,7 +1055,7 @@ int main (int argc, char* argv[]) {
             last_action = now;
             eee->client.sn_pong = 0;
             // (re-)initialize the number of max concurrent pings (decreases by calling send_query_peer)
-            eee->conf.number_max_sn_pings = NUMBER_SN_PINGS_INITIAL;
+            eee->conf.client.number_max_sn_pings = NUMBER_SN_PINGS_INITIAL;
             send_query_peer(eee, null_mac);
             traceEvent(TRACE_INFO, "send PING to supernodes");
             runlevel++;
@@ -1097,7 +1097,7 @@ int main (int argc, char* argv[]) {
         }
 
         if(runlevel == 2) { /* send REGISTER_SUPER to get auto ip address from a supernode */
-            if(eee->conf.tuntap_ip_mode == TUNTAP_IP_MODE_SN_ASSIGN) {
+            if(eee->conf.tap.tuntap_ip_mode == TUNTAP_IP_MODE_SN_ASSIGN) {
                 last_action = now;
                 eee->client.sn_wait = 1;
                 send_register_super(eee);
@@ -1139,11 +1139,11 @@ int main (int argc, char* argv[]) {
             // TODO: this internal fn should not be called publicly
             mainloop_register_fd(eee->tap.device.fd, fd_info_proto_tuntap);
 #endif
-            in_addr_t addr = eee->conf.tuntap_v4.net_addr;
+            in_addr_t addr = eee->conf.tap.tuntap_v4.net_addr;
             struct in_addr *tmp = (struct in_addr *)&addr;
             traceEvent(TRACE_NORMAL, "created local tap device IPv4: %s/%u, MAC: %s",
                        inet_ntoa(*tmp),
-                       eee->conf.tuntap_v4.net_bitlen,
+                       eee->conf.tap.tuntap_v4.net_bitlen,
                        macaddr_str(mac_buf, eee->tap.device.mac_addr));
             runlevel = 5;
             // no more answers required
@@ -1164,7 +1164,7 @@ int main (int argc, char* argv[]) {
 
     // allow a higher number of pings for first regular round of ping
     // to quicker get an inital 'supernode selection criterion overview'
-    eee->conf.number_max_sn_pings = NUMBER_SN_PINGS_INITIAL;
+    eee->conf.client.number_max_sn_pings = NUMBER_SN_PINGS_INITIAL;
     // shape supernode list; make current one the first on the list
     HASH_ITER(hh, eee->client.supernodes, scan, scan_tmp) {
         if(scan == eee->client.curr_sn)

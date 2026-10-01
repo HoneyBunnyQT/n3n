@@ -66,7 +66,7 @@ int sn_selection_criterion_calculate (struct n3n_runtime_data *eee, peer_info_t 
 
     common_data = sn_selection_criterion_common_read(eee);
 
-    switch(eee->conf.sn_selection_strategy) {
+    switch(eee->conf.client.sn_selection_strategy) {
 
         case SN_SELECTION_STRATEGY_LOAD: {
             peer->selection_criterion = (uint64_t)(be32toh(data) + common_data);
@@ -102,7 +102,7 @@ int sn_selection_criterion_calculate (struct n3n_runtime_data *eee, peer_info_t 
             traceEvent(
                 TRACE_ERROR,
                 "sn_selection_strategy unknown %i",
-                eee->conf.sn_selection_strategy
+                eee->conf.client.sn_selection_strategy
             );
             break;
         }
@@ -115,7 +115,7 @@ int sn_selection_criterion_calculate (struct n3n_runtime_data *eee, peer_info_t 
 /* Set sn_selection_criterion_common_data field to default value. */
 int sn_selection_criterion_common_data_default (struct n3n_runtime_data *eee) {
 
-    switch(eee->conf.sn_selection_strategy) {
+    switch(eee->conf.client.sn_selection_strategy) {
 
         case SN_SELECTION_STRATEGY_LOAD: {
             // something something Windows, something something Complete
@@ -149,7 +149,7 @@ int sn_selection_criterion_common_data_default (struct n3n_runtime_data *eee) {
             traceEvent(
                 TRACE_ERROR,
                 "sn_selection_strategy unknown %i",
-                eee->conf.sn_selection_strategy
+                eee->conf.client.sn_selection_strategy
             );
             break;
         }
@@ -221,7 +221,7 @@ extern char * sn_selection_criterion_str (struct n3n_runtime_data *eee, selectio
     // Alternatively, typecast to (int16_t) and check for greater or equal zero
     if(peer->selection_criterion < (UINT64_MAX >> 2)) {
 
-        switch(eee->conf.sn_selection_strategy) {
+        switch(eee->conf.client.sn_selection_strategy) {
 
             case SN_SELECTION_STRATEGY_LOAD: {
                 chars = snprintf(
@@ -254,7 +254,7 @@ extern char * sn_selection_criterion_str (struct n3n_runtime_data *eee, selectio
                 traceEvent(
                     TRACE_ERROR,
                     "sn_selection_strategy unknown %i",
-                    eee->conf.sn_selection_strategy
+                    eee->conf.client.sn_selection_strategy
                 );
                 break;
             }

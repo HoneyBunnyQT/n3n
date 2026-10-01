@@ -418,7 +418,7 @@ int main (int argc, char * argv[]) {
 
     n3n_sn_config(argc, argv, "supernode", &sss_node);
 
-    if(sss_node.conf.community_file)
+    if(sss_node.conf.relay.community_file)
         load_allowed_sn_community(&sss_node);
 
 #ifndef _WIN32
@@ -436,7 +436,7 @@ int main (int argc, char * argv[]) {
     sss_node.relay.federation->community[0] = '*';
     memcpy(
         &sss_node.relay.federation->community[1],
-        sss_node.conf.sn_federation,
+        sss_node.conf.relay.sn_federation,
         N2N_COMMUNITY_SIZE - 2
     );
     sss_node.relay.federation->community[N2N_COMMUNITY_SIZE - 1] = '\0';
@@ -469,7 +469,7 @@ int main (int argc, char * argv[]) {
     // TODO: move this and the following move into sn_init()
     if(resolve_hostnames_str_to_peer_info(
            RESOLVE_LIST_PEER,
-           &sss_node.conf.sn_edges)) {
+           &sss_node.conf.relay.sn_edges)) {
         traceEvent(
             TRACE_ERROR,
             "resolve_hostnames_str_to_peer_info returned errors"
@@ -478,9 +478,9 @@ int main (int argc, char * argv[]) {
 
     // After configuration phase, move the federation edges to their runtime
     // place
-    sss_node.relay.federation->edges = sss_node.conf.sn_edges;
+    sss_node.relay.federation->edges = sss_node.conf.relay.sn_edges;
 
-    if(!sss_node.conf.spoofing_protection) {
+    if(!sss_node.conf.relay.spoofing_protection) {
         traceEvent(
             TRACE_WARNING,
             "disabled MAC and IP address spoofing protection; "
@@ -489,25 +489,25 @@ int main (int argc, char * argv[]) {
         );
     }
 
-    if(sss_node.conf.sn_min_auto_ip_net.net_bitlen != sss_node.conf.sn_max_auto_ip_net.net_bitlen) {
+    if(sss_node.conf.relay.sn_min_auto_ip_net.net_bitlen != sss_node.conf.relay.sn_max_auto_ip_net.net_bitlen) {
         traceEvent(
             TRACE_ERROR,
             "mismatched auto IP subnet (%i != %i)",
-            sss_node.conf.sn_min_auto_ip_net.net_bitlen,
-            sss_node.conf.sn_max_auto_ip_net.net_bitlen
+            sss_node.conf.relay.sn_min_auto_ip_net.net_bitlen,
+            sss_node.conf.relay.sn_max_auto_ip_net.net_bitlen
         );
         exit(1);
     }
-    if(sss_node.conf.sn_min_auto_ip_net.net_bitlen > 30 || sss_node.conf.sn_min_auto_ip_net.net_bitlen == 0) {
+    if(sss_node.conf.relay.sn_min_auto_ip_net.net_bitlen > 30 || sss_node.conf.relay.sn_min_auto_ip_net.net_bitlen == 0) {
         traceEvent(
             TRACE_ERROR,
             "invalid auto IP subnet (0 > %i > 30)",
-            sss_node.conf.sn_min_auto_ip_net.net_bitlen
+            sss_node.conf.relay.sn_min_auto_ip_net.net_bitlen
         );
         exit(1);
     }
 
-    if(ntohl(sss_node.conf.sn_min_auto_ip_net.net_addr) > ntohl(sss_node.conf.sn_max_auto_ip_net.net_addr)) {
+    if(ntohl(sss_node.conf.relay.sn_min_auto_ip_net.net_addr) > ntohl(sss_node.conf.relay.sn_max_auto_ip_net.net_addr)) {
         traceEvent(TRACE_ERROR, "auto IP min cannot be > max");
         exit(1);
     }
@@ -517,13 +517,13 @@ int main (int argc, char * argv[]) {
 
     inet_ntop(
         AF_INET,
-        &sss_node.conf.sn_min_auto_ip_net.net_addr,
+        &sss_node.conf.relay.sn_min_auto_ip_net.net_addr,
         ip_min_str,
         sizeof(ip_min_str)
     );
     inet_ntop(
         AF_INET,
-        &sss_node.conf.sn_max_auto_ip_net.net_addr,
+        &sss_node.conf.relay.sn_max_auto_ip_net.net_addr,
         ip_max_str,
         sizeof(ip_max_str)
     );
@@ -533,7 +533,7 @@ int main (int argc, char * argv[]) {
         "auto ip address range is '%s...%s/%hhu'",
         ip_min_str,
         ip_max_str,
-        sss_node.conf.sn_min_auto_ip_net.net_bitlen
+        sss_node.conf.relay.sn_min_auto_ip_net.net_bitlen
     );
 
     calculate_shared_secrets(&sss_node);

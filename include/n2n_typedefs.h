@@ -431,14 +431,51 @@ typedef struct n2n_trans_op {
 
 /* *************************************************** */
 
-typedef struct n2n_edge_conf {
-    n2n_community_t community_name;                  /**< The community. 16 full octets. */
-    n2n_desc_t dev_desc;                             /**< The device description (hint) */
-    bool allow_routing;                              /**< Accept packet no to interface address. */
-    bool allow_multicast;                            /**< Multicast ethernet addresses. */
-    bool pmtu_discovery;                             /**< Enable the Path MTU discovery. */
+/* How the edge reaches its supernodes and the other edges: the client role */
+struct n3n_conf_client {
     bool allow_p2p;                                  /**< Allow P2P connection */
     bool local_discovery;                            /**< Look for peers on the local network by multicast */
+    uint32_t register_interval;                      /**< Interval for supernode registration, also used for UDP NAT hole punching. */
+    uint32_t register_ttl;                           /**< TTL for registration packet when UDP NAT hole punching through supernode. */
+    uint32_t punch_ports;                            /**< ports to try per round towards a peer behind a hard NAT, 0: none */
+    uint32_t punch_sockets;                          /**< behind a hard NAT: extra sockets towards a peer that guesses, 0: none */
+    uint32_t punch_ttl;                              /**< the TTL of what those sockets send until one is reached, 0: the system's */
+    n3n_sock_t preferred_sock;                       /**< propagated local sock for better p2p in LAN (-e) */
+    n2n_auth_t auth;
+    bool connect_tcp;                                /** connection to supernode 0 = UDP; 1 = TCP */
+    uint8_t sn_selection_strategy;                  /**< encodes currently chosen supernode selection strategy. */
+    uint8_t number_max_sn_pings;                    /**< Number of maximum concurrently allowed supernode pings. */
+};
+
+/* The TAP device: the tap role */
+struct n3n_conf_tap {
+    bool allow_routing;                              /**< Accept packet no to interface address. */
+    bool allow_multicast;                            /**< Multicast ethernet addresses. */
+    uint32_t metric;                                /**< Network interface metric (Windows only). */
+    int mtu;
+    filter_rule_t            *network_traffic_filter_rules;
+    char device_mac[N2N_MACNAMSIZ];
+    devstr_t tuntap_dev_name;
+    struct n2n_ip_subnet tuntap_v4;
+    uint8_t tuntap_ip_mode;                          /**< Interface IP address allocated mode, eg. DHCP. */
+};
+
+/* The communities, the federation, the addresses handed out: the relay role */
+struct n3n_conf_relay {
+    n2n_mac_t sn_mac_addr;
+    bool spoofing_protection;                                /* false if overriding MAC/IP spoofing protection (cli option '-M') */
+    char *community_file;
+    n2n_version_t version;                                  /* version string sent to edges along with PEER_INFO a.k.a. PONG */
+    n2n_community_t sn_federation;
+    struct peer_info *sn_edges;     // SN federation storage during configure
+    n2n_ip_subnet_t sn_min_auto_ip_net;                        /* Address range of auto_ip service. */
+    n2n_ip_subnet_t sn_max_auto_ip_net;                        /* Address range of auto_ip service. */
+};
+
+typedef struct n2n_edge_conf {
+    // The community - to become one entry of a table of communities
+    n2n_community_t community_name;                  /**< The community. 16 full octets. */
+    n2n_desc_t dev_desc;                             /**< The device description (hint) */
     n2n_private_public_key_t *public_key;            /**< edge's public key (for user/password based authentication) */
     n2n_private_public_key_t *shared_secret;         /**< shared secret derived from federation public key, username and password */
     speck_context_t *shared_secret_ctx;              /**< context holding the roundkeys derived from shared secret */
@@ -450,55 +487,36 @@ typedef struct n2n_edge_conf {
     uint8_t header_encryption;                       /**< Header encryption indicator. */
     uint8_t transop_id;                              /**< The transop to use. */
     uint8_t compression;                             /**< Compress outgoing data packets before encryption */
-    bool enable_debug_pages;
-    uint32_t tos;                                    /** TOS for sent packets */
     char                     *encrypt_key;
-    uint32_t register_interval;                      /**< Interval for supernode registration, also used for UDP NAT hole punching. */
-    uint32_t register_ttl;                           /**< TTL for registration packet when UDP NAT hole punching through supernode. */
-    uint32_t punch_ports;                            /**< ports to try per round towards a peer behind a hard NAT, 0: none */
-    uint32_t punch_sockets;                          /**< behind a hard NAT: extra sockets towards a peer that guesses, 0: none */
-    uint32_t punch_ttl;                              /**< the TTL of what those sockets send until one is reached, 0: the system's */
+
+    // What all roles use: sockets, the management interface, the daemon
+    bool pmtu_discovery;                             /**< Enable the Path MTU discovery. */
+    uint32_t tos;                                    /** TOS for sent packets */
     union {
         struct sockaddr *bind_address;               /**< The address to bind to if provided; the first of an array ended by family 0 */
         struct sockaddr_storage *sas;
     };
-    n3n_sock_t preferred_sock;                       /**< propagated local sock for better p2p in LAN (-e) */
+    bool enable_debug_pages;
     uint32_t mgmt_port;     // TODO: ports are actually uint16_t
     uint32_t mgmt_sock_perms;
-    uint32_t metric;                                /**< Network interface metric (Windows only). */
-    n2n_auth_t auth;
-    int mtu;
-    filter_rule_t            *network_traffic_filter_rules;
     char * mgmt_password;
     uint32_t userid;
     uint32_t groupid;
-    bool connect_tcp;                                /** connection to supernode 0 = UDP; 1 = TCP */
-    uint8_t sn_selection_strategy;                  /**< encodes currently chosen supernode selection strategy. */
     bool background;
-    uint8_t number_max_sn_pings;                    /**< Number of maximum concurrently allowed supernode pings. */
-    char device_mac[N2N_MACNAMSIZ];
     bool is_edge;
     bool is_supernode;
     char *sessionname;              // the name of this session
     char *sessiondir;              // path to use for session files
-    devstr_t tuntap_dev_name;
-    struct n2n_ip_subnet tuntap_v4;
-    uint8_t tuntap_ip_mode;                          /**< Interface IP address allocated mode, eg. DHCP. */
+    uint32_t threads;                                          /* threads handling received packets, see edge_threads.h */
 
     uint32_t test_benchmark_seconds;
     uint32_t test_benchmark_threads;
     int test_output_format;
 
-    // Supernode specific config
-    n2n_mac_t sn_mac_addr;
-    bool spoofing_protection;                                /* false if overriding MAC/IP spoofing protection (cli option '-M') */
-    char *community_file;
-    n2n_version_t version;                                  /* version string sent to edges along with PEER_INFO a.k.a. PONG */
-    n2n_community_t sn_federation;
-    struct peer_info *sn_edges;     // SN federation storage during configure
-    uint32_t threads;                                          /* threads handling received packets, see edge_threads.h */
-    n2n_ip_subnet_t sn_min_auto_ip_net;                        /* Address range of auto_ip service. */
-    n2n_ip_subnet_t sn_max_auto_ip_net;                        /* Address range of auto_ip service. */
+    // The parts of the roles, see struct n3n_runtime_data
+    struct n3n_conf_client client;
+    struct n3n_conf_tap tap;
+    struct n3n_conf_relay relay;
 } n2n_edge_conf_t;
 
 

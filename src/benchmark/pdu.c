@@ -56,7 +56,7 @@ static void *bench_setup (void *const _ctx) {
     // so the benchmark PDU does too
     peer = peer_info_malloc(bench_peer_mac);
     fill_n3nsock(&peer->sock, (struct sockaddr *)&ctx->sender);
-    peer->timeout = ctx->eee.conf.register_interval;
+    peer->timeout = ctx->eee.conf.client.register_interval;
     peer->last_seen = time(NULL);
     HASH_ADD_PEER(ctx->eee.client.known_peers, peer);
 
