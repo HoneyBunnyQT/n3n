@@ -50,15 +50,17 @@ static struct n3n_conf_option section_community[] = {
         .type = n3n_conf_compression,
         .offset = offsetof(struct n3n_conf_community, compression),
         .desc = "Compress outgoing data packets",
-        .help = "0=none, 1=lzo1x, 2=zstd (only if supported)",
+        .help = "none, lzo, or zstd (only in a build with zstd).",
     },
     {
         .name = "header_encryption",
         .type = n3n_conf_headerenc,
         .offset = offsetof(struct n3n_conf_community, header_encryption),
         .desc = "Enable header encryption",
-        .help = "All edges within the same community must this set the same "
-                "and the supernode needs to have the community defined",
+        .help = "All edges within the same community must set this the "
+                "same, and the supernode needs to have the community "
+                "defined.  Hides the community name and adds replay "
+                "protection.",
     },
     {
         .name = "key",
@@ -76,10 +78,10 @@ static struct n3n_conf_option section_community[] = {
         .offset = offsetof(struct n3n_conf_community, community_name),
         .desc = "The name of the community to join",
         .help = "All edges within the same community appear on the same LAN "
-                "(layer 2 network segment).  Community name is "
-                "N2N_COMMUNITY_SIZE bytes in length. A name smaller "
-                "than this is padded with 0x00 bytes and a name longer than "
-                "this is truncated to fit.",
+                "(layer 2 network segment).  A name has up to 19 "
+                "characters, a longer one is cut.  The characters "
+                ". * + ? [ ] \\ cannot be used: they would make a regular "
+                "expression for a supernode.",
     },
     {
         .name = "network",
@@ -165,7 +167,7 @@ static struct n3n_conf_option section_connection[] = {
                 "picks - and sends from the first socket of the "
                 "destination's family. Over TCP (connect_tcp) it binds its "
                 "one connection to the first address of the supernode's "
-                "family",
+                "family.",
     },
     {
         .name = "connect_tcp",
@@ -253,11 +255,11 @@ static struct n3n_conf_option section_connection[] = {
         .type = n3n_conf_uint32,
         .offset = offsetof(n2n_edge_conf_t, client.register_interval),
         .desc = "Supernode registration interval",
-        .help = "specifies the interval in seconds between consecutive "
-                "REGISTER_SUPER packets - used to keep a NAT hole open "
-                "via the UDP NAT hole punching technique. This only "
-                "works for asymmetric NATs and allows for P2P "
-                "communication.",
+        .help = "The interval in seconds between consecutive "
+                "REGISTER_SUPER packets to the supernode, and of the rounds "
+                "of REGISTERs to the peers that are not reached directly "
+                "yet.  They also keep the mappings of the NATs on the way "
+                "open.",
     },
     {
         .name = "register_pkt_ttl",
@@ -267,14 +269,14 @@ static struct n3n_conf_option section_connection[] = {
         .help = "A value of zero will avoid forcing any TTL - this is the "
                 "default.  This is an advanced setting to make sure that the "
                 "registration packet is dropped immediately when it goes out "
-                "of the local nat so that it will not  trigger some firewall "
+                "of the local nat so that it will not trigger some firewall "
                 "behavior on target peer.  Actually, the registration packet "
                 "is only expected to make local nat UDP hole and is not "
                 "expected to reach the target peer, see "
                 "https://tools.ietf.org/html/rfc5389.  To achieve this, it "
                 "should be set as nat level + 1. For example, if we have 2 "
                 "layer nat in local, we should set it to 3.  In modern "
-                "networks, you may not be awwre of all the nat levels, so "
+                "networks, you may not be aware of all the nat levels, so "
                 "this value should be set with caution.",
     },
     {
@@ -345,7 +347,7 @@ static struct n3n_conf_option section_filter[] = {
         .type = n3n_conf_bool,
         .offset = offsetof(n2n_edge_conf_t, tap.allow_multicast),
         .desc = "Optionally enable multicast traffic",
-        .help = "Amungst other things, multicast is used for IPv6 neighbour "
+        .help = "Amongst other things, multicast is used for IPv6 neighbour "
                 "discovery.  If not allowed, then these multicast packets "
                 "are discarded.",
     },
@@ -354,7 +356,7 @@ static struct n3n_conf_option section_filter[] = {
         .type = n3n_conf_bool,
         .offset = offsetof(n2n_edge_conf_t, tap.allow_routing),
         .desc = "enable IP packet forwarding/routing",
-        .help = "Without this option, IP packets arriving over n2n are "
+        .help = "Without this option, IP packets arriving over n3n are "
                 "dropped if they are not for the IP address of the edge "
                 "interface.  This setting is also used to enable bridging.",
     },
@@ -406,9 +408,10 @@ static struct n3n_conf_option section_management[] = {
         .name = "port",
         .type = n3n_conf_uint32,    // NOTE: ports are actually uint16
         .offset = offsetof(n2n_edge_conf_t, mgmt_port),
-        .desc = "The management UDP port",
-        .help = "binds the edge management system to the given UDP port. "
-                "Use this if you wish to use the TCP API.",
+        .desc = "The management TCP port",
+        .help = "Also listen for the management API on this TCP port of "
+                "localhost, besides the Unix domain socket.  On Windows, "
+                "where there are no Unix domain sockets, the only way.",
 
     },
     {
@@ -472,10 +475,10 @@ static struct n3n_conf_option section_supernode[] = {
         .length = sizeof(n2n_community_t)-1,    // Leave room for prefix
         .offset = offsetof(n2n_edge_conf_t, relay.sn_federation),
         .desc = "name of the supernode's federation",
-        .help = "This is a shared key amungst all the supernodes belonging to "
+        .help = "This is a shared key amongst all the supernodes belonging to "
                 "the same federated group.  It defaults to 'Federation', but "
-                "that should only be used for testing.  The Environment "
-                "variable N3N_FEDERATION can also be used to set thi.",
+                "that should only be used for testing.  The environment "
+                "variable N3N_FEDERATION can also be used to set this.",
 
     },
     {
@@ -484,14 +487,14 @@ static struct n3n_conf_option section_supernode[] = {
         .offset = offsetof(n2n_edge_conf_t, relay.sn_mac_addr),
         .desc = "fixed MAC address for the supernode",
         .help = "This is used as an identifier for the supernode in protocol "
-                "packets.  If not configed, a random value will be selected.",
+                "packets.  If not configured, a random value will be selected.",
     },
     {
         .name = "peer",
         .type = n3n_conf_hostname_str,
         .offset = RESOLVE_LIST_PEER,
         .desc = "Add a federated supernode",
-        .help = "Multiple federated supernodes can be specified, each one as"
+        .help = "Multiple federated supernodes can be specified, each one as "
                 "a host:port string, which will be resolved if needed.",
     },
     {
@@ -575,8 +578,8 @@ static struct n3n_conf_option section_test[] = {
                 "result - this is intended to be simplified and easily "
                 "readable.  The alternative is 'raw', which outputs the "
                 "unprocessed data, suitable for additional reporting or "
-                "debugging."
-                "FIXME - the integer number should be a string lookup.",
+                "debugging.",
+        // FIXME - the integer number should be a string lookup
     },
     {.name = NULL},
 };
