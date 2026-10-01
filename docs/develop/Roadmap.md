@@ -60,9 +60,11 @@ tests and `make lint` pass after each.
       registered as ticks in the mainloop (`mainloop_register_tick()`), for
       both; `run_edge_loop()` and `run_sn_loop()` set up, register their
       ticks and call `mainloop_run()`
-- [ ] Step 4: role sub-structs in `struct n3n_runtime_data` and
-      `n2n_edge_conf_t` (`rt->tap`, `rt->client`, `rt->relay`, ...), NULL when
-      the role is off
+- [x] Step 4: role parts in `struct n3n_runtime_data` and `n2n_edge_conf_t`
+      (`rt->client`, `rt->tap`, `rt->relay`, `conf.client` ...).  Embedded
+      structs rather than pointers: the same order, no allocation and no
+      NULL checks; a role that is off leaves its part zero.  The community
+      settings of the config wait for the community table (step 5)
 - [ ] Step 5: one front end for received PDUs (`pdu_in`): length check,
       community lookup and header decryption, replay check, giving a
       `struct pdu_ctx`.  The edge's single community becomes a community
