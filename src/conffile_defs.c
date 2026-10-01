@@ -179,6 +179,20 @@ static struct n3n_conf_option section_connection[] = {
                 "setting should usually also be set to false.",
     },
     {
+        .name = "tcp_fallback",
+        .type = n3n_conf_bool,
+        .offset = offsetof(n2n_edge_conf_t, client.tcp_fallback),
+        .desc = "Fall back to TCP when UDP does not get through",
+        .help = "Defaulting to true: when no supernode answers over UDP, "
+                "for a round over all of them (at least two rounds), the "
+                "edge connects to them over TCP instead, as connect_tcp "
+                "does.  While on TCP, it sends a UDP ping to its supernode "
+                "every three register_intervals, and goes back to UDP as "
+                "soon as one is answered.  Peer-to-peer connections need "
+                "UDP, so over TCP everything goes through the supernode.  "
+                "Not with several threads (daemon.threads).",
+    },
+    {
         .name = "description",
         .type = n3n_conf_strncpy,
         .length = N2N_DESC_SIZE,

@@ -19,6 +19,7 @@
 // Registrations with the supernodes and the peers
 void reset_sup_attempts (struct n3n_runtime_data *eee);
 void supernode_disconnect (struct n3n_runtime_data *eee);
+void transport_probe_close (struct n3n_runtime_data *eee);
 size_t encode_register_pkt (struct n3n_runtime_data * eee,
                             uint8_t *pktbuf,
                             const n2n_mac_t peer_mac,

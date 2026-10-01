@@ -444,7 +444,7 @@ void punch_round (struct n3n_runtime_data *eee, struct peer_info *peer, time_t n
     struct nat_peer *np = nat_peer_find(eee->client.nat_peers, peer->mac_addr, false);
     int f = peer->sock.family;
 
-    if(!np || !eee->conf.client.punch_ports || eee->conf.client.connect_tcp || !eee->conf.client.allow_p2p) {
+    if(!np || !eee->conf.client.punch_ports || eee->client.tcp || !eee->conf.client.allow_p2p) {
         return;
     }
 

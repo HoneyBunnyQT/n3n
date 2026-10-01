@@ -444,6 +444,7 @@ struct n3n_conf_client {
     n3n_sock_t preferred_sock;                       /**< propagated local sock for better p2p in LAN (-e) */
     n2n_auth_t auth;
     bool connect_tcp;                                /** connection to supernode 0 = UDP; 1 = TCP */
+    bool tcp_fallback;                               /**< over UDP: try TCP when no supernode answers, see role_client.c */
     uint8_t sn_selection_strategy;                  /**< encodes currently chosen supernode selection strategy. */
     uint8_t number_max_sn_pings;                    /**< Number of maximum concurrently allowed supernode pings. */
 };
@@ -658,6 +659,11 @@ struct n3n_rt_client {
     bool multicast_joined_v6;                                            /**< 1 if the IPV6 group has been joined.*/
     int close_socket_counter;                                            /**< counter for close-event before re-opening */
     size_t sup_attempts;                                                 /**< Number of remaining attempts to this supernode. */
+    bool tcp;                                                            /**< the supernode is reached over TCP now, see transport_check() */
+    uint8_t giveups;                                                     /**< supernodes given up on in a row, over the current transport */
+    int probe_sock;                                                      /**< over TCP by fallback: a UDP socket to see whether UDP works again */
+    bool probe_ok;                                                       /**< a supernode answered on it */
+    time_t last_probe;
     n2n_trans_op_t transop;                                              /**< The transop to use when encoding */
     n2n_trans_op_t transop_lzo;                                          /**< The transop for LZO  compression */
     n2n_trans_op_t transop_zstd;                                         /**< The transop for ZSTD compression */

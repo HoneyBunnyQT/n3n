@@ -58,6 +58,10 @@
 #include <sys/socket.h>
 #endif
 
+#ifndef _WIN32
+#define closesocket(a) close(a)
+#endif
+
 #ifndef IPV6_ADD_MEMBERSHIP
 #define IPV6_ADD_MEMBERSHIP 12       // the standard value for this option
 #endif
@@ -65,7 +69,7 @@
 
 // reset number of supernode connection attempts: try only once for already more realiable tcp connections
 void reset_sup_attempts (struct n3n_runtime_data *eee) {
-    if(eee->conf.client.connect_tcp) {
+    if(eee->client.tcp) {
         eee->client.sup_attempts = 1;
     } else {
         eee->client.sup_attempts = N2N_EDGE_SUP_ATTEMPTS;
@@ -80,7 +84,7 @@ static void note_nat (struct n3n_runtime_data *eee, const n3n_sock_t *sn, const 
     char buf[40];
     n3n_sock_str_t sockbuf;
 
-    if(eee->conf.client.connect_tcp || (seen->family != sn->family) ||
+    if(eee->client.tcp || (seen->family != sn->family) ||
        ((sn->family != AF_INET) && (sn->family != AF_INET6))) {
         return;
     }
@@ -102,6 +106,101 @@ static n2n_cookie_t forwarded_reg_cookie (const struct n3n_runtime_data *eee) {
 }
 
 
+// The transport to the supernodes.  With connection.tcp_fallback, the edge
+// uses UDP until no supernode answers over it, then TCP (eee->client.tcp),
+// and goes back to UDP once a PING over UDP gets its answer: while on TCP,
+// transport_probe() sends one from a socket of its own now and then.  With
+// connect_tcp, it stays on TCP.  Packet threads need UDP, see edge_threads.h.
+static size_t encode_query_peer (struct n3n_runtime_data *eee, uint8_t *pktbuf, const n2n_mac_t dst_mac);
+
+static bool transport_can_fall_back (const struct n3n_runtime_data *eee) {
+
+    return eee->conf.client.tcp_fallback && !eee->conf.client.connect_tcp
+           && !eee->conf.client.local_link && !eee->threads;
+}
+
+
+void transport_probe_close (struct n3n_runtime_data *eee) {
+
+    if(eee->client.probe_sock >= 0) {
+        mainloop_unregister_fd(eee->client.probe_sock);
+        closesocket(eee->client.probe_sock);
+        eee->client.probe_sock = -1;
+    }
+    eee->client.probe_ok = false;
+}
+
+
+// Close what reaches the supernode now, and open the other transport
+static void transport_switch (struct n3n_runtime_data *eee, bool tcp, time_t now) {
+
+    traceEvent(TRACE_NORMAL, tcp ? "no supernode answers over UDP, trying TCP"
+                                 : "UDP gets through again, leaving TCP");
+    supernode_disconnect(eee);
+    transport_probe_close(eee);
+    eee->client.tcp = tcp;
+    eee->client.giveups = 0;
+    eee->client.last_probe = now;
+    reset_sup_attempts(eee);
+    supernode_connect(eee);
+}
+
+
+// A supernode did not answer, and the edge moves on to the next one.  After
+// a round over all of them (twice with one) without an answer, it tries the
+// other transport.  true if it did.
+bool transport_note_giveup (struct n3n_runtime_data *eee, time_t now) {
+
+    int round = HASH_COUNT(eee->client.supernodes);
+
+    if(eee->client.giveups < UINT8_MAX) {
+        eee->client.giveups++;
+    }
+    if(!transport_can_fall_back(eee) || (eee->client.giveups < ((round < 2) ? 2 : round))) {
+        return false;
+    }
+    transport_switch(eee, !eee->client.tcp, now);
+    return true;
+}
+
+
+// Over TCP by fallback: a PING to the current supernode over UDP, from a
+// fresh socket, every three register intervals.  Its answer sets probe_ok,
+// see edge_rx_peer_info().
+static void transport_probe (struct n3n_runtime_data *eee, time_t now) {
+
+    struct sockaddr_storage local = {0};
+    struct sockaddr_storage dest;
+    socklen_t dest_len;
+    uint8_t pktbuf[N2N_PKT_BUF_SIZE];
+    size_t len;
+
+    if(!eee->client.tcp || !transport_can_fall_back(eee) || !eee->client.curr_sn
+       || (now < eee->client.last_probe + 3 * (time_t)eee->conf.client.register_interval)) {
+        return;
+    }
+    eee->client.last_probe = now;
+
+    dest_len = fill_sockaddr((struct sockaddr *)&dest, sizeof(dest), &eee->client.curr_sn->sock);
+    if(dest_len == 0) {
+        return;
+    }
+    transport_probe_close(eee);
+    local.ss_family = dest.ss_family;
+    eee->client.probe_sock = open_socket((struct sockaddr *)&local,
+                                         (local.ss_family == AF_INET) ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6),
+                                         0 /* UDP */);
+    if(eee->client.probe_sock < 0) {
+        return;
+    }
+    mainloop_register_fd(eee->client.probe_sock, fd_info_proto_v3udp);
+
+    len = encode_query_peer(eee, pktbuf, null_mac);
+    traceEvent(TRACE_DEBUG, "probing UDP to the supernode");
+    sendto_logged(eee->client.probe_sock, pktbuf, len, (struct sockaddr *)&dest, dest_len);
+}
+
+
 // open socket, close it before if TCP
 // in case of TCP, 'connect()' is required
 void supernode_connect (struct n3n_runtime_data *eee) {
@@ -116,7 +215,7 @@ void supernode_connect (struct n3n_runtime_data *eee) {
         return;
     }
 
-    if(eee->conf.client.connect_tcp) {
+    if(eee->client.tcp) {
         // It might be already closed, but we can simply ignore errors and
         // carry on
         close_sockets(eee);
@@ -126,7 +225,7 @@ void supernode_connect (struct n3n_runtime_data *eee) {
         return;
     }
 
-    if(!eee->conf.client.connect_tcp) {
+    if(!eee->client.tcp) {
         if(open_udp_sockets(eee) != 0) {
             traceEvent(TRACE_ERROR, "failed to bind main UDP port");
             return;
@@ -749,18 +848,12 @@ static void check_join_multicast_group (struct n3n_runtime_data *eee) {
 
 
 /** Send a QUERY_PEER packet to the current supernode. */
-void send_query_peer (struct n3n_runtime_data * eee,
-                      const n2n_mac_t dst_mac) {
+// A QUERY_PEER for dst_mac, or with the null MAC a PING, into pktbuf
+static size_t encode_query_peer (struct n3n_runtime_data *eee, uint8_t *pktbuf, const n2n_mac_t dst_mac) {
 
-    uint8_t pktbuf[N2N_PKT_BUF_SIZE];
-    size_t idx;
+    size_t idx = 0;
     n2n_common_t cmn = {0};
     n2n_QUERY_PEER_t query = {0};
-    struct peer_info *peer, *tmp;
-    int n_o_pings = 0;
-    int n_o_top_sn = 0;
-    int n_o_rest_sn = 0;
-    int n_o_skip_sn = 0;
 
     cmn.ttl = N2N_DEFAULT_TTL;
     cmn.pc = MSG_TYPE_QUERY_PEER;
@@ -770,29 +863,38 @@ void send_query_peer (struct n3n_runtime_data * eee,
     memcpy(query.srcMac, eee->tap.device.mac_addr, sizeof(n2n_mac_t));
     memcpy(query.targetMac, dst_mac, sizeof(n2n_mac_t));
 
-    idx = 0;
     encode_QUERY_PEER(pktbuf, &idx, &cmn, &query);
+
+    if(eee->conf.community.header_encryption == HEADER_ENCRYPTION_ENABLED) {
+        packet_header_encrypt(pktbuf, idx, idx,
+                              eee->conf.header_encryption_ctx_dynamic, eee->conf.header_iv_ctx_dynamic,
+                              time_stamp());
+    }
+    return idx;
+}
+
+
+void send_query_peer (struct n3n_runtime_data * eee,
+                      const n2n_mac_t dst_mac) {
+
+    uint8_t pktbuf[N2N_PKT_BUF_SIZE];
+    size_t idx;
+    struct peer_info *peer, *tmp;
+    int n_o_pings = 0;
+    int n_o_top_sn = 0;
+    int n_o_rest_sn = 0;
+    int n_o_skip_sn = 0;
+
+    idx = encode_query_peer(eee, pktbuf, dst_mac);
 
     if(!is_null_mac(dst_mac)) {
 
         traceEvent(TRACE_DEBUG, "send QUERY_PEER to supernode");
 
-        if(eee->conf.community.header_encryption == HEADER_ENCRYPTION_ENABLED) {
-            packet_header_encrypt(pktbuf, idx, idx,
-                                  eee->conf.header_encryption_ctx_dynamic, eee->conf.header_iv_ctx_dynamic,
-                                  time_stamp());
-        }
-
         edge_sendto_sock(eee, pktbuf, idx, &(eee->client.curr_sn->sock));
 
     } else {
         traceEvent(TRACE_DEBUG, "send PING to supernodes");
-
-        if(eee->conf.community.header_encryption == HEADER_ENCRYPTION_ENABLED) {
-            packet_header_encrypt(pktbuf, idx, idx,
-                                  eee->conf.header_encryption_ctx_dynamic, eee->conf.header_iv_ctx_dynamic,
-                                  time_stamp());
-        }
 
         n_o_pings = eee->conf.client.number_max_sn_pings;
         eee->conf.client.number_max_sn_pings = NUMBER_SN_PINGS_REGULAR;
@@ -967,7 +1069,7 @@ void sort_supernodes (struct n3n_runtime_data *eee, time_t now) {
     sn_selection_criterion_common_data_default(eee);
 
     // send PING to all the supernodes
-    if(!eee->conf.client.connect_tcp)
+    if(!eee->client.tcp)
         send_query_peer(eee, null_mac);
     eee->client.last_sweep = now;
 
@@ -1091,6 +1193,13 @@ void update_supernode_reg (struct n3n_runtime_data * eee, time_t now) {
     int cnt = 0;
     int off = 0;
 
+    if(eee->client.probe_ok) {
+        transport_switch(eee, false, now);
+        eee->client.last_register_req = 0;   // register over UDP right away
+    } else {
+        transport_probe(eee, now);
+    }
+
     if((eee->client.sn_wait && (now > (eee->client.last_register_req + (eee->conf.client.register_interval / 10))))
        ||(eee->client.sn_wait == 2)) { /* immediately re-register in case of RE_REGISTER_SUPER */
         /* fall through */
@@ -1160,7 +1269,7 @@ void update_supernode_reg (struct n3n_runtime_data * eee, time_t now) {
             traceEvent(TRACE_DEBUG, "detected supernode disconnect");
         }
         supernode_connect(eee);
-
+        transport_note_giveup(eee, now);
     } else {
         --(eee->client.sup_attempts);
     }
@@ -1561,6 +1670,7 @@ void edge_rx_register_super_ack (struct n3n_runtime_data *eee, struct pdu_ctx *c
     }
 
     eee->client.sn_wait = 0;
+    eee->client.giveups = 0;
     reset_sup_attempts(eee); /* refresh because we got a response */
 
     // update last_sup only on 'real' REGISTER_SUPER_ACKs, not on bootstrap ones (own MAC address
@@ -1716,6 +1826,10 @@ void edge_rx_peer_info (struct n3n_runtime_data *eee, struct pdu_ctx *c) {
         scan = add_sn_to_list_by_mac_or_sock(&(eee->client.supernodes), &sender, pi.srcMac, &skip_add);
         if(scan != NULL) {
             eee->client.sn_pong = 1;
+            if((eee->client.probe_sock >= 0) && (c->socket_fd == eee->client.probe_sock)) {
+                // UDP gets through again, see transport_probe()
+                eee->client.probe_ok = true;
+            }
             scan->last_seen = now;
             scan->uptime = pi.uptime;
             memcpy(scan->version, pi.version, sizeof(n2n_version_t));

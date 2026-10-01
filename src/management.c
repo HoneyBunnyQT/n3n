@@ -750,7 +750,8 @@ static void jsonrpc_get_info (char *id, struct n3n_runtime_data *eee, conn_t *co
                 "\"ip4addr\":\"%s\","
                 "\"sockaddr\":\"%s\","
                 "\"nat4\":\"%s\","
-                "\"nat6\":\"%s\"}",
+                "\"nat6\":\"%s\","
+                "\"transport\":\"%s\"}",
                 VERSION,
                 BUILDDATE,
                 eee->conf.is_edge,
@@ -759,7 +760,8 @@ static void jsonrpc_get_info (char *id, struct n3n_runtime_data *eee, conn_t *co
                 ip_address,
                 sock_to_cstr(sockbuf, eee->conf.is_edge ? &eee->client.advertised_sock : &eee->conf.client.preferred_sock),
                 nat_view_str(nat4, sizeof(nat4), &eee->client.nat[0]),
-                nat_view_str(nat6, sizeof(nat6), &eee->client.nat[1])
+                nat_view_str(nat6, sizeof(nat6), &eee->client.nat[1]),
+                !eee->conf.is_edge ? "" : eee->client.tcp ? "tcp" : "udp"
     );
 
     jsonrpc_result_tail(conn, 200);

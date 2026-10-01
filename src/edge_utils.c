@@ -674,6 +674,8 @@ struct n3n_runtime_data* edge_init (const n2n_edge_conf_t *conf, int *rv) {
     // on trying to close them (open_sockets does so for also being able to RE-open the sockets
     // if called in-between, see "Supernode not responding" in update_supernode_reg(...)
     eee->sock = -1;
+    eee->client.tcp = conf->client.connect_tcp;
+    eee->client.probe_sock = -1;
     eee->client.advertised_sock.family = AF_INVALID;
 #ifndef SKIP_MULTICAST_PEERS_DISCOVERY
     eee->client.udp_multicast_sock_v4 = -1;
@@ -745,7 +747,7 @@ void edge_sendto_sock (struct n3n_runtime_data *eee, const void * buf,
     // - also check n3n_sock_t type == SOCK_STREAM as a TCP indicator?
 
     // if the connection is tcp, i.e. not the regular sock...
-    if(eee->conf.client.connect_tcp) {
+    if(eee->client.tcp) {
         mainloop_send_v3tcp(eee->sock, buf, len);
         /*
          * TODO: metrics for errors
@@ -988,7 +990,7 @@ void edge_process_pdu (struct n3n_runtime_data *eee,
      * IP transport version the packet arrived on. May need to UDP sockets. */
 
     // TODO: pass the sender to edge_process_pdu, dont calculate it here
-    if(eee->conf.client.connect_tcp)
+    if(eee->client.tcp && (in_sock == eee->sock))
         // TCP expects that we know our comm partner and does not deliver the sender
         memcpy(&sender, &(eee->client.curr_sn->sock), sizeof(sender));
     else {
@@ -1158,6 +1160,12 @@ int edge_read_proto3_udp (struct n3n_runtime_data *eee,
             return 0;
         }
 #endif
+
+        if(sock == eee->client.probe_sock) {
+            // only a test whether UDP gets through, see transport_probe()
+            transport_probe_close(eee);
+            return 0;
+        }
 
         /* The fd is no good now. Maybe we lost our interface. */
         traceEvent(TRACE_ERROR, "recvfrom() failed %d errno %d (%s)", bread, errno, strerror(errno));
@@ -1483,6 +1491,7 @@ struct n3n_runtime_data *edge_start_local (struct n3n_runtime_data *relay) {
     // only through the supernode, which is as direct as it gets for its
     // own edges; see edge_sendto_sock()
     conf.client.connect_tcp = false;
+    conf.client.tcp_fallback = false;
     conf.client.allow_p2p = false;
     conf.client.local_discovery = false;
     conf.client.punch_ports = 0;
@@ -1636,6 +1645,7 @@ void edge_term (struct n3n_runtime_data * eee) {
     resolve_cancel_thread(eee->resolve_parameter);
 
     close_sockets(eee);
+    transport_probe_close(eee);
 
 #ifndef SKIP_MULTICAST_PEERS_DISCOVERY
     if(eee->client.udp_multicast_sock_v4 >= 0) {
@@ -1839,6 +1849,7 @@ void edge_conf_role_defaults (n2n_edge_conf_t *conf) {
     conf->community.compression = N2N_COMPRESSION_ID_NONE;
     conf->client.allow_p2p = true;
     conf->client.local_discovery = true;
+    conf->client.tcp_fallback = true;
     conf->client.register_interval = REGISTER_SUPER_INTERVAL_DFL;
     conf->client.punch_ports = NAT_PUNCH_PORTS_DFL;
     conf->client.punch_sockets = NAT_PUNCH_SOCKETS_DFL;

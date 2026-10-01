@@ -16,6 +16,7 @@ network=0.0.0.0/0
 advertise_addr=0.0.0.0
 allow_p2p=false
 connect_tcp=false
+tcp_fallback=false
 local_discovery=false
 pmtu_discovery=false
 punch_ports=0

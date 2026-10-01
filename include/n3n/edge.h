@@ -11,6 +11,7 @@
 #ifndef _N3N_EDGE_H_
 #define _N3N_EDGE_H_
 
+#include <stdbool.h>        // for bool
 #include <stdint.h>         // for uint8_t, uint16_t
 #include <time.h>           // for time_t
 #include <n2n_typedefs.h>   // for n3n_runtime_data, n2n_mac_t, SOCKET
@@ -33,5 +34,6 @@ void edge_term_conf (n2n_edge_conf_t *conf);
 void send_register_super (struct n3n_runtime_data *eee);
 void send_query_peer (struct n3n_runtime_data *eee, const n2n_mac_t dst_mac);
 void supernode_connect (struct n3n_runtime_data *eee);
+bool transport_note_giveup (struct n3n_runtime_data *eee, time_t now);
 
 #endif

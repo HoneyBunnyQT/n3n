@@ -132,6 +132,14 @@ Defaulting to false, this is used to enable the use of a TCP connection to the s
 
 Default: `false`
 
+### connection.tcp_fallback
+
+Fall back to TCP when UDP does not get through.
+
+Defaulting to true: when no supernode answers over UDP, for a round over all of them (at least two rounds), the edge connects to them over TCP instead, as connect_tcp does. While on TCP, it sends a UDP ping to its supernode every three register_intervals, and goes back to UDP as soon as one is answered. Peer-to-peer connections need UDP, so over TCP everything goes through the supernode. Not with several threads (daemon.threads).
+
+Default: `true`
+
 ### connection.description
 
 Annotate the edge's description.

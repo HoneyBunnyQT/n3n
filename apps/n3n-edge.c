@@ -990,7 +990,7 @@ int n3n_edge_main (int argc, char* argv[]) {
 
     // find at least one supernode alive to faster establish connection.
     // exceptions:
-    if(eee->conf.client.connect_tcp) {
+    if(eee->client.tcp) {
         traceEvent(TRACE_DEBUG, "skip PING to supernode: TCP mode");
         runlevel = 2;
     }
@@ -1098,6 +1098,7 @@ int n3n_edge_main (int argc, char* argv[]) {
                 else
                     eee->client.curr_sn = eee->client.supernodes;
                 supernode_connect(eee);
+                transport_note_giveup(eee, now);
                 runlevel--;
                 // skip waiting for answer to direcly go to send REGISTER_SUPER again
                 seek_answer = 0;
