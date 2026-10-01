@@ -111,6 +111,11 @@ void supernode_connect (struct n3n_runtime_data *eee) {
     n3n_sock_t local_sock;
     n3n_sock_str_t sockbuf;
 
+    if(eee->conf.client.local_link) {
+        // no sockets: the supernode is in this process, see local_link.h
+        return;
+    }
+
     if(eee->conf.client.connect_tcp) {
         // It might be already closed, but we can simply ignore errors and
         // carry on
@@ -244,7 +249,8 @@ void supernode_connect (struct n3n_runtime_data *eee) {
 
 // always closes the socket
 void supernode_disconnect (struct n3n_runtime_data *eee) {
-    if(!eee) {
+
+    if(!eee || eee->conf.client.local_link) {
         return;
     }
     close_sockets(eee);
@@ -1159,7 +1165,9 @@ void update_supernode_reg (struct n3n_runtime_data * eee, time_t now) {
         --(eee->client.sup_attempts);
     }
 
-    if(maybe_supernode2sock(&(eee->client.curr_sn->sock), peer_info_get_hostname(eee->client.curr_sn)) == 0) {
+    // the supernode of this process has no name to resolve, see local_link.h
+    if(eee->conf.client.local_link
+       || (maybe_supernode2sock(&(eee->client.curr_sn->sock), peer_info_get_hostname(eee->client.curr_sn)) == 0)) {
         traceEvent(
             TRACE_INFO,
             "registering with supernode [%s][number of supernodes %d][attempts left %u]",
