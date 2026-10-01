@@ -159,6 +159,25 @@ SCENARIOS = [
         Site(["hard-range"], supernodes=["sn1"]),
         Site(["hard-range"], supernodes=["sn2"]),
         "relayed", auth="userpw", community_conf=True, tags=["quick"]),
+    Scenario(
+        "sn-tap",
+        "an edge behind a NAT and the TAP device of its supernode "
+        "(supernode.tap)",
+        Site(["hard-range"], supernodes=["sn2"]),
+        Site(on_supernode="sn2"),
+        "relayed", tags=["quick"]),
+    Scenario(
+        "sn-tap-fed",
+        "as sn-tap, the edge at the other supernode of the federation",
+        Site(["easy-kept"], supernodes=["sn1"]),
+        Site(on_supernode="sn2"),
+        "relayed"),
+    Scenario(
+        "sn-tap-userpw",
+        "as sn-tap-fed, with user/password authentication",
+        Site(["easy-kept"], supernodes=["sn1"]),
+        Site(on_supernode="sn2"),
+        "relayed", auth="userpw"),
 ]
 
 BY_NAME = {s.name: s for s in SCENARIOS}

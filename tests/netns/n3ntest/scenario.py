@@ -63,10 +63,13 @@ TRAFFIC_PY = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 
 class Site:
-    """An edge, and the NAT routers in front of it, outermost first"""
+    """An edge, and the NAT routers in front of it, outermost first.  Or,
+    with on_supernode, the TAP device of that supernode (supernode.tap):
+    no edge daemon, no NAT."""
 
     def __init__(self, nat=(), lan=None, supernodes=("sn1", "sn2"),
-                 conf=None, expect_nat=None):
+                 conf=None, expect_nat=None, on_supernode=None):
+        self.on_supernode = on_supernode
         self.nat = list(nat)
         self.lan = lan                  # subnet of the innermost LAN
         self.supernodes = list(supernodes)
@@ -204,6 +207,19 @@ class Run:
 
     def _build_site(self, i, sname, site):
         lab = self.lab
+        if site.on_supernode:
+            sn = self.supernodes[site.on_supernode]
+            lab.sysctl(sn["ns"], "net.ipv6.conf.default.disable_ipv6", 1,
+                       optional=True)
+            self.edges[sname] = {
+                "ns": sn["ns"],
+                "ip": sn["ip"],
+                "index": i,
+                "overlay": OVERLAY_NET.format(i + 1),
+                "mac": "02:00:00:99:00:{:02x}".format(i + 1),
+                "on_supernode": site.on_supernode,
+            }
+            return
         up_ns, up_if = self.inet, "x-" + sname
         up_bridge = True
         up_net = None
@@ -321,6 +337,9 @@ class Run:
                 sections["community " + COMMUNITY] = [
                     ("header_encryption", True)
                 ] + [("user", "{} {}".format(*user)) for user in users]
+            for sname, e in self.edges.items():
+                if e.get("on_supernode") == name:
+                    self._tap_sections(sections, sname, e)
             for section, options in self.sc.sn_conf.items():
                 sections.setdefault(section, [])
                 sections[section] = [
@@ -336,6 +355,22 @@ class Run:
                 raise LabError("supernode {} did not start: {}".format(
                     name, describe_exit(d.proc.popen.poll()) +
                     "\n" + d.proc.log_tail()))
+
+    def _tap_sections(self, sections, sname, e):
+        """The settings of a supernode's own edge, see Site.on_supernode"""
+        edge = dict(self._edge_sections(sname, self.sc.sites[sname], e))
+        sections["supernode"].append(("tap", True))
+        community = [k for k in edge if k.startswith("community")][0]
+        sections[community] = sections.get(community, []) + [
+            (o, v) for o, v in edge[community] if o != "supernode"]
+        sections["tuntap"] = edge["tuntap"]
+        sections["connection"] += [
+            (o, v) for o, v in edge["connection"]
+            if o in ("description", "register_interval")]
+        if "auth" in edge:
+            # the supernode knows the public key of its federation
+            sections["auth"] = [(o, v) for o, v in edge["auth"]
+                                if o != "pubkey"]
 
     def _edge_sections(self, sname, site, e):
         conf = {
@@ -386,18 +421,25 @@ class Run:
         self.t_edges = time.monotonic()
         for sname, site in sorted(self.sc.sites.items()):
             e = self.edges[sname]
+            if site.on_supernode:
+                e["registered_at"] = "{}:{}".format(e["ip"], SN_PORT)
+                continue
             d = Edge(self.lab, "edge-" + sname, e["ns"], self._session(sname),
                      self.st.edge_bin, self._edge_sections(sname, site, e),
                      wrap=self.st.wrap, overlay_ip=e["overlay"], mac=e["mac"])
             d.start()
             e["daemon"] = d
         for sname, e in sorted(self.edges.items()):
+            if "daemon" not in e:
+                continue
             d = e["daemon"]
             if not d.wait_mgmt():
                 raise LabError("edge {} did not start: {}\n{}".format(
                     sname, describe_exit(d.proc.popen.poll()),
                     d.proc.log_tail()))
         for sname, e in sorted(self.edges.items()):
+            if "daemon" not in e:
+                continue
             d = e["daemon"]
             if not wait_for(lambda: d.registered() or not d.proc.alive(), 20) \
                     or not d.proc.alive():
@@ -439,16 +481,18 @@ class Run:
     # 3. NAT classes
 
     def wait_nat_classes(self, timeout):
+        edges = {s: e for s, e in self.edges.items() if "daemon" in e}
+
         def settled():
-            for e in self.edges.values():
+            for e in edges.values():
                 info = e["daemon"].mgmt.try_call("get_info") or {}
                 e["nat4"] = info.get("nat4", "?")
             return all(re.match(e["expect_nat"], e["nat4"])
-                       for e in self.edges.values())
+                       for e in edges.values())
         t = time.monotonic()
         wait_for(settled, timeout, interval=0.5)
         took = round(time.monotonic() - t, 1)
-        for sname, e in sorted(self.edges.items()):
+        for sname, e in sorted(edges.items()):
             ok = re.match(e["expect_nat"], e["nat4"])
             detail = "nat4 {!r}".format(e["nat4"])
             if self.sc.sites[sname].nat == ["hard-range"] and ok:
@@ -460,7 +504,7 @@ class Run:
             else:
                 detail += " after {}s".format(took)
             self.check("nat:" + sname, ok, detail)
-        self.result["nat4"] = {s: e["nat4"] for s, e in self.edges.items()}
+        self.result["nat4"] = {s: e["nat4"] for s, e in edges.items()}
 
     # 4. Traffic
 
@@ -489,6 +533,10 @@ class Run:
         """{(src, dst): mode} of each sending edge's entry for its peer"""
         out = {}
         for src, dst in self.sc.directions():
+            if "daemon" not in self.edges[src]:
+                # a supernode's own edge always goes through it
+                out[(src, dst)] = "pSp"
+                continue
             mode, _ = self.edges[src]["daemon"].peer(self.edges[dst]["mac"])
             out[(src, dst)] = mode
         return out
@@ -669,6 +717,12 @@ class Run:
             tx_sup = tx.get("super", {}).get("tx_pkt", 0)
             rx_p2p = rx.get("p2p", {}).get("rx_pkt", 0)
             rx_sup = rx.get("super", {}).get("rx_pkt", 0)
+            # a supernode's own edge has no counters of its own: take what
+            # the other side counted
+            if "daemon" not in self.edges[src]:
+                tx_p2p, tx_sup = rx_p2p, rx_sup
+            if "daemon" not in self.edges[dst]:
+                rx_p2p, rx_sup = tx_p2p, tx_sup
             counts = "{} tx p2p/super {}/{}, {} rx p2p/super {}/{}".format(
                 src, tx_p2p, tx_sup, dst, rx_p2p, rx_sup)
             if self.sc.expect == "direct":
