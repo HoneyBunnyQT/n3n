@@ -189,7 +189,7 @@ enum queue_kind {
 struct queue_item {
     enum queue_kind kind;
     struct edge_event ev;
-    struct pdu_control ctl;
+    struct pdu_ctx ctl;
     struct sockaddr_storage sender;     // PDU
     socklen_t sender_len;               // PDU
     uint64_t note[EDGE_THREADS_NOTE_MAX / sizeof(uint64_t)];   // PDU, aligned for any struct
@@ -343,7 +343,7 @@ void edge_threads_post_event (struct n3n_runtime_data *eee, const struct edge_ev
 }
 
 
-void edge_threads_post_control (struct n3n_runtime_data *eee, const struct pdu_control *c) {
+void edge_threads_post_control (struct n3n_runtime_data *eee, const struct pdu_ctx *c) {
 
     struct overflow_item *ov;
     struct queue_item *it;
@@ -947,7 +947,7 @@ void edge_threads_main_acquire (struct n3n_runtime_data *eee) {
 void edge_threads_post_event (struct n3n_runtime_data *eee, const struct edge_event *ev) {
 }
 
-void edge_threads_post_control (struct n3n_runtime_data *eee, const struct pdu_control *c) {
+void edge_threads_post_control (struct n3n_runtime_data *eee, const struct pdu_ctx *c) {
 }
 
 void edge_threads_post_pdu (struct n3n_runtime_data *eee,

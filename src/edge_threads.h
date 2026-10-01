@@ -27,7 +27,7 @@
 #ifndef N3N_EDGE_THREADS_H
 #define N3N_EDGE_THREADS_H
 
-#include "edge_utils.h"      // for edge_event, pdu_control
+#include "edge_utils.h"      // for edge_event, pdu_ctx
 #include "n2n_typedefs.h"    // for n2n_edge_conf_t, SOCKET
 
 struct n3n_runtime_data;
@@ -69,7 +69,7 @@ void edge_threads_main_acquire (struct n3n_runtime_data *eee);
 // control message's PDU is copied, so the worker may reuse its buffer.
 // Nothing is dropped - see QUEUE_SLOTS in edge_threads.c.
 void edge_threads_post_event (struct n3n_runtime_data *eee, const struct edge_event *ev);
-void edge_threads_post_control (struct n3n_runtime_data *eee, const struct pdu_control *c);
+void edge_threads_post_control (struct n3n_runtime_data *eee, const struct pdu_ctx *c);
 void edge_threads_post_pdu (struct n3n_runtime_data *eee,
                             const struct sockaddr *sender, socklen_t sender_len,
                             const uint8_t *buf, size_t size,

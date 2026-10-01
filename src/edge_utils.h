@@ -10,7 +10,8 @@
 #include <stdint.h>
 #include <time.h>       // for time_t
 
-#include "n2n_typedefs.h"  // for n2n_mac_t, n3n_sock_t, n2n_common_t
+#include "n2n_typedefs.h"  // for n2n_mac_t, n3n_sock_t
+#include "pdu_in.h"        // for pdu_ctx
 
 // Forward declare so that this header can stay small
 struct n3n_runtime_data;
@@ -53,25 +54,8 @@ struct edge_event {
 void edge_event_apply (struct n3n_runtime_data *eee, const struct edge_event *ev);
 
 
-/* What the control path needs from process_pdu(), all by value - nothing in
- * here points into the peer tables, so it stays valid on its way to another
- * thread. buf is the PDU itself, with its header already decrypted. */
-struct pdu_control {
-    uint8_t *buf;
-    size_t size;
-    n2n_common_t cmn;
-    size_t rem;                 /* decoding position after the common header */
-    size_t idx;
-    n3n_sock_t sender;
-    uint8_t from_supernode;
-    uint8_t via_multicast;
-    uint64_t stamp;
-    uint8_t hash_buf[16];       /* of the still encrypted PDU, user/pw auth only */
-    time_t now;
-};
-
 // handle a control message - on the thread that owns the tables
-void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_control *c);
+void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_ctx *c);
 
 
 // The read functions return 1 if they consumed a packet, 0 if there was

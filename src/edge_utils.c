@@ -3417,7 +3417,7 @@ static bool supernode_appends_hash (const struct n3n_runtime_data *eee) {
 }
 
 
-void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_control *c) {
+void process_pdu_control (struct n3n_runtime_data *eee, struct pdu_ctx *c) {
 
     n2n_common_t cmn = c->cmn;
     uint8_t *udp_buf = c->buf;
@@ -4164,19 +4164,21 @@ void process_pdu (struct n3n_runtime_data *eee,
             // info, supernode answers. The control path gets all it needs by
             // value, so that it can later run on another thread with a copy of
             // the PDU, while the buffer it arrived in is reused.
-            struct pdu_control c;
+            struct pdu_ctx c = {
+                .buf = udp_buf,
+                .size = udp_size,
+                .cmn = cmn,
+                .rem = rem,
+                .idx = idx,
+                .sender = sender,
+                .header_enc = header_enc,
+                .stamp = stamp,
+                .from_supernode = from_supernode,
+                .via_multicast = via_multicast,
+                .now = now,
+            };
 
-            c.buf = udp_buf;
-            c.size = udp_size;
-            c.cmn = cmn;
-            c.rem = rem;
-            c.idx = idx;
-            c.sender = sender;
-            c.from_supernode = from_supernode;
-            c.via_multicast = via_multicast;
-            c.stamp = stamp;
             memcpy(c.hash_buf, hash_buf, sizeof(c.hash_buf));
-            c.now = now;
 
             if(n3n_thread_slot) {
                 // a packet thread: the main thread handles it, from a copy
