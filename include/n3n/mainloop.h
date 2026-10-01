@@ -41,7 +41,8 @@ bool mainloop_send_v3tcp (int, const void *, int);
 
 int mainloop_runonce (struct n3n_runtime_data *);
 
-void mainloop_register_fd (int, enum fd_info_proto);
+// the slot of the fd, or -1 if there is no free one
+int mainloop_register_fd (int, enum fd_info_proto);
 void mainloop_unregister_fd (int);
 
 

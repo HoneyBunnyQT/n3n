@@ -113,7 +113,9 @@ struct fd_info {
 
 // A static array of known file descriptors will not scale once full TCP
 // connection support is added, but will work for now
-#define MAX_HANDLES 16
+// the edge's own sockets and the management connections, and the sockets it
+// opens behind a hard NAT (NAT_PUNCH_POOL_MAX + NAT_PUNCH_BOUND)
+#define MAX_HANDLES 96
 static struct fd_info fdlist[MAX_HANDLES];
 static int fdlist_next_search;
 
@@ -762,8 +764,8 @@ bool mainloop_send_v3tcp (int fd, const void *buf, int bufsize) {
     return true;
 }
 
-void mainloop_register_fd (int fd, enum fd_info_proto proto) {
-    fdlist_allocslot(fd, proto);
+int mainloop_register_fd (int fd, enum fd_info_proto proto) {
+    return fdlist_allocslot(fd, proto);
 }
 
 void mainloop_unregister_fd (int fd) {
