@@ -231,6 +231,42 @@ char* intoa (uint32_t /* host order */ addr, char* buf, uint16_t buf_len) {
 
 /* ************************************** */
 
+/* An edge joins exactly one community: of [community], or of the only
+ * [community NAME] section, whose settings then move to conf->community.
+ * Returns 0, or -1 if there are more. */
+int edge_conf_one_community (n2n_edge_conf_t *conf) {
+
+    struct n3n_conf_community *comm = conf->communities;
+    unsigned int count = HASH_COUNT(conf->communities);
+
+    if(count == 0) {
+        return 0;
+    }
+    if((count > 1) || conf->community.community_name[0]) {
+        traceEvent(TRACE_ERROR, "an edge joins only one community, but the configuration has %u",
+                   count + (conf->community.community_name[0] != 0));
+        return -1;
+    }
+
+    if(comm->network.net_addr || comm->users) {
+        traceEvent(TRACE_WARNING, "community.network and community.user are only for a supernode, ignoring");
+    }
+
+    HASH_DEL(conf->communities, comm);
+    free(conf->community.encrypt_key);
+    n3n_conf_strlist_free(&conf->community.users);
+    conf->community = *comm;
+    memset(&conf->community.hh, 0, sizeof(conf->community.hh));
+    conf->community.users = NULL;
+    n3n_conf_strlist_free(&comm->users);
+    free(comm);
+
+    traceEvent(TRACE_INFO, "joining community '%s' of section [community %s]",
+               conf->community.community_name, conf->community.instance);
+    return 0;
+}
+
+
 int edge_verify_conf (const n2n_edge_conf_t *conf) {
 
     if(conf->community.community_name[0] == 0)

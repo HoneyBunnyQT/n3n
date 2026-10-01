@@ -922,6 +922,10 @@ int main (int argc, char* argv[]) {
 
     n3n_config(argc, argv, "edge", &conf);
 
+    if(edge_conf_one_community(&conf) != 0) {
+        exit(1);
+    }
+
     // --- additional crypto setup; REVISIT: move to edge_init()?
     // payload
     if(conf.community.transop_id == N2N_TRANSFORM_ID_NULL) {
