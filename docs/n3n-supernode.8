@@ -119,6 +119,12 @@ with a TAP device of its own, set up by the \fB[tuntap]\fR options as for an
 edge.  It reaches the other edges of the community through itself.  It needs
 the privileges to open the TAP device at start, before it drops them.  See
 docs/configure/Supernode.md.
+.SH MANAGEMENT INTERFACE
+As the edge, the supernode answers JsonRPC requests and serves a web page on
+the Unix Domain socket /run/n3n/\fB<sessionname>\fR/mgmt, and on the TCP port
+\fBmanagement.port\fR of localhost.  With \fBsupernode.tap\fR, the page has a
+section for its edge too, and \fBn3nctl -r edge\fR asks the edge.  See
+docs/internals/ManagementAPI.md.
 .SH THREADS
 With \fBdaemon.threads\fR the supernode relays PACKETs on several threads.
 This needs Linux and a build with \fB--enable-pthread\fR, see

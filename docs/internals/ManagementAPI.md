@@ -4,7 +4,10 @@ SPDX-FileCopyrightText: Copyright Hamish Coleman
 
 # Management API
 
-Both the edge and the supernode provide a JsonRPC management interface.
+Both the edge and the supernode provide a JsonRPC management interface, and
+a web page built from the same data.  A process has one management
+interface, whatever runs in it: a supernode with its own edge
+(`supernode.tap`) answers for both, see "Roles" below.
 
 A Quick start example query:
 ```
@@ -27,6 +30,42 @@ Example fetching the list of HTTP pages:
 ```
 curl --unix-socket /run/n3n/edge/mgmt http://x/help
 ```
+
+## The web page
+
+`http://localhost:5644/` (with `management.port = 5644`), or
+`curl --unix-socket /run/n3n/edge/mgmt http://x/`, is one page for whatever
+runs in the process: a section "Edge" and a section "Supernode", each where
+it runs, and on top what belongs to the whole process - the log level, with
+buttons for more and less, and a button to stop n3n.
+
+- The daemon builds the page completely, so it reads in a text browser as
+  well (`lynx http://localhost:5644/`), and with `curl`.  A small stylesheet
+  (with a dark variant) and a few lines of script, which refresh the page
+  every five seconds, come along for browsers that take them; nothing is
+  loaded from elsewhere.
+- Everything other peers say about themselves (descriptions, versions,
+  community names) is shown as text.
+- The buttons are plain forms, posted to `/page`; they ask for the management
+  password (HTTP Basic, any user name).  A form or a request from another
+  site, which browsers mark with an `Origin` header, is refused, here and
+  for the JsonRPC calls.
+- A table shows at most 250 rows; the JsonRPC methods have them all.
+- Clients that speak HTTP/1.0, like lynx, get the connection closed after
+  the reply.
+
+## Roles
+
+`/v1` is the JsonRPC interface of the process, as it always was: the
+supernode of a supernode, the edge of an edge.  The roles can be asked for
+by name as well:
+
+- `/v1/edge`: the edge - also the edge of a supernode with `supernode.tap`,
+  which has no interface of its own: its peers, its counters, `get_info`.
+- `/v1/supernode`: the supernode.
+
+Asking for a role that does not run in the process gets an error.
+`n3nctl -r edge get_info` asks the edge.
 
 ## Listening sockets
 
@@ -98,8 +137,9 @@ Those marked with a key need the password (see Authentication below):
 | `stop` (key) | yes | yes | stop the daemon |
 | `post.test` | yes | yes | send an event on the topic `test` |
 
-The edge of a supernode with `supernode.tap` has no management interface of
-its own yet: it shows in the supernode's `get_edges`, at `127.0.0.1:0`.
+The edge of a supernode with `supernode.tap` is asked at `/v1/edge` of the
+supernode's interface (`n3nctl -r edge ...`); it also shows in the
+supernode's `get_edges`, at `127.0.0.1:0`.
 
 Each daemon also has metrics in the Prometheus text format at `/metrics`,
 for example

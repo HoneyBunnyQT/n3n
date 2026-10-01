@@ -26,6 +26,8 @@ Example:
 - `scripts/n3nctl --help`
 - `scripts/n3nctl help`
 - `scripts/n3nctl -s supernode edges`
+- `scripts/n3nctl -s supernode -r edge edges`: the peers of the supernode's
+  own edge (`supernode.tap`)
 
 The methods it can call are described in the
 [Management API](internals/ManagementAPI.md).

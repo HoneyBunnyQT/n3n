@@ -313,7 +313,9 @@ docs/advanced/Threads.md.
 
 .SH MANAGEMENT INTERFACE
 Edge always provides JsonAPI listening on a Unix Domain socket in /run/n3n and
-optionally a TCP port (if configured with the management.port option)
+optionally a TCP port (if configured with the management.port option), and a
+web page with its state, which reads in a text browser too:
+\fBlynx http://localhost:5644/\fR with \fBmanagement.port\fR=5644.
 See the docs/internals/ManagementAPI.md for details.
 
 .SH EXIT STATUS

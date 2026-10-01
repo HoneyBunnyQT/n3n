@@ -68,5 +68,7 @@ supernode itself - directly for the edges registered at it, across the
 federation for the others.  It has no sockets of its own, so peer-to-peer
 connections, local peer discovery and hole punching do not apply to it.  The
 supernode needs the privileges to open the TAP device at start, before it
-drops them.  `get_edges` of the management API lists the supernode's edge at
-`127.0.0.1:0`.  This is not available on Windows yet.
+drops them.  The supernode's management interface answers for its edge as
+well: its web page has a section for each, and the JsonRPC methods are asked
+at `/v1/edge` (`n3nctl -r edge edges`); `get_edges` of the supernode lists it
+at `127.0.0.1:0`.  This is not available on Windows yet.

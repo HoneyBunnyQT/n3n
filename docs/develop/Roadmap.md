@@ -97,8 +97,10 @@ tests and `make lint` pass after each.
       talks to its supernode over the local link (`local_link.c`): the
       same PDUs, queued in the process, handed on by the mainloop.  netns
       scenarios `sn-tap`, `sn-tap-fed`, `sn-tap-userpw`.  Open:
-  - [ ] the management API of the supernode's edge (its peers, its
-        counters), now only visible in `get_edges` of the supernode
+  - [x] the management API of the supernode's edge: `/v1/edge` of the
+        supernode's interface (`n3nctl -r edge`), and one web page with a
+        section for each role, built by the daemon (`management_page.c`),
+        readable in lynx
   - [ ] Windows (the TAP reader thread)
   - [ ] the supernode's edge on packet threads; for now its PACKETs are
         handled by the main thread
