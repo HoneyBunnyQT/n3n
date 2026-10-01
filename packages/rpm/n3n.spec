@@ -47,6 +47,7 @@ rm -fr $RPM_BUILD_ROOT
 /usr/lib/systemd/system/n3n-edge.service
 /usr/lib/systemd/system/n3n-edge@.service
 /usr/lib/systemd/system/n3n-supernode.service
+/usr/sbin/n3n
 /usr/sbin/n3n-edge
 /usr/sbin/n3n-supernode
 /usr/share/doc/n3n/Contributing.md

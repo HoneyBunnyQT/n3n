@@ -18,8 +18,12 @@
 # LDFLAGS+=-L../libs/connslot
 # LDLIBS_LOCAL+=-lconnslot
 
-APPS+=n3n-edge
-APPS+=n3n-supernode
+# One binary for all the roles, see n3n.c
+APPS+=n3n
+
+# and its names for each role: links to it, copies where there are no links
+LINKS+=n3n-edge
+LINKS+=n3n-supernode
 
 EXAMPLES+=example_edge_embed_quick_edge_init
 EXAMPLES+=example_edge_embed
@@ -29,7 +33,7 @@ LDLIBS+=-ln3n
 LDLIBS+=$(LDLIBS_LOCAL)
 LDLIBS+=$(LDLIBS_EXTRA)
 
-all: $(APPS)
+all: $(APPS) $(LINKS)
 
 examples: $(EXAMPLES)
 
@@ -37,20 +41,36 @@ examples: $(EXAMPLES)
 # makefile outside the build environment
 $(APPS) $(EXAMPLES): ../src/libn3n.a
 
+n3n: n3n.c n3n-edge.c n3n-supernode.c
+
+$(LINKS): n3n
+	@echo "  LN      $@"
+ifeq ($(EXE),)
+	@ln -sf n3n $@
+else
+	@cp n3n$(EXE) $@$(EXE)
+endif
+
 .PHONY: install
 install: $(addsuffix $(EXE),$(APPS))
 	$(INSTALL) -d $(CONFIG_SBINDIR)
-	$(INSTALL_PROG) n3n-supernode$(EXE) $(CONFIG_SBINDIR)/
-	$(INSTALL_PROG) n3n-edge$(EXE) $(CONFIG_SBINDIR)/
+	$(INSTALL_PROG) n3n$(EXE) $(CONFIG_SBINDIR)/
+ifeq ($(EXE),)
+	ln -sf n3n $(CONFIG_SBINDIR)/n3n-supernode
+	ln -sf n3n $(CONFIG_SBINDIR)/n3n-edge
+else
+	$(INSTALL_PROG) n3n$(EXE) $(CONFIG_SBINDIR)/n3n-supernode$(EXE)
+	$(INSTALL_PROG) n3n$(EXE) $(CONFIG_SBINDIR)/n3n-edge$(EXE)
+endif
 
 %: %.c
 	@echo "  CC      $@"
-	@$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
+	@$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) $(filter %.c %.a,$^) $(LDLIBS) -o $@
 
 # See comments in the topdir Makefile about how to generate coverage data.
-# TODO: why are these apps detected with strange names by coverage?
+# gcc names the coverage data of a binary built in one step <binary>-<source>
 gcov:
-	gcov n3n-edge-n3n-edge n3n-supernode-n3n-supernode
+	gcov n3n-n3n n3n-n3n-edge n3n-n3n-supernode
 
 clean:
-	rm -f $(APPS) $(EXAMPLES)
+	rm -f $(APPS) $(LINKS) $(EXAMPLES)

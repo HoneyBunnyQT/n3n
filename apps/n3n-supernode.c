@@ -39,6 +39,7 @@
 #include <time.h>              // for time
 #include <unistd.h>            // for _exit, daemon, getgid, getuid, setgid
 #include "n2n.h"               // for n2n_edge, sn_community
+#include "n3n.h"               // for n3n_supernode_main
 #include "uthash.h"            // for UT_hash_handle, HASH_ITER, HASH_ADD_STR
 
 // FIXME, including private headers
@@ -377,7 +378,7 @@ extern int windows_stop_fd;
 
 // Note well, this gets called from a brand new thread, thus is completely
 // different to how signals work in POSIX
-BOOL WINAPI ConsoleCtrlHandler (DWORD sig) {
+static BOOL WINAPI ConsoleCtrlHandler (DWORD sig) {
     // Tell the mainloop to exit next time it wakes
     keep_on_running = false;
 
@@ -409,8 +410,8 @@ BOOL WINAPI ConsoleCtrlHandler (DWORD sig) {
 
 /* *************************************************** */
 
-/** Main program entry point from kernel. */
-int main (int argc, char * argv[]) {
+/** Entry point of the supernode, see n3n.c */
+int n3n_supernode_main (int argc, char * argv[]) {
     static struct n3n_runtime_data sss_node;
 
     // Do this early to register all internals

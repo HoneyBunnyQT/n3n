@@ -50,6 +50,7 @@
 #include <time.h>                    // for time
 #include <unistd.h>                  // for setuid, _exit, chdir, fork, getgid
 #include "auth.h"                    // for generate_private_key, generate_p...
+#include "n3n.h"                     // for n3n_edge_main
 #include "n2n.h"                     // for n2n_edge_conf_t, n3n_runtime_data, fil...
 #include "portable_endian.h"         // for htobe32
 #include "sn_selection.h"            // for sn_selection_sort, sn_selection_...
@@ -858,7 +859,7 @@ extern int windows_stop_fd;
 
 // Note well, this gets called from a brand new thread, thus is completely
 // different to how signals work in POSIX
-BOOL WINAPI ConsoleCtrlHandler (DWORD sig) {
+static BOOL WINAPI ConsoleCtrlHandler (DWORD sig) {
     // Tell the mainloop to exit next time it wakes
     keep_on_running = false;
 
@@ -890,8 +891,8 @@ BOOL WINAPI ConsoleCtrlHandler (DWORD sig) {
 
 /* *************************************************** */
 
-/** Entry point to program from kernel. */
-int main (int argc, char* argv[]) {
+/** Entry point of the edge, see n3n.c */
+int n3n_edge_main (int argc, char* argv[]) {
 
     int rc;
     struct n3n_runtime_data *eee;              /* single instance for this program */
