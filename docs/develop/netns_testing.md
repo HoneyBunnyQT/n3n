@@ -95,6 +95,9 @@ router behind a carrier NAT.  The block of hard-range ends at a multiple of
 | userpw | as header-enc, with user/password authentication (ChaCha20) | direct |
 | userpw-relayed | hard-range / hard-range, user/password, each edge at its own supernode | relayed, across the federation |
 | userpw-conf | as userpw-relayed, the community and users in `[community NAME]` sections | relayed, across the federation |
+| sn-tap | hard-range / the TAP device of sn2 (`supernode.tap`), the edge at sn2 | relayed |
+| sn-tap-fed | easy-kept at sn1 / the TAP device of sn2 | relayed, across the federation |
+| sn-tap-userpw | as sn-tap-fed, with user/password authentication | relayed, across the federation |
 
 An edge connected over TCP does not learn how its NAT maps it, so the NAT
 class of tcp-tcp and tcp-udp is not checked for those edges (`expect_nat` of
@@ -103,6 +106,10 @@ a `Site`).  `sn_conf` of a `Scenario` sets options of the supernodes.
 and user/password authentication (`"userpw"`): the supernodes then get a
 community file, with a user for each edge whose public key comes from
 `n3n-edge tools keygen`, as docs/configure/Authentication.md describes.
+A `Site(on_supernode="sn2")` is the TAP device of that supernode, which then
+runs with `supernode.tap` and the site's settings of the community, the
+tuntap device and auth: it has no edge daemon of its own, so the checks that
+need one take what the other side counted.
 With `community_conf=True` the supernodes have them in a `[community
 nettest]` section with `user` options instead, and the edges their
 community in such a section too.

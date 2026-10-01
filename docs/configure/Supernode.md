@@ -30,3 +30,36 @@ both ports then.  A second port lets edges see whether their NAT maps each
 destination to a port of its own (see [NAT Traversal](../advanced/NatTraversal.md)).
 A port alone, or `[::]`, stands for IPv6 and IPv4; a given address only for
 its own family.
+
+## A Supernode That Is an Edge Too
+
+A supernode can also be a member of one community, with a TAP device of its
+own, so that the machine it runs on needs no separate edge:
+
+```
+[supernode]
+tap = true
+
+[community]
+name = mynetwork
+key = mysecretpass
+
+[tuntap]
+address = 10.1.2.1/24
+address_mode = static
+```
+
+The `[community]` and `[tuntap]` options are those of an edge; without a
+static address, the supernode gives one to itself as it does to the other
+edges.  With user/password authentication, `auth.password` and
+`connection.description` are its user name and password, and the supernode
+needs that user in the community, as for any other edge; the public key of
+the federation is that of its own.
+
+The supernode's edge reaches the other edges of the community through the
+supernode itself - directly for the edges registered at it, across the
+federation for the others.  It has no sockets of its own, so peer-to-peer
+connections, local peer discovery and hole punching do not apply to it.  The
+supernode needs the privileges to open the TAP device at start, before it
+drops them.  `get_edges` of the management API lists the supernode's edge at
+`127.0.0.1:0`.  This is not available on Windows yet.

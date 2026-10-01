@@ -17,6 +17,7 @@ role and by concern.
 | `pdu_in.c` | the first steps with a received PDU: header decryption, `struct pdu_ctx`, the dispatch to the handler of its message type |
 | `wire.c` | encoding and decoding the PDUs |
 | `edge_threads.c` | the packet threads, and the queue to the main thread |
+| `local_link.c` | the link between a supernode and its own edge (`supernode.tap`) in the same process: PDUs without sockets |
 | `peer_info.c` | the tables of peers |
 | `management.c` | the JSON-RPC management interface |
 | `conffile.c`, `conffile_defs.c` | the configuration: file, environment, command line |
@@ -25,7 +26,7 @@ role and by concern.
 
 | file | what |
 |------|------|
-| `edge_utils.c` | init and term, the sockets, the front end for received PDUs (`process_pdu()`), the events of the peer tables, the ticks and the loop |
+| `edge_utils.c` | init and term, the sockets, the front end for received PDUs (`edge_process_pdu()`), the events of the peer tables, the ticks and the loop; `edge_start_local()` for the edge of a supernode |
 | `role_client.c` | registering with the supernodes and the peers, the NAT classification, the handlers of the control messages (`edge_rx_register()` ...) |
 | `punch.c` | hole punching through the NATs between two edges |
 | `role_tap.c` | the TAP device, encoding and sending its frames, the handler of a PACKET (`edge_rx_packet()`) |

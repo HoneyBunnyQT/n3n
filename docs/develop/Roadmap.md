@@ -92,9 +92,18 @@ tests and `make lint` pass after each.
       `n3n edge ...` and `n3n supernode ...` work too.  The binary holds both
       roles, so an edge-only package grows a little until
       `--disable-relay`
-- [ ] Step 9: relay and tap in one process, still v3: the client role
-      registers with the local relay role without packets, and a PACKET for
-      the local MAC goes straight to the TAP device
+- [x] Step 9: relay and tap in one process, still v3: `supernode.tap`.
+      The supernode's edge is a runtime of its own, without sockets, that
+      talks to its supernode over the local link (`local_link.c`): the
+      same PDUs, queued in the process, handed on by the mainloop.  netns
+      scenarios `sn-tap`, `sn-tap-fed`, `sn-tap-userpw`.  Open:
+  - [ ] the management API of the supernode's edge (its peers, its
+        counters), now only visible in `get_edges` of the supernode
+  - [ ] Windows (the TAP reader thread)
+  - [ ] the supernode's edge on packet threads; for now its PACKETs are
+        handled by the main thread
+  - [ ] after step 9: ask whether to stay on 9 for a while (failover tests
+        with user/password, see Next) or move on more quickly
 - [ ] `./configure --disable-relay` for small builds that only need an edge;
       the `#ifdef` only where the roles are registered
 
