@@ -130,6 +130,13 @@ SCENARIOS = [
         Site(["hard-range"]), Site(["hard-range"]),
         "relayed", sn_conf={"daemon": {"threads": 3}}),
     Scenario(
+        "easy-hard-threads",
+        "as easy-hard, edges and supernodes with packet threads, so the "
+        "edges' control messages go through the queue to the main thread",
+        Site(["easy-kept"]), Site(["hard-range"]),
+        "direct", conf={"daemon": {"threads": 3}},
+        sn_conf={"daemon": {"threads": 3}}),
+    Scenario(
         "header-enc",
         "encrypted headers, the supernodes know the community from a file",
         Site(["easy-kept"]), Site(["hard-range"]),

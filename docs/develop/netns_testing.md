@@ -90,6 +90,7 @@ router behind a carrier NAT.  The block of hard-range ends at a multiple of
 | tcp-tcp | easy-kept / easy-changed, both edges with connect_tcp | relayed, over TCP both ways |
 | tcp-udp | as tcp-tcp, only a with connect_tcp | relayed, between TCP and UDP |
 | hard-hard-threads | as hard-hard, the supernodes with daemon.threads=3 | relayed |
+| easy-hard-threads | as easy-hard, edges and supernodes with daemon.threads=3 | direct |
 | header-enc | easy-kept / hard-range, encrypted headers | direct |
 | userpw | as header-enc, with user/password authentication (ChaCha20) | direct |
 | userpw-relayed | hard-range / hard-range, user/password, each edge at its own supernode | relayed, across the federation |
