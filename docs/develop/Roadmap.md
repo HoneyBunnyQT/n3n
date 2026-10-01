@@ -116,6 +116,14 @@ tests and `make lint` pass after each.
 
 ### Later: the peer protocol (v4)
 
+Where v3 compatibility ends: everything above keeps the v3 wire format, so
+`peer` stays able to talk to today's edges and supernodes, and to n2n 3.x.
+The first item below that changes what goes over the wire - peer identities
+in REGISTER, the handshake, signed records - starts the branch `peer-v4`
+off `peer`.  From there, v3 lives on in the relay role (the v3 bridge),
+while `peer` keeps getting what does not touch the wire, merged into
+`peer-v4` from time to time.
+
 - [ ] Peer identity: a Curve25519 key per peer, node ID = hash of the
       public key (`auth.c` has the curve already)
 - [ ] Encryption between each pair of peers: X25519 handshake, then
@@ -163,6 +171,13 @@ tests and `make lint` pass after each.
 - 2026-10-01: Fixes found along the way are commits of their own, with
   messages that stand alone, so that they can be taken upstream; the
   branch `fixes` collects them on top of `main`.
+- 2026-10-01: The PDU length checks of the branch pdu-len-check are on
+  `fixes` (and `peer`), ported onto the current code; the other old side
+  branches (chachacha, drain, phase-a, speck-avx512, trace-level-check,
+  twofish) are in main already, apart from the AES burst benchmark of
+  `drain`, which is on `fixes` too.
+- 2026-10-01: The wire format stays v3 until the peer protocol; it gets
+  the branch `peer-v4` off `peer` (see "Later: the peer protocol").
 - 2026-10-01: Roles are chosen at run time; leaving the relay code out of a
   build is an option for later, decided in one place.
 
@@ -178,15 +193,15 @@ one name or regular expression per line, optionally with a network, plus
 `*` lines with user names and public keys.
 
 Decided (2026-10-01): a config section per community, and the community file
-stays for long lists.  Open: what if both name the same community.
-
-Proposal:
+stays for long lists.  The config can say all the file can, so that the
+file becomes optional:
 
 - The communities are the union of the sections and the file.
 - A community in both: the section's options win, the file fills in what the
   section does not set (network, users); a line in the log says so.
-- Regular expressions only in the file (they are no community of their own,
-  but a rule which names are welcome).
+- Regular expressions in both: a list of rules in the config (e.g.
+  `supernode.allow = ntop[0-1][0-9]`, repeatable) as well as in the file.
+  They are no community of their own but say which names are welcome.
 - A reload (SIGHUP) re-reads the file; the sections stay as they were
   started.
 - A peer with only the `tap` role takes exactly one community: one section,
@@ -194,9 +209,6 @@ Proposal:
   choice.  (Several TAP devices, one per community, could come later.)
 - The `community.*` options of today stay as the short form of a single
   section, so existing edge configs keep working.
-
-To decide before step 4, since it shapes `rt->relay` and the community table
-of step 5.
 
 ### Flaky netns scenarios (NAT work)
 
