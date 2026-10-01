@@ -10,3 +10,4 @@ documents with useful information.
 - [Test and benchmark framework](testing.md)
 - [Testing edges and supernodes behind NATs](netns_testing.md)
 - [Old test framework](testing_legacy.md)
+- [Roadmap and Scratchpad](Roadmap.md)
