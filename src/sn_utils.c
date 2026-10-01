@@ -466,8 +466,23 @@ static void load_conf_communities (struct n3n_runtime_data *sss, uint32_t *num_c
 }
 
 
-/* The communities and rules of the community file; one there is already,
- * from a section of the configuration, stays as it is */
+/* The [community NAME] section of a community, NULL if it has none */
+static struct n3n_conf_community *conf_community (struct n3n_runtime_data *sss, const char *name) {
+
+    struct n3n_conf_community *conf_comm, *tmp_conf_comm;
+
+    HASH_ITER(hh, sss->conf.communities, conf_comm, tmp_conf_comm) {
+        if(!strncmp((const char *)conf_comm->community_name, name, N2N_COMMUNITY_SIZE)) {
+            return conf_comm;
+        }
+    }
+    return NULL;
+}
+
+
+/* The communities and rules of the community file.  For a community of a
+ * section of the configuration, the file only gives what the section does
+ * not: the address range, the users. */
 static void load_file_communities (struct n3n_runtime_data *sss, FILE *fd, uint32_t *num_communities, uint32_t *num_regex) {
 
     char buffer[4096], *line, *cmn_str, net_str[20];
@@ -524,14 +539,6 @@ static void load_file_communities (struct n3n_runtime_data *sss, FILE *fd, uint3
             continue;
         }
 
-        HASH_FIND_STR(sss->relay.communities, cmn_str, comm);
-        if(comm) {
-            traceEvent(TRACE_NORMAL, "community '%s' of %s is there already, keeping that one",
-                       cmn_str, sss->conf.relay.community_file);
-            free(cmn_str);
-            continue;
-        }
-
         // check for sub-network address
         net = 0;
         if(has_net) {
@@ -544,6 +551,34 @@ static void load_file_communities (struct n3n_runtime_data *sss, FILE *fd, uint3
                     net = 0;
                 }
             }
+        }
+
+        HASH_FIND_STR(sss->relay.communities, cmn_str, comm);
+        if(comm) {
+            struct n3n_conf_community *conf_comm = conf_community(sss, cmn_str);
+
+            if(!conf_comm) {
+                traceEvent(TRACE_WARNING, "community '%s' is in %s twice, ignoring the second",
+                           cmn_str, sss->conf.relay.community_file);
+                free(cmn_str);
+                continue;
+            }
+            traceEvent(TRACE_NORMAL, "community '%s' is in section [community %s] and in %s, the section wins",
+                       cmn_str, conf_comm->instance, sss->conf.relay.community_file);
+            if(net && !conf_comm->network.net_addr) {
+                struct in_addr addr = { .s_addr = net };
+
+                comm->auto_ip_net.net_addr = ntohl(net);
+                comm->auto_ip_net.net_bitlen = bitlen;
+                traceEvent(TRACE_INFO, "assigned sub-network %s/%u of %s to community '%s'",
+                           inet_ntoa(addr), bitlen, sss->conf.relay.community_file, comm->community);
+            }
+            if(!conf_comm->users) {
+                // its users from the file
+                last_added_comm = comm;
+            }
+            free(cmn_str);
+            continue;
         }
 
         comm = add_fixed_community(sss, cmn_str, net, bitlen);

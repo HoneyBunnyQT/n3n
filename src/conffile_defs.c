@@ -453,7 +453,8 @@ static struct n3n_conf_option section_supernode[] = {
                 "See the documentation for the file format description.  "
                 "The communities of [community NAME] sections and "
                 "community_regex are allowed as well; a section wins over "
-                "the same community in the file.  Only the file is read "
+                "the same community in the file, which only gives the "
+                "network or users the section leaves out.  Only the file is read "
                 "again on a reload.",
     },
     {
