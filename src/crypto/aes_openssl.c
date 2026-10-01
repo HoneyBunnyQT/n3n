@@ -224,5 +224,6 @@ int aes_deinit (aes_context_t *ctx) {
 }
 
 #elif defined (__AES__) && defined (__SSE2__) // Intel's AES-NI ---------------------------------------------------
+#elif (defined (__ARM_FEATURE_AES) || defined (__ARM_FEATURE_CRYPTO)) && !defined (__ARM_BIG_ENDIAN) // ARMv8 CE -
 #else
 #endif

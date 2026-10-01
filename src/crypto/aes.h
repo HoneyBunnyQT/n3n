@@ -57,6 +57,16 @@ typedef struct aes_context_t {
     int Nr;
 } aes_context_t;
 
+#elif (defined (__ARM_FEATURE_AES) || defined (__ARM_FEATURE_CRYPTO)) && !defined (__ARM_BIG_ENDIAN) // ARMv8 CE -
+
+#include <arm_neon.h>
+
+typedef struct aes_context_t {
+    uint8x16_t rk_enc[15];
+    uint8x16_t rk_dec[15];
+    int Nr;
+} aes_context_t;
+
 #else // plain C --------------------------------------------------------------------------------------------------
 
 typedef struct aes_context_t {
