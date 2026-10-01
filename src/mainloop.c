@@ -37,7 +37,6 @@
 #include "management.h"         // for readFromMgmtSocket
 #include "minmax.h"             // for min, max
 #include "portable_endian.h"    // for htobe16
-#include "sn_utils.h"           // for sn_read_proto3_udp, ...
 
 #ifndef _WIN32
 #include <netinet/in.h>         // for IPPROTO_TCP
@@ -540,24 +539,17 @@ static int fdlist_fd_set (fd_set *rd, fd_set *wr, time_t now) {
     return max_sock;
 }
 
-// Whose PDUs come in on a v3 socket: the supernode's or the edge's
+// A PDU waits on a v3 socket: the role of the runtime takes it
 static int read_proto3_udp (struct n3n_runtime_data *eee, int fd,
                             struct n3n_pktbuf *pkt, time_t now) {
-    if(eee->conf.is_supernode) {
-        return sn_read_proto3_udp(eee, fd, pkt, now);
-    }
-    return edge_read_proto3_udp(eee, fd, pkt, now);
+    return eee->ops->read_udp(eee, fd, pkt, now);
 }
 
 // A PDU that came in on a v3tcp connection; buf NULL: the connection is gone,
 // fd is closed already
 static void read_proto3_tcp (struct n3n_runtime_data *eee, int fd,
                              uint8_t *buf, int size, time_t now) {
-    if(eee->conf.is_supernode) {
-        sn_read_proto3_tcp(eee, fd, buf, size, now);
-        return;
-    }
-    edge_read_proto3_tcp(eee, fd, buf, size, now);
+    eee->ops->read_tcp(eee, fd, buf, size, now);
 }
 
 #ifndef _WIN32
@@ -614,7 +606,11 @@ static void accept_v3tcp (struct n3n_runtime_data *eee, int listen_fd, time_t no
     int nodelay = 1;
     setsockopt(client, IPPROTO_TCP, TCP_NODELAY, (void *)&nodelay, sizeof(nodelay));
 
-    sn_accepted_proto3_tcp(eee, client, (struct sockaddr *)&sas, sas_len);
+    if(!eee->ops->accepted_tcp) {
+        mainloop_close_fd(client);
+        return;
+    }
+    eee->ops->accepted_tcp(eee, client, (struct sockaddr *)&sas, sas_len);
 }
 
 static void handle_fd (const time_t now, int slot, struct n3n_runtime_data *eee) {

@@ -14,7 +14,6 @@
 #include <n3n/mainloop.h>       // for mainloop_unregister_fd
 #include <n3n/metrics.h> // for n3n_metrics_render
 #include <n3n/strings.h> // for ip_subnet_to_str, sock_to_cstr, sockaddr_to_str
-#include <n3n/supernode.h>      // for load_allowed_sn_community
 #include <sn_selection.h> // for sn_selection_criterion_str
 #include <stdbool.h>
 #include <stddef.h>
@@ -940,7 +939,7 @@ static void jsonrpc_reload_communities (char *id, struct n3n_runtime_data *eee, 
         return;
     }
 
-    int ok = load_allowed_sn_community(eee);
+    int ok = eee->ops->reload_communities ? eee->ops->reload_communities(eee) : -1;
 
     jsonrpc_result_head(id, conn);
     sb_reprintf(&conn->request, "%i", ok);

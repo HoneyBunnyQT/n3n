@@ -716,8 +716,32 @@ struct n3n_rt_relay {
     time_t last_sn_reg;       /* Time when last REGISTER_SUPER was received. */
 };
 
+/* What the parts all roles share - the mainloop, the local link, the
+* management API - call of the role of a runtime.  The edge's are set by
+* edge_init(), the supernode's by sn_init_conf_defaults(); a build without
+* the relay role (./configure --disable-relay) has no supernode's. */
+struct n3n_pktbuf;
+struct n3n_role_ops {
+    // a PDU waits on a UDP socket: 1 if one was taken, 0 if not
+    int (*read_udp)(struct n3n_runtime_data *rt, SOCKET sock,
+                    struct n3n_pktbuf *pktbuf, time_t now);
+    // a PDU came in on a TCP connection; buf NULL: the connection is gone
+    void (*read_tcp)(struct n3n_runtime_data *rt, SOCKET sock,
+                     uint8_t *buf, ssize_t size, time_t now);
+    // the relay: a TCP connection was accepted
+    void (*accepted_tcp)(struct n3n_runtime_data *rt, SOCKET sock,
+                         const struct sockaddr *addr, socklen_t addr_len);
+    // the relay: a PDU from its own edge over the local link
+    void (*local_pdu)(struct n3n_runtime_data *rt,
+                      const struct sockaddr *sender, socklen_t sender_len,
+                      uint8_t *buf, size_t size, time_t now);
+    // the relay: read the community file again
+    int (*reload_communities)(struct n3n_runtime_data *rt);
+};
+
 struct n3n_runtime_data {
     n2n_edge_conf_t conf;
+    const struct n3n_role_ops *ops;     /* of its role, see above */
 
     struct edge_threads *threads;       /* NULL unless PACKETs are handled by several threads, see edge_threads.h */
 

@@ -269,12 +269,17 @@ ssize_t sn_sendto_peer (struct n3n_runtime_data *sss,
 }
 
 
+// the role of the runtimes made here, see further down
+static const struct n3n_role_ops sn_role_ops;
+
+
 /** Initialise the supernode structure */
 void sn_init_conf_defaults (struct n3n_runtime_data *sss, char *sessionname) {
     // TODO: this should accept a conf parameter, not a sss
     n2n_edge_conf_t *conf = &sss->conf;
 
     memset(sss, 0, sizeof(struct n3n_runtime_data));
+    sss->ops = &sn_role_ops;
 
     // Record the session name we used
     if(sessionname) {
@@ -948,6 +953,15 @@ void sn_accepted_proto3_tcp (struct n3n_runtime_data *sss,
     traceEvent(TRACE_INFO, "accepted incoming TCP connection from [%s]",
                sockaddr_to_str(sockbuf, sizeof(sockbuf), addr));
 }
+
+
+static const struct n3n_role_ops sn_role_ops = {
+    .read_udp = sn_read_proto3_udp,
+    .read_tcp = sn_read_proto3_tcp,
+    .accepted_tcp = sn_accepted_proto3_tcp,
+    .local_pdu = sn_process_local_pdu,
+    .reload_communities = load_allowed_sn_community,
+};
 
 
 static const struct edge_thread_ops sn_thread_ops = {

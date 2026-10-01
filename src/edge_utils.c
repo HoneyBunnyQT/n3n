@@ -522,6 +522,10 @@ void close_sockets (struct n3n_runtime_data *eee) {
  *
  *    This also initialises the NULL transform operation opstruct.
  */
+// the role of the runtimes made here, see further down
+static const struct n3n_role_ops edge_role_ops;
+
+
 struct n3n_runtime_data* edge_init (const n2n_edge_conf_t *conf, int *rv) {
 
     n2n_transform_t transop_id = conf->community.transop_id;
@@ -535,6 +539,7 @@ struct n3n_runtime_data* edge_init (const n2n_edge_conf_t *conf, int *rv) {
     }
 
     memcpy(&eee->conf, conf, sizeof(*conf));
+    eee->ops = &edge_role_ops;
 
 #ifdef _WIN32
     // TODO: more investigations in interface naming/renaming on windows
@@ -902,6 +907,11 @@ int peer_seen_fast (struct n3n_runtime_data *eee,
 /* ************************************** */
 
 // what the workers of an edge do
+static const struct n3n_role_ops edge_role_ops = {
+    .read_udp = edge_read_proto3_udp,
+    .read_tcp = edge_read_proto3_tcp,
+};
+
 static const struct edge_thread_ops edge_thread_ops = {
     .read_udp = edge_read_proto3_udp,
     .process_pdu = process_pdu_control,

@@ -12,7 +12,6 @@
 #include "edge_utils.h"         // for edge_process_pdu
 #include "local_link.h"
 #include "n2n_define.h"         // for N2N_PKT_BUF_SIZE
-#include "sn_utils.h"           // for sn_process_local_pdu
 
 #ifdef _WIN32
 #include "win32/defs.h"
@@ -131,7 +130,7 @@ void local_link_drain (time_t now) {
         if(pdu.to_edge) {
             edge_process_pdu(link_edge, (struct sockaddr *)&sa, LOCAL_LINK_FD, pdu.buf, pdu.size, now);
         } else {
-            sn_process_local_pdu(link_relay, (struct sockaddr *)&sa, sizeof(sa), pdu.buf, pdu.size, now);
+            link_relay->ops->local_pdu(link_relay, (struct sockaddr *)&sa, sizeof(sa), pdu.buf, pdu.size, now);
         }
     }
 }
