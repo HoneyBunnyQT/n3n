@@ -210,6 +210,25 @@ SCENARIOS = [
              conf={"connection": {"supernode_selection": "mac"}}),
         Site(on_supernode="sn2"),
         "relayed", failover="a"),
+    Scenario(
+        "tcp-fallback",
+        "an edge on a network without UDP reaches its supernode over TCP",
+        Site(["easy-kept"], block_udp=True, expect_nat="unknown"),
+        Site([]),
+        "relayed", tags=["quick"]),
+    Scenario(
+        "tcp-fallback-back",
+        "as tcp-fallback, then UDP gets through again: back to UDP, and "
+        "direct",
+        Site(["easy-kept"], block_udp=True),
+        Site([]),
+        "direct", unblock_udp=True),
+    Scenario(
+        "tcp-fallback-userpw",
+        "as tcp-fallback-back, with user/password authentication",
+        Site(["easy-kept"], block_udp=True),
+        Site([]),
+        "direct", unblock_udp=True, auth="userpw"),
 ]
 
 BY_NAME = {s.name: s for s in SCENARIOS}

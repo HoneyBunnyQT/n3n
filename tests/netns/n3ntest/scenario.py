@@ -62,14 +62,30 @@ TRAFFIC_PY = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                           "traffic.py")
 
 
+# What an airport's network lets out: no UDP but DNS (the overlay, on
+# n3n0, is not the airport's)
+AIRPORT = """table inet airport {
+    chain output {
+        type filter hook output priority 0; policy accept;
+        oifname != "eth0" accept
+        udp dport 53 accept
+        meta l4proto udp drop
+    }
+}
+"""
+
+
 class Site:
     """An edge, and the NAT routers in front of it, outermost first.  Or,
     with on_supernode, the TAP device of that supernode (supernode.tap):
-    no edge daemon, no NAT."""
+    no edge daemon, no NAT.  With block_udp, the edge cannot send UDP, as
+    on some airport networks (see connection.tcp_fallback)."""
 
     def __init__(self, nat=(), lan=None, supernodes=("sn1", "sn2"),
-                 conf=None, expect_nat=None, on_supernode=None):
+                 conf=None, expect_nat=None, on_supernode=None,
+                 block_udp=False):
         self.on_supernode = on_supernode
+        self.block_udp = block_udp
         self.nat = list(nat)
         self.lan = lan                  # subnet of the innermost LAN
         self.supernodes = list(supernodes)
@@ -82,7 +98,8 @@ class Site:
 class Scenario:
     def __init__(self, name, desc, a, b, expect, traffic="both",
                  tags=(), conf=None, connect_timeout=None, failover=None,
-                 sn_conf=None, auth=None, community_conf=False):
+                 sn_conf=None, auth=None, community_conf=False,
+                 unblock_udp=False):
         self.name = name
         self.desc = desc
         self.sites = {"a": a, "b": b}
@@ -103,6 +120,9 @@ class Scenario:
         # After the warm-up, kill (SIGKILL) the supernode this site's edge
         # is registered at, and measure once the edges moved to the other
         self.failover = failover
+        # Once the edges of block_udp sites are on TCP, let UDP through
+        # again and wait for them to go back to it
+        self.unblock_udp = unblock_udp
 
     def directions(self):
         return {
@@ -272,6 +292,8 @@ class Run:
         # The TAP device comes up without IPv6, so no neighbour discovery
         # or MLD frames get counted alongside the test frames
         lab.sysctl(ns, "net.ipv6.conf.default.disable_ipv6", 1, optional=True)
+        if site.block_udp:
+            lab.nft(ns, AIRPORT, sname + "-airport")
 
         self.edges[sname] = {
             "ns": ns,
@@ -441,7 +463,17 @@ class Run:
             if "daemon" not in e:
                 continue
             d = e["daemon"]
-            if not wait_for(lambda: d.registered() or not d.proc.alive(), 20) \
+            # without UDP, over TCP once the edge fell back to it
+            tcp = self.sc.sites[sname].block_udp
+
+            def ready():
+                if not d.proc.alive():
+                    return True
+                if tcp and (d.mgmt.try_call("get_info") or {}) \
+                        .get("transport") != "tcp":
+                    return False
+                return d.registered()
+            if not wait_for(ready, 20 + (20 if tcp else 0)) \
                     or not d.proc.alive():
                 raise LabError("edge {} did not register at a supernode\n{}"
                                .format(sname, d.proc.log_tail()))
@@ -581,6 +613,45 @@ class Run:
                        "went direct after {}s".format(went_direct))
         for p in warm:
             p.stop()
+
+    def transports(self):
+        """{site: transport} of the edges"""
+        return {s: (e["daemon"].mgmt.try_call("get_info") or {})
+                .get("transport") for s, e in self.edges.items()
+                if "daemon" in e}
+
+    def check_transport(self):
+        """The edges of block_udp sites on TCP, and with unblock_udp back
+        on UDP once it gets through"""
+        blocked = [s for s, site in self.sc.sites.items() if site.block_udp]
+        if not blocked:
+            return
+        now = self.transports()
+        self.result["transport"] = now
+        ok = all(now.get(s) == "tcp" for s in blocked)
+        self.check("transport", ok, ", ".join(
+            "{} {}".format(s, now.get(s)) for s in sorted(now)))
+        if not ok or not self.sc.unblock_udp:
+            return
+        for s in blocked:
+            run(["nft", "delete", "table", "inet", "airport"],
+                ns=self.edges[s]["ns"])
+        t = time.monotonic()
+
+        def back():
+            if not self.check_alive_quiet():
+                return "dead"
+            now = self.transports()
+            return "ok" if all(now.get(s) == "udp" for s in blocked) \
+                else None
+        # a probe every three register intervals
+        ok = wait_for(back, 10 + 4 * self.st.register_interval,
+                      interval=0.5) == "ok"
+        took = round(time.monotonic() - t, 1)
+        now = self.transports()
+        self.result["transport_back"] = {"seconds": took, "transport": now}
+        self.check("transport:back", ok, "{} after {}s".format(", ".join(
+            "{} {}".format(s, now.get(s)) for s in sorted(now)), took))
 
     def check_alive_quiet(self):
         return all(d.proc.alive() for _, d in self.daemons())
@@ -764,6 +835,7 @@ class Run:
             self.build()
             self.start_supernodes()
             self.start_edges()
+            self.check_transport()
             self.start_receivers()
             self.wait_nat_classes(timeout=45)
             if self.check_alive("nat classification"):
