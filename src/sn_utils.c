@@ -1924,6 +1924,14 @@ static bool relay_here (struct n3n_runtime_data *sss,
 }
 
 
+// Whether a REGISTER_SUPER and its _ACK and _NAK carry a hash after their
+// fields: with user/password authentication and header encryption
+static bool community_appends_hash (const struct sn_community *comm) {
+
+    return comm->allowed_users && (comm->header_encryption == HEADER_ENCRYPTION_ENABLED);
+}
+
+
 static int process_pdu_body (struct n3n_runtime_data * sss,
                              const struct sockaddr *sender_sock, socklen_t sock_size,
                              const SOCKET socket_fd,
@@ -2040,7 +2048,11 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
             if(SHARED_LOAD(sss->last_sn_fwd) != now) {
                 SHARED_STORE(sss->last_sn_fwd, now);
             }
-            decode_PACKET(&pkt, &cmn, udp_buf, &rem, &idx);
+            // whatever follows the header is the payload
+            if(decode_PACKET(&pkt, &cmn, udp_buf, &rem, &idx) < 0) {
+                traceEvent(TRACE_INFO, "PACKET section too short");
+                return -1;
+            }
 
             // already checked for valid comm
             if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
@@ -2129,7 +2141,14 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
             }
 
             sss->last_sn_fwd = now;
-            decode_REGISTER(&reg, &cmn, udp_buf, &rem, &idx);
+            if(decode_REGISTER(&reg, &cmn, udp_buf, &rem, &idx) < 0) {
+                traceEvent(TRACE_INFO, "REGISTER section too short");
+                return -1;
+            }
+            if(rem != 0) {
+                traceEvent(TRACE_INFO, "REGISTER section too long");
+                return -1;
+            }
 
             // already checked for valid comm
             if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
@@ -2221,7 +2240,11 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
             /* Edge/supernode requesting registration with us.    */
             sss->last_sn_reg=now;
             STATS_INC(sss, sn_reg);
-            decode_REGISTER_SUPER(&reg, &cmn, udp_buf, &rem, &idx);
+            if(decode_REGISTER_SUPER(&reg, &cmn, udp_buf, &rem, &idx) < 0) {
+                traceEvent(TRACE_INFO, "REGISTER_SUPER section too short");
+                return -1;
+            }
+            // the length of the rest is checked once the community is known
 
             if(comm) {
                 if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
@@ -2287,6 +2310,13 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
             if(!comm) {
                 traceEvent(TRACE_INFO, "discarded registration with unallowed community '%s'",
                            (char*)cmn.community);
+                return -1;
+            }
+
+            // with user/password and header encryption, a hash follows,
+            // which the decoder leaves unread
+            if(rem != (community_appends_hash(comm) ? N2N_REG_SUP_HASH_CHECK_LEN : 0)) {
+                traceEvent(TRACE_INFO, "REGISTER_SUPER section of wrong size");
                 return -1;
             }
 
@@ -2518,7 +2548,14 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
                 return -1;
             }
 
-            decode_UNREGISTER_SUPER(&unreg, &cmn, udp_buf, &rem, &idx);
+            if(decode_UNREGISTER_SUPER(&unreg, &cmn, udp_buf, &rem, &idx) < 0) {
+                traceEvent(TRACE_INFO, "UNREGISTER_SUPER section too short");
+                return -1;
+            }
+            if(rem != 0) {
+                traceEvent(TRACE_INFO, "UNREGISTER_SUPER section too long");
+                return -1;
+            }
 
             if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
                 if(!find_peer_time_stamp_and_verify(
@@ -2566,7 +2603,16 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
                 return -1;
             }
 
-            decode_REGISTER_SUPER_ACK(&ack, &cmn, udp_buf, &rem, &idx, dec_tmpbuf);
+            if(decode_REGISTER_SUPER_ACK(&ack, &cmn, udp_buf, &rem, &idx, dec_tmpbuf) < 0) {
+                traceEvent(TRACE_INFO, "REGISTER_SUPER_ACK section too short");
+                return -1;
+            }
+            // with user/password and header encryption, a hash follows,
+            // which the decoder leaves unread
+            if(rem != (community_appends_hash(comm) ? N2N_REG_SUP_HASH_CHECK_LEN : 0)) {
+                traceEvent(TRACE_INFO, "REGISTER_SUPER_ACK section of wrong size");
+                return -1;
+            }
             orig_sender = &(ack.sock);
 
             if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
@@ -2661,7 +2707,16 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
                 return -1;
             }
 
-            decode_REGISTER_SUPER_NAK(&nak, &cmn, udp_buf, &rem, &idx);
+            if(decode_REGISTER_SUPER_NAK(&nak, &cmn, udp_buf, &rem, &idx) < 0) {
+                traceEvent(TRACE_INFO, "REGISTER_SUPER_NAK section too short");
+                return -1;
+            }
+            // with user/password and header encryption, a hash follows,
+            // which the decoder leaves unread
+            if(rem != (community_appends_hash(comm) ? N2N_REG_SUP_HASH_CHECK_LEN : 0)) {
+                traceEvent(TRACE_INFO, "REGISTER_SUPER_NAK section of wrong size");
+                return -1;
+            }
 
             if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
                 if(!find_peer_time_stamp_and_verify(
@@ -2745,7 +2800,14 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
                 return -1;
             }
 
-            decode_QUERY_PEER( &query, &cmn, udp_buf, &rem, &idx );
+            if(decode_QUERY_PEER(&query, &cmn, udp_buf, &rem, &idx) < 0) {
+                traceEvent(TRACE_INFO, "QUERY_PEER section too short");
+                return -1;
+            }
+            if(rem != 0) {
+                traceEvent(TRACE_INFO, "QUERY_PEER section too long");
+                return -1;
+            }
 
             // to answer a PING, it is sufficient if the provided communtiy would be a valid one, there does not
             // neccessarily need to be a comm entry present, e.g. because there locally are no edges of the
@@ -2884,7 +2946,14 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
                 return -1;
             }
 
-            decode_PEER_INFO(&pi, &cmn, udp_buf, &rem, &idx);
+            if(decode_PEER_INFO(&pi, &cmn, udp_buf, &rem, &idx) < 0) {
+                traceEvent(TRACE_INFO, "PEER_INFO section too short");
+                return -1;
+            }
+            if(rem != 0) {
+                traceEvent(TRACE_INFO, "PEER_INFO section too long");
+                return -1;
+            }
 
             if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
                 if(!find_peer_time_stamp_and_verify(
