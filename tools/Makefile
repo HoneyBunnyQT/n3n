@@ -18,6 +18,7 @@ TESTS+=tests-elliptic
 TESTS+=tests-transform
 TESTS+=tests-wire
 TESTS+=tests-auth
+TESTS+=tests-peers
 
 .PHONY: all clean install
 all: $(TOOLS) $(TESTS)
