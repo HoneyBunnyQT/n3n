@@ -151,7 +151,7 @@ static int decode_uint64 (uint64_t * out,
         return 0;
     }
 
-    *out  = be64toh(*(uint64_t*)base + *idx);
+    *out  = be64toh(*(uint64_t*)(base + *idx));
     *idx += 8;
     *rem -= 8;
 
