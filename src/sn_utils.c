@@ -146,7 +146,7 @@ static void forget_tcp_connection (struct n3n_runtime_data *sss, n2n_tcp_connect
     struct peer_info *edge, *tmp_edge;
 
     // find peer by file descriptor
-    HASH_ITER(hh, sss->communities, comm, tmp_comm) {
+    HASH_ITER(hh, sss->relay.communities, comm, tmp_comm) {
         HASH_ITER(hh, comm->edges, edge, tmp_edge) {
             if(edge->socket_fd == conn->socket_fd) {
                 // remove peer
@@ -158,7 +158,7 @@ static void forget_tcp_connection (struct n3n_runtime_data *sss, n2n_tcp_connect
     }
 
 forget_conn:
-    HASH_DEL(sss->tcp_connections, conn);
+    HASH_DEL(sss->relay.tcp_connections, conn);
     free(conn);
 }
 
@@ -183,7 +183,7 @@ static void remove_edge (struct n3n_runtime_data *sss, struct sn_community *comm
     n2n_tcp_connection_t *conn = NULL;
 
     if(edge->socket_fd >= 0) {
-        HASH_FIND_INT(sss->tcp_connections, &(edge->socket_fd), conn);
+        HASH_FIND_INT(sss->relay.tcp_connections, &(edge->socket_fd), conn);
     }
     if(conn) {
         close_tcp_connection(sss, conn);
@@ -207,14 +207,14 @@ void calculate_shared_secrets (struct n3n_runtime_data *sss) {
 
     traceEvent(TRACE_INFO, "started shared secrets calculation for edge authentication");
 
-    generate_private_key(sss->private_key, sss->federation->community + 1); /* skip '*' federation leading character */
-    HASH_ITER(hh, sss->communities, comm, tmp_comm) {
+    generate_private_key(sss->relay.private_key, sss->relay.federation->community + 1); /* skip '*' federation leading character */
+    HASH_ITER(hh, sss->relay.communities, comm, tmp_comm) {
         if(comm->is_federation) {
             continue;
         }
         HASH_ITER(hh, comm->allowed_users, user, tmp_user) {
             // calculate common shared secret (ECDH)
-            generate_shared_secret(user->shared_secret, sss->private_key, user->public_key);
+            generate_shared_secret(user->shared_secret, sss->relay.private_key, user->public_key);
             // prepare for use as key
             speck_init((speck_context_t**)&user->shared_secret_ctx, user->shared_secret, 128);
         }
@@ -230,7 +230,7 @@ void calculate_dynamic_keys (struct n3n_runtime_data *sss) {
     struct sn_community *comm, *tmp_comm = NULL;
 
     traceEvent(TRACE_INFO, "calculating dynamic keys");
-    HASH_ITER(hh, sss->communities, comm, tmp_comm) {
+    HASH_ITER(hh, sss->relay.communities, comm, tmp_comm) {
         // skip federation
         if(comm->is_federation) {
             continue;
@@ -239,9 +239,9 @@ void calculate_dynamic_keys (struct n3n_runtime_data *sss) {
         // calculate dynamic keys if this is a user/pw auth'ed community
         if(comm->allowed_users) {
             calculate_dynamic_key(comm->dynamic_key,           /* destination */
-                                  sss->dynamic_key_time,       /* time - same for all */
+                                  sss->relay.dynamic_key_time,       /* time - same for all */
                                   comm->community,  /* community name */
-                                  sss->federation->community); /* federation name */
+                                  sss->relay.federation->community); /* federation name */
             packet_header_change_dynamic_key(comm->dynamic_key,
                                              &(comm->header_encryption_ctx_dynamic),
                                              &(comm->header_iv_ctx_dynamic));
@@ -261,7 +261,7 @@ void send_re_register_super (struct n3n_runtime_data *sss) {
     size_t encx = 0;
     n3n_sock_str_t sockbuf;
 
-    HASH_ITER(hh, sss->communities, comm, tmp_comm) {
+    HASH_ITER(hh, sss->relay.communities, comm, tmp_comm) {
         if(comm->is_federation) {
             continue;
         }
@@ -335,7 +335,7 @@ int load_allowed_sn_community (struct n3n_runtime_data *sss) {
     send_re_register_super(sss);
 
     // remove communities (not: federation)
-    HASH_ITER(hh, sss->communities, comm, tmp_comm) {
+    HASH_ITER(hh, sss->relay.communities, comm, tmp_comm) {
         if(comm->is_federation) {
             continue;
         }
@@ -361,7 +361,7 @@ int load_allowed_sn_community (struct n3n_runtime_data *sss) {
         }
 
         // remove community
-        HASH_DEL(sss->communities, comm);
+        HASH_DEL(sss->relay.communities, comm);
         // remove header encryption keys
         free(comm->header_encryption_ctx_static);
         free(comm->header_iv_ctx_static);
@@ -371,8 +371,8 @@ int load_allowed_sn_community (struct n3n_runtime_data *sss) {
     }
 
     // remove all regular expressions for allowed communities
-    HASH_ITER(hh, sss->rules, re, tmp_re) {
-        HASH_DEL(sss->rules, re);
+    HASH_ITER(hh, sss->relay.rules, re, tmp_re) {
+        HASH_DEL(sss->relay.rules, re);
         free(re);
     }
 
@@ -380,9 +380,9 @@ int load_allowed_sn_community (struct n3n_runtime_data *sss) {
 
     // new key_time for all communities, requires dynamic keys to be recalculated (see further below),
     // and  edges to re-register (see above) and ...
-    sss->dynamic_key_time = time(NULL);
+    sss->relay.dynamic_key_time = time(NULL);
     // ... federated supernodes to re-register
-    re_register_and_purge_supernodes(sss, sss->federation, &any_time, any_time, 1 /* forced */);
+    re_register_and_purge_supernodes(sss, sss->relay.federation, &any_time, any_time, 1 /* forced */);
 
     // format definition for possible user-key entries
     sprintf(
@@ -454,7 +454,7 @@ int load_allowed_sn_community (struct n3n_runtime_data *sss) {
             re = (struct sn_community_regular_expression*)calloc(1, sizeof(struct sn_community_regular_expression));
             if(re) {
                 re->rule = re_compile(cmn_str);
-                HASH_ADD_PTR(sss->rules, rule, re);
+                HASH_ADD_PTR(sss->relay.rules, rule, re);
                 num_regex++;
                 traceEvent(TRACE_INFO, "added regular expression for allowed communities '%s'", cmn_str);
                 free(cmn_str);
@@ -477,7 +477,7 @@ int load_allowed_sn_community (struct n3n_runtime_data *sss) {
                                     &(comm->header_encryption_ctx_dynamic),
                                     &(comm->header_iv_ctx_static),
                                     &(comm->header_iv_ctx_dynamic));
-            HASH_ADD_STR(sss->communities, community, comm);
+            HASH_ADD_STR(sss->relay.communities, community, comm);
             last_added_comm = comm;
 
             num_communities++;
@@ -540,7 +540,7 @@ int load_allowed_sn_community (struct n3n_runtime_data *sss) {
     calculate_dynamic_keys(sss);
 
     // no new communities will be allowed
-    sss->lock_communities = true;
+    sss->relay.lock_communities = true;
 
     return 0;
 }
@@ -708,7 +708,7 @@ static void try_broadcast (struct n3n_runtime_data * sss,
     if(!from_supernode) {
         // If the broadcast is not from a supernode, send it to all supernodes
 
-        HASH_ITER(hh, sss->federation->edges, scan, tmp) {
+        HASH_ITER(hh, sss->relay.federation->edges, scan, tmp) {
             int data_sent_len;
 
             // only forward to active supernodes
@@ -949,8 +949,8 @@ void sn_init_conf_defaults (struct n3n_runtime_data *sss, char *sessionname) {
     conf->sn_max_auto_ip_net.net_addr = inet_addr(N2N_SN_MAX_AUTO_IP_NET_DEFAULT);
     conf->sn_max_auto_ip_net.net_bitlen = N2N_SN_AUTO_IP_NET_BIT_DEFAULT;
 
-    sss->federation = (struct sn_community *)calloc(1, sizeof(struct sn_community));
-    if(!sss->federation) {
+    sss->relay.federation = (struct sn_community *)calloc(1, sizeof(struct sn_community));
+    if(!sss->relay.federation) {
         abort();
     }
 
@@ -958,11 +958,11 @@ void sn_init_conf_defaults (struct n3n_runtime_data *sss, char *sessionname) {
     // Note that this is not really conf, so it probably should move
     //
     /* enable the flag for federation */
-    sss->federation->is_federation = true;
-    sss->federation->purgeable = false;
+    sss->relay.federation->is_federation = true;
+    sss->relay.federation->purgeable = false;
     /* header encryption enabled by default */
-    sss->federation->header_encryption = HEADER_ENCRYPTION_ENABLED;
-    sss->federation->edges = NULL;
+    sss->relay.federation->header_encryption = HEADER_ENCRYPTION_ENABLED;
+    sss->relay.federation->edges = NULL;
 }
 
 
@@ -977,12 +977,12 @@ void sn_init (struct n3n_runtime_data *sss) {
     resolve_log_hostnames(RESOLVE_LIST_PEER);
 
     // TODO:
-    // - is sss->supernodes even used in supernode?
-    // - should sss->federation->edges be used instead?
+    // - is sss->client.supernodes even used in supernode?
+    // - should sss->relay.federation->edges be used instead?
     // - which works better in a merged edge/supernode environment?
     if(resolve_hostnames_str_to_peer_info(
            RESOLVE_LIST_SUPERNODE,
-           &sss->supernodes)) {
+           &sss->client.supernodes)) {
         traceEvent(
             TRACE_ERROR,
             "resolve_hostnames_str_to_peer_info returned errors"
@@ -990,7 +990,7 @@ void sn_init (struct n3n_runtime_data *sss) {
     }
 
     // TODO: thread should probably be created before the above resolve!
-    if(resolve_create_thread(&(sss->resolve_parameter), sss->federation->edges) == 0) {
+    if(resolve_create_thread(&(sss->resolve_parameter), sss->relay.federation->edges) == 0) {
         traceEvent(TRACE_INFO, "successfully created resolver thread");
     }
 }
@@ -1022,20 +1022,20 @@ void sn_term (struct n3n_runtime_data *sss) {
     }
     sss->sock = -1;
 
-    HASH_ITER(hh, sss->tcp_connections, conn, tmp_conn) {
+    HASH_ITER(hh, sss->relay.tcp_connections, conn, tmp_conn) {
         shutdown(conn->socket_fd, SHUT_RDWR);
         mainloop_close_fd(conn->socket_fd);
-        HASH_DEL(sss->tcp_connections, conn);
+        HASH_DEL(sss->relay.tcp_connections, conn);
         free(conn);
     }
 
-    if(sss->tcp_sock >= 0) {
-        shutdown(sss->tcp_sock, SHUT_RDWR);
-        closesocket(sss->tcp_sock);
+    if(sss->relay.tcp_sock >= 0) {
+        shutdown(sss->relay.tcp_sock, SHUT_RDWR);
+        closesocket(sss->relay.tcp_sock);
     }
-    sss->tcp_sock = -1;
+    sss->relay.tcp_sock = -1;
 
-    HASH_ITER(hh, sss->communities, community, tmp) {
+    HASH_ITER(hh, sss->relay.communities, community, tmp) {
         clear_peer_list(&community->edges);
         free(community->header_encryption_ctx_static);
         free(community->header_encryption_ctx_dynamic);
@@ -1056,12 +1056,12 @@ void sn_term (struct n3n_runtime_data *sss) {
             free(user);
         }
 
-        HASH_DEL(sss->communities, community);
+        HASH_DEL(sss->relay.communities, community);
         free(community);
     }
 
-    HASH_ITER(hh, sss->rules, re, tmp_re) {
-        HASH_DEL(sss->rules, re);
+    HASH_ITER(hh, sss->relay.rules, re, tmp_re) {
+        HASH_DEL(sss->relay.rules, re);
         if(NULL != re->rule) {
             free(re->rule);
         }
@@ -1493,7 +1493,7 @@ int subnet_available (struct n3n_runtime_data *sss,
     struct sn_community *cmn, *tmpCmn;
     int success = 1;
 
-    HASH_ITER(hh, sss->communities, cmn, tmpCmn) {
+    HASH_ITER(hh, sss->relay.communities, cmn, tmpCmn) {
         if(cmn == comm) {
             continue;
         }
@@ -1586,7 +1586,7 @@ static int re_register_and_purge_supernodes (struct n3n_runtime_data *sss, struc
 
         // purge long-time-not-seen supernodes
         if(comm) {
-            purge_expired_nodes(&(comm->edges), sss->sock, &sss->tcp_connections, p_last_re_reg_and_purge,
+            purge_expired_nodes(&(comm->edges), sss->sock, &sss->relay.tcp_connections, p_last_re_reg_and_purge,
                                 RE_REG_AND_PURGE_FREQUENCY, LAST_SEEN_SN_INACTIVE);
         }
     }
@@ -1622,7 +1622,7 @@ static int re_register_and_purge_supernodes (struct n3n_runtime_data *sss, struc
             reg.dev_addr.net_bitlen = mask2bitlen(ntohl(peer->dev_addr.net_bitlen));
             get_local_auth(sss, &(reg.auth));
 
-            reg.key_time = sss->dynamic_key_time;
+            reg.key_time = sss->relay.dynamic_key_time;
 
             memcpy(reg.edgeMac, sss->conf.sn_mac_addr, sizeof(n2n_mac_t));
 
@@ -1659,13 +1659,13 @@ static int purge_expired_communities (struct n3n_runtime_data *sss,
 
     traceEvent(TRACE_DEBUG, "purging old communities and edges");
 
-    HASH_ITER(hh, sss->communities, comm, tmp_comm) {
+    HASH_ITER(hh, sss->relay.communities, comm, tmp_comm) {
         // federation is taken care of in re_register_and_purge_supernodes()
         if(comm->is_federation)
             continue;
 
         // purge the community's local peers
-        num_reg += purge_peer_list(&comm->edges, sss->sock, &sss->tcp_connections, now - REGISTRATION_TIMEOUT);
+        num_reg += purge_peer_list(&comm->edges, sss->sock, &sss->relay.tcp_connections, now - REGISTRATION_TIMEOUT);
 
         // purge the community's associated peers (connected to other supernodes)
         HASH_ITER(hh, comm->assoc, assoc, tmp_assoc) {
@@ -1690,7 +1690,7 @@ static int purge_expired_communities (struct n3n_runtime_data *sss,
                 HASH_DEL(comm->assoc, assoc);
                 free(assoc);
             }
-            HASH_DEL(sss->communities, comm);
+            HASH_DEL(sss->relay.communities, comm);
             free(comm);
         }
     }
@@ -1736,11 +1736,11 @@ static int sort_communities (struct n3n_runtime_data *sss,
 
     // this routine gets periodically called as defined in SORT_COMMUNITIES_INTERVAL
     // it sorts the communities in descending order of their number_enc_packets-fields...
-    HASH_SORT(sss->communities, number_enc_packets_sort);
+    HASH_SORT(sss->relay.communities, number_enc_packets_sort);
 
     // ... and afterward resets the number_enc__packets-fields to zero
     // (other models could reset it to half of their value to respect history)
-    HASH_ITER(hh, sss->communities, comm, tmp) {
+    HASH_ITER(hh, sss->relay.communities, comm, tmp) {
         memset(comm->number_enc_packets, 0, sizeof(comm->number_enc_packets));
     }
 
@@ -1797,7 +1797,7 @@ static int pdu_head_find (struct n3n_runtime_data *sss,
         /* most probably unencrypted */
         /* make sure, no downgrading happens here and no unencrypted packets can be
          * injected in a community which definitely deals with encrypted headers */
-        HASH_FIND_COMMUNITY(sss->communities, (char *)&udp_buf[04], comm);
+        HASH_FIND_COMMUNITY(sss->relay.communities, (char *)&udp_buf[04], comm);
         if(comm) {
             if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
                 traceEvent(TRACE_DEBUG, "dropped a packet with unencrypted header "
@@ -1809,7 +1809,7 @@ static int pdu_head_find (struct n3n_runtime_data *sss,
     } else {
         /* most probably encrypted */
         /* cycle through the known communities (as keys) to eventually decrypt */
-        HASH_ITER(hh, sss->communities, comm, tmp) {
+        HASH_ITER(hh, sss->relay.communities, comm, tmp) {
             /* skip the definitely unencrypted communities */
             if(comm->header_encryption == HEADER_ENCRYPTION_NONE) {
                 continue;
@@ -2005,7 +2005,7 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
     from_supernode = cmn.flags & N2N_FLAGS_FROM_SUPERNODE;
     if(from_supernode) {
         skip_add = SN_ADD_SKIP;
-        sn = add_sn_to_list_by_mac_or_sock(&(sss->federation->edges), &sender, null_mac, &skip_add);
+        sn = add_sn_to_list_by_mac_or_sock(&(sss->relay.federation->edges), &sender, null_mac, &skip_add);
         // only REGISTER_SUPER allowed from unknown supernodes
         if((!sn) && (msg_type != MSG_TYPE_REGISTER_SUPER)) {
             traceEvent(TRACE_DEBUG, "dropped incoming data from unknown supernode");
@@ -2045,8 +2045,8 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
             }
 
             // every packet thread stores this, so only if it changed
-            if(SHARED_LOAD(sss->last_sn_fwd) != now) {
-                SHARED_STORE(sss->last_sn_fwd, now);
+            if(SHARED_LOAD(sss->relay.last_sn_fwd) != now) {
+                SHARED_STORE(sss->relay.last_sn_fwd, now);
             }
             // whatever follows the header is the payload
             if(decode_PACKET(&pkt, &cmn, udp_buf, &rem, &idx) < 0) {
@@ -2140,7 +2140,7 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
                 return -1;
             }
 
-            sss->last_sn_fwd = now;
+            sss->relay.last_sn_fwd = now;
             if(decode_REGISTER(&reg, &cmn, udp_buf, &rem, &idx) < 0) {
                 traceEvent(TRACE_INFO, "REGISTER section too short");
                 return -1;
@@ -2238,7 +2238,7 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
             memset(&ack, 0, sizeof(n2n_REGISTER_SUPER_ACK_t));
 
             /* Edge/supernode requesting registration with us.    */
-            sss->last_sn_reg=now;
+            sss->relay.last_sn_reg=now;
             STATS_INC(sss, sn_reg);
             if(decode_REGISTER_SUPER(&reg, &cmn, udp_buf, &rem, &idx) < 0) {
                 traceEvent(TRACE_INFO, "REGISTER_SUPER section too short");
@@ -2268,8 +2268,8 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
                 existance (better from the security standpoint)
              */
 
-            if(!comm && sss->lock_communities) {
-                HASH_ITER(hh, sss->rules, re, tmp_re) {
+            if(!comm && sss->relay.lock_communities) {
+                HASH_ITER(hh, sss->relay.rules, re, tmp_re) {
                     allowed_match = re_matchp(re->rule, (const char *)cmn.community, &match_length);
 
                     if((allowed_match != -1)
@@ -2286,7 +2286,7 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
                 }
             }
 
-            if(!comm && (!sss->lock_communities || (match == 1))) {
+            if(!comm && (!sss->relay.lock_communities || (match == 1))) {
                 comm = (struct sn_community*)calloc(1, sizeof(struct sn_community));
 
                 if(comm) {
@@ -2300,7 +2300,7 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
                     /* ... and also are purgeable during periodic purge */
                     comm->purgeable = true;
                     memset(comm->number_enc_packets, 0, sizeof(comm->number_enc_packets));
-                    HASH_ADD_STR(sss->communities, community, comm);
+                    HASH_ADD_STR(sss->relay.communities, community, comm);
 
                     traceEvent(TRACE_INFO, "new community: %s", comm->community);
                     assign_one_ip_subnet(sss, comm);
@@ -2366,7 +2366,7 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
             /* Add sender's data to federation (or update it) */
             if(comm->is_federation) {
                 skip_add = SN_ADD;
-                p = add_sn_to_list_by_mac_or_sock(&(sss->federation->edges), &(ack.sock), reg.edgeMac, &skip_add);
+                p = add_sn_to_list_by_mac_or_sock(&(sss->relay.federation->edges), &(ack.sock), reg.edgeMac, &skip_add);
                 p->last_seen = now;
                 // answered where it came in
                 p->socket_fd = socket_fd;
@@ -2378,12 +2378,12 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
 
             /* Skip random numbers of supernodes before payload assembling, calculating an appropriate random_number.
              * That way, all supernodes have a chance to be propagated with REGISTER_SUPER_ACK. */
-            skip = HASH_COUNT(sss->federation->edges) - (int)(REG_SUPER_ACK_PAYLOAD_ENTRY_SIZE / REG_SUPER_ACK_PAYLOAD_ENTRY_SIZE);
+            skip = HASH_COUNT(sss->relay.federation->edges) - (int)(REG_SUPER_ACK_PAYLOAD_ENTRY_SIZE / REG_SUPER_ACK_PAYLOAD_ENTRY_SIZE);
             skip = (skip < 0) ? 0 : n3n_rand_sqr(skip);
 
             /* Assembling supernode list for REGISTER_SUPER_ACK payload */
             payload = (n2n_REGISTER_SUPER_ACK_payload_t*)payload_buf;
-            HASH_ITER(hh, sss->federation->edges, peer, tmp_peer) {
+            HASH_ITER(hh, sss->relay.federation->edges, peer, tmp_peer) {
                 if(skip) {
                     skip--;
                     continue;
@@ -2479,18 +2479,18 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
                 // dynamic key time handling if appropriate
                 ack.key_time = 0;
                 if(comm->is_federation) {
-                    if(reg.key_time > sss->dynamic_key_time) {
+                    if(reg.key_time > sss->relay.dynamic_key_time) {
                         traceEvent(TRACE_DEBUG, "setting new key time");
                         // have all edges re_register (using old dynamic key)
                         send_re_register_super(sss);
                         // set new key time
-                        sss->dynamic_key_time = reg.key_time;
+                        sss->relay.dynamic_key_time = reg.key_time;
                         // calculate new dynamic keys for all communities
                         calculate_dynamic_keys(sss);
                         // force re-register with all supernodes
-                        re_register_and_purge_supernodes(sss, sss->federation, &any_time, now, 1 /* forced */);
+                        re_register_and_purge_supernodes(sss, sss->relay.federation, &any_time, now, 1 /* forced */);
                     }
-                    ack.key_time = sss->dynamic_key_time;
+                    ack.key_time = sss->relay.dynamic_key_time;
                 }
 
                 // send REGISTER_SUPER_ACK
@@ -2634,7 +2634,7 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
                        sock_to_cstr(sockbuf2, orig_sender));
 
             skip_add = SN_ADD_SKIP;
-            scan = add_sn_to_list_by_mac_or_sock(&(sss->federation->edges), &sender, ack.srcMac, &skip_add);
+            scan = add_sn_to_list_by_mac_or_sock(&(sss->relay.federation->edges), &sender, ack.srcMac, &skip_add);
             if(scan != NULL) {
                 scan->last_seen = now;
             } else {
@@ -2654,7 +2654,7 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
                     rem = sizeof(payload->sock);
                     decode_sock_payload(&payload_sock, payload->sock, &rem, &idx);
 
-                    tmp = add_sn_to_list_by_mac_or_sock(&(sss->federation->edges), &(payload_sock), payload->mac, &skip_add);
+                    tmp = add_sn_to_list_by_mac_or_sock(&(sss->relay.federation->edges), &(payload_sock), payload->mac, &skip_add);
                     // not come in yet: reached from an address fit for its family
                     tmp->socket_fd = -1;
 
@@ -2668,16 +2668,16 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
                     payload++;
                 }
 
-                if(ack.key_time > sss->dynamic_key_time) {
+                if(ack.key_time > sss->relay.dynamic_key_time) {
                     traceEvent(TRACE_DEBUG, "setting new key time");
                     // have all edges re_register (using old dynamic key)
                     send_re_register_super(sss);
                     // set new key time
-                    sss->dynamic_key_time = ack.key_time;
+                    sss->relay.dynamic_key_time = ack.key_time;
                     // calculate new dynamic keys for all communities
                     calculate_dynamic_keys(sss);
                     // force re-register with all supernodes
-                    re_register_and_purge_supernodes(sss, sss->federation, &any_time, now, 1 /* forced */);
+                    re_register_and_purge_supernodes(sss, sss->relay.federation, &any_time, now, 1 /* forced */);
                 }
 
             } else {
@@ -2778,8 +2778,8 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
             uint8_t match = 0;
             int match_length = 0;
 
-            if(!comm && sss->lock_communities) {
-                HASH_ITER(hh, sss->rules, re, tmp_re) {
+            if(!comm && sss->relay.lock_communities) {
+                HASH_ITER(hh, sss->relay.rules, re, tmp_re) {
                     allowed_match = re_matchp(re->rule, (const char *)cmn.community, &match_length);
 
                     if((allowed_match != -1)
@@ -2795,7 +2795,7 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
                 }
             }
 
-            if(!comm && sss->lock_communities && (match == 0)) {
+            if(!comm && sss->relay.lock_communities && (match == 0)) {
                 traceEvent(TRACE_DEBUG, "QUERY_PEER from not allowed community %s", cmn.community);
                 return -1;
             }
@@ -3042,7 +3042,7 @@ static void process_pdu_handed_over (struct n3n_runtime_data *sss,
 
     if(h->community[0]) {
         // the community may have gone meanwhile
-        HASH_FIND_COMMUNITY(sss->communities, h->community, comm);
+        HASH_FIND_COMMUNITY(sss->relay.communities, h->community, comm);
         if(!comm) {
             traceEvent(TRACE_DEBUG, "dropped a PDU for community '%s' which is gone", h->community);
             return;
@@ -3128,7 +3128,7 @@ void sn_read_proto3_tcp (struct n3n_runtime_data *sss,
 
     n2n_tcp_connection_t *conn;
 
-    HASH_FIND_INT(sss->tcp_connections, &sock, conn);
+    HASH_FIND_INT(sss->relay.tcp_connections, &sock, conn);
     if(!conn) {
         // a connection the supernode has forgotten already
         if(pktbuf) {
@@ -3166,7 +3166,7 @@ void sn_accepted_proto3_tcp (struct n3n_runtime_data *sss,
     conn->socket_fd = sock;
     memcpy(&conn->sas, addr, addr_len);
     conn->sock_len = addr_len;
-    HASH_ADD_INT(sss->tcp_connections, socket_fd, conn);
+    HASH_ADD_INT(sss->relay.tcp_connections, socket_fd, conn);
     traceEvent(TRACE_INFO, "accepted incoming TCP connection from [%s]",
                sockaddr_to_str(sockbuf, sizeof(sockbuf), addr));
 }
@@ -3189,7 +3189,7 @@ static void sn_tick (struct n3n_runtime_data *sss, time_t now) {
 
     re_register_and_purge_supernodes(
         sss,
-        sss->federation,
+        sss->relay.federation,
         &last_re_reg_and_purge,
         now,
         0 /* not forced */

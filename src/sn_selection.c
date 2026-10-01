@@ -51,7 +51,7 @@ uint64_t sn_selection_criterion_good () {
 
 /* Return the value of sn_selection_criterion_common_data field. */
 static uint64_t sn_selection_criterion_common_read (struct n3n_runtime_data *eee) {
-    return eee->sn_selection_criterion_common_data;
+    return eee->client.sn_selection_criterion_common_data;
 }
 
 
@@ -75,8 +75,8 @@ int sn_selection_criterion_calculate (struct n3n_runtime_data *eee, peer_info_t 
              * Edges jump from a supernode to another back and forth due to purging.
              * Because this behavior has a cost of switching, the real load is mitigated with a stickyness factor.
              * This factor is dynamically calculated basing on network size and prevent that unnecessary switching */
-            if(peer == eee->curr_sn) {
-                sum = HASH_COUNT(eee->known_peers) + HASH_COUNT(eee->pending_peers);
+            if(peer == eee->client.curr_sn) {
+                sum = HASH_COUNT(eee->client.known_peers) + HASH_COUNT(eee->client.pending_peers);
                 peer->selection_criterion = peer->selection_criterion * sum / (sum + 1);
             }
             break;
@@ -119,28 +119,28 @@ int sn_selection_criterion_common_data_default (struct n3n_runtime_data *eee) {
 
         case SN_SELECTION_STRATEGY_LOAD: {
             // something something Windows, something something Complete
-            if(!eee->pending_peers) {
-                eee->sn_selection_criterion_common_data = 0;
+            if(!eee->client.pending_peers) {
+                eee->client.sn_selection_criterion_common_data = 0;
                 return 0;
             }
 
             uint64_t tmp = 0;
 
-            tmp = HASH_COUNT(eee->pending_peers);
+            tmp = HASH_COUNT(eee->client.pending_peers);
             if(eee->conf.header_encryption == HEADER_ENCRYPTION_ENABLED) {
                 tmp *= 2;
             }
-            eee->sn_selection_criterion_common_data = tmp / HASH_COUNT(eee->supernodes);
+            eee->client.sn_selection_criterion_common_data = tmp / HASH_COUNT(eee->client.supernodes);
             break;
         }
 
         case SN_SELECTION_STRATEGY_RTT: {
-            eee->sn_selection_criterion_common_data = (uint64_t)((uint32_t)time_stamp() >> 22);
+            eee->client.sn_selection_criterion_common_data = (uint64_t)((uint32_t)time_stamp() >> 22);
             break;
         }
 
         case SN_SELECTION_STRATEGY_MAC: {
-            eee->sn_selection_criterion_common_data = 0;
+            eee->client.sn_selection_criterion_common_data = 0;
             break;
         }
 
@@ -191,7 +191,7 @@ uint64_t sn_selection_criterion_gather_data (struct n3n_runtime_data *sss) {
     uint64_t data = 0, tmp = 0;
     struct sn_community *comm, *tmp_comm;
 
-    HASH_ITER(hh, sss->communities, comm, tmp_comm) {
+    HASH_ITER(hh, sss->relay.communities, comm, tmp_comm) {
         // number of nodes in the community + the community itself
         tmp = HASH_COUNT(comm->edges) + 1;
         if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
@@ -245,7 +245,7 @@ extern char * sn_selection_criterion_str (struct n3n_runtime_data *eee, selectio
 
             case SN_SELECTION_STRATEGY_MAC: {
                 chars = snprintf(out, SN_SELECTION_CRITERION_BUF_SIZE, "%s", ((int64_t)peer->selection_criterion > 0 ?
-                                                                              ((peer == eee->curr_sn) ? "active" : "standby") : ""));
+                                                                              ((peer == eee->client.curr_sn) ? "active" : "standby") : ""));
                 break;
             }
 

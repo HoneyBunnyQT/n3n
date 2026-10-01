@@ -889,7 +889,7 @@ int mainloop_runonce (struct n3n_runtime_data *eee) {
     // work by /design/
 
     struct timeval wait_time;
-    if(eee->sn_wait) {
+    if(eee->client.sn_wait) {
         wait_time.tv_sec = (SOCKET_TIMEOUT_INTERVAL_SECS / 10 + 1);
     } else {
         wait_time.tv_sec = (SOCKET_TIMEOUT_INTERVAL_SECS);

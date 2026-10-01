@@ -789,7 +789,7 @@ static int threads_start (struct n3n_runtime_data *eee, int threads,
         t->worker[slot].tap = -1;
 #ifdef __linux__
         if(ops->tap) {
-            t->worker[slot].tap = eee->device.queue_fd[slot];
+            t->worker[slot].tap = eee->tap.device.queue_fd[slot];
         }
 #endif
     }
@@ -832,7 +832,7 @@ int edge_threads_start (struct n3n_runtime_data *eee, int threads,
 
 #ifdef __linux__
     if(ops->tap) {
-        tuntap_close_queues(&eee->device, started);
+        tuntap_close_queues(&eee->tap.device, started);
     }
 #endif
     return started;

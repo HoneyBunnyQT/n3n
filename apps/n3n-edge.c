@@ -1033,13 +1033,13 @@ int main (int argc, char* argv[]) {
         traceEvent(TRACE_DEBUG, "skip PING to supernode: shared secret");
         runlevel = 2;
     }
-    if(HASH_COUNT(eee->supernodes) <= 1) {
+    if(HASH_COUNT(eee->client.supernodes) <= 1) {
         traceEvent(TRACE_DEBUG, "skip PING to supernode: only one supernode");
         runlevel = 2;
     }
 
-    eee->last_sup = 0; /* if it wasn't zero yet */
-    eee->curr_sn = eee->supernodes; // Duplicates action taken by edge_init()
+    eee->client.last_sup = 0; /* if it wasn't zero yet */
+    eee->client.curr_sn = eee->client.supernodes; // Duplicates action taken by edge_init()
     supernode_connect(eee);
     while(runlevel < 5) {
         if(!keep_on_running) {
@@ -1053,7 +1053,7 @@ int main (int argc, char* argv[]) {
 
         if(runlevel == 0) { /* PING to all known supernodes */
             last_action = now;
-            eee->sn_pong = 0;
+            eee->client.sn_pong = 0;
             // (re-)initialize the number of max concurrent pings (decreases by calling send_query_peer)
             eee->conf.number_max_sn_pings = NUMBER_SN_PINGS_INITIAL;
             send_query_peer(eee, null_mac);
@@ -1062,16 +1062,16 @@ int main (int argc, char* argv[]) {
         }
 
         if(runlevel == 1) { /* PING has been sent to all known supernodes */
-            if(eee->sn_pong) {
+            if(eee->client.sn_pong) {
                 // first answer
-                eee->sn_pong = 0;
-                sn_selection_sort(&(eee->supernodes));
-                eee->curr_sn = eee->supernodes;
+                eee->client.sn_pong = 0;
+                sn_selection_sort(&(eee->client.supernodes));
+                eee->client.curr_sn = eee->client.supernodes;
                 supernode_connect(eee);
                 traceEvent(
                     TRACE_NORMAL,
                     "received first PONG from supernode [%s]",
-                    peer_info_get_hostname(eee->curr_sn)
+                    peer_info_get_hostname(eee->client.curr_sn)
                 );
                 runlevel++;
             } else if(last_action <= (now - BOOTSTRAP_TIMEOUT)) {
@@ -1086,10 +1086,10 @@ int main (int argc, char* argv[]) {
         // by the way, have every later PONG cause the remaining (!) list to be sorted because the entries
         // before have already been tried; as opposed to initial PONG, do not change curr_sn
         if(runlevel > 1) {
-            if(eee->sn_pong) {
-                eee->sn_pong = 0;
-                if(eee->curr_sn->hh.next) {
-                    sn_selection_sort((peer_info_t**)&(eee->curr_sn->hh.next));
+            if(eee->client.sn_pong) {
+                eee->client.sn_pong = 0;
+                if(eee->client.curr_sn->hh.next) {
+                    sn_selection_sort((peer_info_t**)&(eee->client.curr_sn->hh.next));
                     traceEvent(TRACE_DEBUG, "received additional PONG from supernode");
                     // here, it is hard to detemine from which one, so no details to output
                 }
@@ -1099,13 +1099,13 @@ int main (int argc, char* argv[]) {
         if(runlevel == 2) { /* send REGISTER_SUPER to get auto ip address from a supernode */
             if(eee->conf.tuntap_ip_mode == TUNTAP_IP_MODE_SN_ASSIGN) {
                 last_action = now;
-                eee->sn_wait = 1;
+                eee->client.sn_wait = 1;
                 send_register_super(eee);
                 runlevel++;
                 traceEvent(
                     TRACE_INFO,
                     "send REGISTER_SUPER to supernode [%s] asking for IP address",
-                    peer_info_get_hostname(eee->curr_sn)
+                    peer_info_get_hostname(eee->client.curr_sn)
                 );
             } else {
                 runlevel += 2; /* skip waiting for TUNTAP IP address */
@@ -1114,16 +1114,16 @@ int main (int argc, char* argv[]) {
         }
 
         if(runlevel == 3) { /* REGISTER_SUPER to get auto ip address from a sn has been sent */
-            if(!eee->sn_wait) { /* TUNTAP IP address received */
+            if(!eee->client.sn_wait) { /* TUNTAP IP address received */
                 runlevel++;
                 traceEvent(TRACE_INFO, "received REGISTER_SUPER_ACK from supernode for IP address asignment");
                 // it should be from curr_sn, but we can't determine definitely here, so no details to output
             } else if(last_action <= (now - BOOTSTRAP_TIMEOUT)) {
                 // timeout, so try next supernode
-                if(eee->curr_sn->hh.next)
-                    eee->curr_sn = eee->curr_sn->hh.next;
+                if(eee->client.curr_sn->hh.next)
+                    eee->client.curr_sn = eee->client.curr_sn->hh.next;
                 else
-                    eee->curr_sn = eee->supernodes;
+                    eee->client.curr_sn = eee->client.supernodes;
                 supernode_connect(eee);
                 runlevel--;
                 // skip waiting for answer to direcly go to send REGISTER_SUPER again
@@ -1137,14 +1137,14 @@ int main (int argc, char* argv[]) {
                 exit(1);
 #ifndef _WIN32
             // TODO: this internal fn should not be called publicly
-            mainloop_register_fd(eee->device.fd, fd_info_proto_tuntap);
+            mainloop_register_fd(eee->tap.device.fd, fd_info_proto_tuntap);
 #endif
             in_addr_t addr = eee->conf.tuntap_v4.net_addr;
             struct in_addr *tmp = (struct in_addr *)&addr;
             traceEvent(TRACE_NORMAL, "created local tap device IPv4: %s/%u, MAC: %s",
                        inet_ntoa(*tmp),
                        eee->conf.tuntap_v4.net_bitlen,
-                       macaddr_str(mac_buf, eee->device.mac_addr));
+                       macaddr_str(mac_buf, eee->tap.device.mac_addr));
             runlevel = 5;
             // no more answers required
             seek_answer = 0;
@@ -1166,17 +1166,17 @@ int main (int argc, char* argv[]) {
     // to quicker get an inital 'supernode selection criterion overview'
     eee->conf.number_max_sn_pings = NUMBER_SN_PINGS_INITIAL;
     // shape supernode list; make current one the first on the list
-    HASH_ITER(hh, eee->supernodes, scan, scan_tmp) {
-        if(scan == eee->curr_sn)
+    HASH_ITER(hh, eee->client.supernodes, scan, scan_tmp) {
+        if(scan == eee->client.curr_sn)
             scan->selection_criterion = sn_selection_criterion_good();
         else
             scan->selection_criterion = sn_selection_criterion_default();
     }
-    sn_selection_sort(&(eee->supernodes));
+    sn_selection_sort(&(eee->client.supernodes));
     // do not immediately ping again, allow some time
-    eee->last_sweep = now - SWEEP_TIME + 2 * BOOTSTRAP_TIMEOUT;
-    eee->sn_wait = 1;
-    eee->last_register_req = 0;
+    eee->client.last_sweep = now - SWEEP_TIME + 2 * BOOTSTRAP_TIMEOUT;
+    eee->client.sn_wait = 1;
+    eee->client.last_register_req = 0;
 
 #ifndef _WIN32
     if(conf.background) {
@@ -1247,7 +1247,7 @@ int main (int argc, char* argv[]) {
 #endif
 
     /* Cleanup */
-    tuntap_close(&eee->device);
+    tuntap_close(&eee->tap.device);
     edge_term(eee);
 
     // the addresses of connection.bind, which the config loading allocated

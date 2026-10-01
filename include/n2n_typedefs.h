@@ -615,13 +615,9 @@ struct punch_bound {
     time_t last_rx;
 };
 
-struct n3n_runtime_data {
-    n2n_edge_conf_t conf;
-
-    struct edge_threads *threads;       /* NULL unless PACKETs are handled by several threads, see edge_threads.h */
-
-    /* Status */
-    bool                             *keep_running;                      /**< Pointer to edge loop stop/go flag */
+/* What the edge needs to reach its supernodes and the other edges of its
+ * community: the client role of a peer */
+struct n3n_rt_client {
     struct peer_info                 *curr_sn;                           /**< Currently active supernode. */
     uint8_t sn_wait;                                                     /**< Whether we are waiting for a supernode response. */
     uint8_t sn_pong;                                                     /**< Whether we have seen a PONG since last time reset. */
@@ -630,16 +626,12 @@ struct n3n_runtime_data {
     bool multicast_joined_v6;                                            /**< 1 if the IPV6 group has been joined.*/
     int close_socket_counter;                                            /**< counter for close-event before re-opening */
     size_t sup_attempts;                                                 /**< Number of remaining attempts to this supernode. */
-    tuntap_dev device;                                                   /**< All about the TUNTAP device */
     n2n_trans_op_t transop;                                              /**< The transop to use when encoding */
     n2n_trans_op_t transop_lzo;                                          /**< The transop for LZO  compression */
     n2n_trans_op_t transop_zstd;                                         /**< The transop for ZSTD compression */
     uint64_t sn_selection_criterion_common_data;
 
-    /* Sockets */
-    /* supernode socket is in        eee->curr_sn->sock (of type n3n_sock_t) */
-    slots_t *mgmt_slots;
-    int sock;
+    /* supernode socket is in        eee->client.curr_sn->sock (of type n3n_sock_t) */
     n3n_sock_t advertised_sock;                                          /**< local socket told to the supernode, from advertise_addr (AF_INVALID: none) */
     struct nat_view nat[2];                                              /**< the NAT of the IPv4 [0] and the IPv6 [1] socket */
     struct nat_peer nat_peers[NAT_PEERS];                                /**< the NATs of the peers, as they told */
@@ -656,39 +648,28 @@ struct n3n_runtime_data {
     n3n_sock_t multicast_peer_v6;                                        /**< IPv6 multicast peer group (for local edges) */
 #endif
 
-    /* Peers */
-    struct peer_info *supernodes;               /**< List of supernodes */
+    struct peer_info *supernodes;                                        /**< List of supernodes */
     struct peer_info *               known_peers;                        /**< Edges we are connected to. */
     struct peer_info *               pending_peers;                      /**< Edges we have tried to register with. */
-#ifdef HAVE_BRIDGING_SUPPORT
-    struct host_info *               known_hosts;                        /**< hosts we know. */
-#endif
-/* Timers */
+
     time_t last_register_req;                                            /**< Check if time to re-register with super*/
     time_t last_p2p;                                                     /**< Last time p2p traffic was received. */
     time_t last_sup;                                                     /**< Last time a packet arrived from supernode. */
     time_t last_sweep;                                                   /**< Last time a sweep was performed. */
-    time_t last_sn_fwd;       /* Time when last message was forwarded. */
-    time_t last_sn_reg;       /* Time when last REGISTER_SUPER was received. */
-    time_t start_time;                                                   /**< For calculating uptime */
+};
 
-
-
-    struct n2n_edge_stats stats_slot[N3N_STATS_SLOTS];                   /**< Statistics, one slot per thread - see stats.h */
-    struct n2n_edge_stats stats_sum;                                     /**< Sum of the slots, as last read by the metrics page */
-
-    n3n_resolve_parameter_t          *resolve_parameter;                 /**< Pointer to name resolver's parameter block */
-
+/* The TAP device and what goes in and out of it: the tap role of a peer */
+struct n3n_rt_tap {
+    tuntap_dev device;                                                   /**< All about the TUNTAP device */
     network_traffic_filter_t         *network_traffic_filter;
+#ifdef HAVE_BRIDGING_SUPPORT
+    struct host_info *               known_hosts;                        /**< hosts we know. */
+#endif
+};
 
-    // The sockets of connection.bind, on the supernode and on the edge
-    SOCKET bind_sock[N3N_BIND_MAX];                         /* a UDP socket for each address of bind; sock is the first */
-    SOCKET bind_tcp[N3N_BIND_MAX];                          /* on the supernode a TCP one too; tcp_sock is the first */
-    int bind_family[N3N_BIND_MAX];                          /* the family each of them was opened with */
-    bool bind_v6only[N3N_BIND_MAX];                         /* IPv6 without mapped IPv4 */
-    int bind_count;                                         /* 0 for an edge connected over TCP, which has only sock */
-
-    // Supernode specific data
+/* What the supernode keeps about its communities and the other supernodes:
+ * the relay and federate roles of a peer */
+struct n3n_rt_relay {
     int tcp_sock;                                           /* auxiliary socket for optional TCP connections */
     n2n_mac_t mac_addr;
     uint32_t dynamic_key_time;                                /* UTC time of last dynamic key generation (second accuracy) */
@@ -698,6 +679,38 @@ struct n3n_runtime_data {
     struct sn_community                    *federation;
     n2n_private_public_key_t private_key;                     /* private federation key derived from federation name */
     bool lock_communities;                                    /* If true, only loaded and matching communities can be used. */
+    time_t last_sn_fwd;       /* Time when last message was forwarded. */
+    time_t last_sn_reg;       /* Time when last REGISTER_SUPER was received. */
+};
+
+struct n3n_runtime_data {
+    n2n_edge_conf_t conf;
+
+    struct edge_threads *threads;       /* NULL unless PACKETs are handled by several threads, see edge_threads.h */
+
+    bool                             *keep_running;                      /**< Pointer to edge loop stop/go flag */
+    time_t start_time;                                                   /**< For calculating uptime */
+
+    slots_t *mgmt_slots;
+    int sock;
+
+    // The sockets of connection.bind, on the supernode and on the edge
+    SOCKET bind_sock[N3N_BIND_MAX];                         /* a UDP socket for each address of bind; sock is the first */
+    SOCKET bind_tcp[N3N_BIND_MAX];                          /* on the supernode a TCP one too; tcp_sock is the first */
+    int bind_family[N3N_BIND_MAX];                          /* the family each of them was opened with */
+    bool bind_v6only[N3N_BIND_MAX];                         /* IPv6 without mapped IPv4 */
+    int bind_count;                                         /* 0 for an edge connected over TCP, which has only sock */
+
+    struct n2n_edge_stats stats_slot[N3N_STATS_SLOTS];                   /**< Statistics, one slot per thread - see stats.h */
+    struct n2n_edge_stats stats_sum;                                     /**< Sum of the slots, as last read by the metrics page */
+
+    n3n_resolve_parameter_t          *resolve_parameter;                 /**< Pointer to name resolver's parameter block */
+
+    /* The parts of the roles.  An edge has client and tap, a supernode
+     * relay; what a role does not use stays zero. */
+    struct n3n_rt_client client;
+    struct n3n_rt_tap tap;
+    struct n3n_rt_relay relay;
 };
 
 typedef struct node_supernode_association {

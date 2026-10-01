@@ -484,7 +484,7 @@ static void jsonrpc_get_mac (char *id, struct n3n_runtime_data *eee, conn_t *con
     int count = 0;  // Number of items in this reply packet
     int index = 0;  // Track the current item number
 
-    HASH_ITER(hh, eee->communities, community, tmp_community) {
+    HASH_ITER(hh, eee->relay.communities, community, tmp_community) {
         HASH_ITER(hh, community->assoc, assoc, tmp_assoc) {
             if(index < offset) {
                 index++;
@@ -522,7 +522,7 @@ static void jsonrpc_get_mac (char *id, struct n3n_runtime_data *eee, conn_t *con
 }
 
 static void jsonrpc_get_communities (char *id, struct n3n_runtime_data *eee, conn_t *conn, const char *params) {
-    if(!eee->communities) {
+    if(!eee->relay.communities) {
         // This is an edge
         if(eee->conf.header_encryption != HEADER_ENCRYPTION_NONE) {
             jsonrpc_error(id, conn, 403, "Forbidden", 0);
@@ -552,7 +552,7 @@ static void jsonrpc_get_communities (char *id, struct n3n_runtime_data *eee, con
     int count = 0;  // Number of items in this reply packet
     int index = 0;  // Track the current item number
 
-    HASH_ITER(hh, eee->communities, community, tmp) {
+    HASH_ITER(hh, eee->relay.communities, community, tmp) {
         if(index < offset) {
             index++;
             continue;
@@ -648,7 +648,7 @@ static void jsonrpc_get_edges (char *id, struct n3n_runtime_data *eee, conn_t *c
     int index = 0;  // Track the current item number
 
     // dump nodes with forwarding through supernodes
-    HASH_ITER(hh, eee->pending_peers, peer, tmpPeer) {
+    HASH_ITER(hh, eee->client.pending_peers, peer, tmpPeer) {
         if(index < offset) {
             index++;
             continue;
@@ -660,7 +660,7 @@ static void jsonrpc_get_edges (char *id, struct n3n_runtime_data *eee, conn_t *c
             peer,
             "pSp",
             eee->conf.community_name,
-            eee->nat_peers
+            eee->client.nat_peers
         );
 
         if(jsonrpc_error_overflow(id, conn, count)) {
@@ -673,7 +673,7 @@ static void jsonrpc_get_edges (char *id, struct n3n_runtime_data *eee, conn_t *c
     }
 
     // dump peer-to-peer nodes
-    HASH_ITER(hh, eee->known_peers, peer, tmpPeer) {
+    HASH_ITER(hh, eee->client.known_peers, peer, tmpPeer) {
         if(index < offset) {
             index++;
             continue;
@@ -685,7 +685,7 @@ static void jsonrpc_get_edges (char *id, struct n3n_runtime_data *eee, conn_t *c
             peer,
             "p2p",
             eee->conf.community_name,
-            eee->nat_peers
+            eee->client.nat_peers
         );
 
         if(jsonrpc_error_overflow(id, conn, count)) {
@@ -698,7 +698,7 @@ static void jsonrpc_get_edges (char *id, struct n3n_runtime_data *eee, conn_t *c
     }
 
     struct sn_community *community, *tmp;
-    HASH_ITER(hh, eee->communities, community, tmp) {
+    HASH_ITER(hh, eee->relay.communities, community, tmp) {
         HASH_ITER(hh, community->edges, peer, tmpPeer) {
             if(index < offset) {
                 index++;
@@ -711,7 +711,7 @@ static void jsonrpc_get_edges (char *id, struct n3n_runtime_data *eee, conn_t *c
                 peer,
                 "sn",
                 (community->is_federation) ? "-/-" : community->community,
-                eee->nat_peers
+                eee->client.nat_peers
             );
 
             if(jsonrpc_error_overflow(id, conn, count)) {
@@ -737,7 +737,7 @@ static void jsonrpc_get_info (char *id, struct n3n_runtime_data *eee, conn_t *co
 
     ipstr_t ip_address;
 
-    inet_ntop(AF_INET, &eee->device.ip_addr, ip_address, sizeof(ip_address));
+    inet_ntop(AF_INET, &eee->tap.device.ip_addr, ip_address, sizeof(ip_address));
 
     jsonrpc_result_head(id, conn);
 
@@ -756,11 +756,11 @@ static void jsonrpc_get_info (char *id, struct n3n_runtime_data *eee, conn_t *co
                 BUILDDATE,
                 eee->conf.is_edge,
                 eee->conf.is_supernode,
-                is_null_mac(eee->device.mac_addr) ? "" : macaddr_str(mac_buf, eee->device.mac_addr),
+                is_null_mac(eee->tap.device.mac_addr) ? "" : macaddr_str(mac_buf, eee->tap.device.mac_addr),
                 ip_address,
-                sock_to_cstr(sockbuf, eee->conf.is_edge ? &eee->advertised_sock : &eee->conf.preferred_sock),
-                nat_view_str(nat4, sizeof(nat4), &eee->nat[0]),
-                nat_view_str(nat6, sizeof(nat6), &eee->nat[1])
+                sock_to_cstr(sockbuf, eee->conf.is_edge ? &eee->client.advertised_sock : &eee->conf.preferred_sock),
+                nat_view_str(nat4, sizeof(nat4), &eee->client.nat[0]),
+                nat_view_str(nat6, sizeof(nat6), &eee->client.nat[1])
     );
 
     jsonrpc_result_tail(conn, 200);
@@ -775,7 +775,7 @@ static void jsonrpc_get_supernodes (char *id, struct n3n_runtime_data *eee, conn
     jsonrpc_result_head(id, conn);
     sb_reprintf(&conn->request, "[");
 
-    HASH_ITER(hh, eee->supernodes, peer, tmpPeer) {
+    HASH_ITER(hh, eee->client.supernodes, peer, tmpPeer) {
 
         /*
          * TODO:
@@ -796,7 +796,7 @@ static void jsonrpc_get_supernodes (char *id, struct n3n_runtime_data *eee, conn
                     "\"uptime\":%u},",
                     peer->version,
                     peer->purgeable,
-                    (peer == eee->curr_sn) ? (eee->sn_wait ? 2 : 1 ) : 0,
+                    (peer == eee->client.curr_sn) ? (eee->client.sn_wait ? 2 : 1 ) : 0,
                     is_null_mac(peer->mac_addr) ? "" : macaddr_str(mac_buf, peer->mac_addr),
                     sock_to_cstr(sockbuf, &(peer->sock)),
                     sn_selection_criterion_str(eee, sel_buf, peer),
@@ -819,12 +819,12 @@ static void jsonrpc_get_timestamps (char *id, struct n3n_runtime_data *eee, conn
                 "\"last_sn_fwd\":%u,"
                 "\"last_sn_reg\":%u,"
                 "\"start_time\":%u}",
-                (uint32_t)eee->last_register_req,
-                (uint32_t)SHARED_LOAD(eee->last_p2p),
-                (uint32_t)SHARED_LOAD(eee->last_sup),
-                (uint32_t)eee->last_sweep,
-                (uint32_t)eee->last_sn_fwd,
-                (uint32_t)eee->last_sn_reg,
+                (uint32_t)eee->client.last_register_req,
+                (uint32_t)SHARED_LOAD(eee->client.last_p2p),
+                (uint32_t)SHARED_LOAD(eee->client.last_sup),
+                (uint32_t)eee->client.last_sweep,
+                (uint32_t)eee->relay.last_sn_fwd,
+                (uint32_t)eee->relay.last_sn_reg,
                 (uint32_t)eee->start_time
     );
 

@@ -166,7 +166,7 @@ void close_bind_sockets (struct n3n_runtime_data *sss) {
     }
     sss->bind_count = 0;
     sss->sock = -1;
-    sss->tcp_sock = -1;
+    sss->relay.tcp_sock = -1;
 }
 
 
@@ -337,7 +337,7 @@ int n3n_open_bind_sockets (struct n3n_runtime_data *sss, struct sockaddr_storage
         traceEvent(TRACE_NORMAL, "listening on UDP%s %s%s", with_tcp ? " and TCP" : "", sockbuf, v6only ? " (IPv6 only)" : "");
     }
     sss->sock = sss->bind_sock[0];
-    sss->tcp_sock = sss->bind_tcp[0];
+    sss->relay.tcp_sock = sss->bind_tcp[0];
     return 0;
 }
 

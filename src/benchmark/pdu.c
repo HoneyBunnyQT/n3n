@@ -41,12 +41,12 @@ static void *bench_setup (void *const _ctx) {
     edge_init_conf_defaults(&ctx->eee.conf,"edge");
     strcpy(ctx->eee.conf.community_name, "test");
     ctx->eee.conf.transop_id = N2N_TRANSFORM_ID_NULL;
-    ctx->eee.last_sup = 1;
-    ctx->eee.curr_sn = peer_info_malloc(null_mac);
-    ctx->eee.curr_sn->sock.family = AF_INVALID;
-    ctx->eee.pending_peers = NULL;
-    ctx->eee.known_peers = NULL;
-    ctx->eee.network_traffic_filter = NULL;
+    ctx->eee.client.last_sup = 1;
+    ctx->eee.client.curr_sn = peer_info_malloc(null_mac);
+    ctx->eee.client.curr_sn->sock.family = AF_INVALID;
+    ctx->eee.client.pending_peers = NULL;
+    ctx->eee.client.known_peers = NULL;
+    ctx->eee.tap.network_traffic_filter = NULL;
 
     ctx->sender.sin_family = AF_INET;
     ctx->sender.sin_port = 1;
@@ -58,19 +58,19 @@ static void *bench_setup (void *const _ctx) {
     fill_n3nsock(&peer->sock, (struct sockaddr *)&ctx->sender);
     peer->timeout = ctx->eee.conf.register_interval;
     peer->last_seen = time(NULL);
-    HASH_ADD_PEER(ctx->eee.known_peers, peer);
+    HASH_ADD_PEER(ctx->eee.client.known_peers, peer);
 
-    n2n_transop_null_init(&ctx->eee.conf, &ctx->eee.transop);
+    n2n_transop_null_init(&ctx->eee.conf, &ctx->eee.client.transop);
 
-    memset(ctx->eee.device.mac_addr, 0, N2N_MAC_SIZE);
-    ctx->eee.device.mac_addr[0] = 0x02;
+    memset(ctx->eee.tap.device.mac_addr, 0, N2N_MAC_SIZE);
+    ctx->eee.tap.device.mac_addr[0] = 0x02;
 
 #ifndef _WIN32
     if(socketpair(AF_UNIX, SOCK_DGRAM, 0, ctx->sv) == -1) {
         perror("socketpair");
         exit(EXIT_FAILURE);
     }
-    ctx->eee.device.fd = ctx->sv[0];
+    ctx->eee.tap.device.fd = ctx->sv[0];
 #else
     ctx->sv[0] = -1;
     ctx->sv[1] = -1;
@@ -81,9 +81,9 @@ static void *bench_setup (void *const _ctx) {
 static void bench_teardown (void *_ctx) {
     struct bench_ctx *ctx = (struct bench_ctx *)_ctx;
 
-    clear_peer_list(&ctx->eee.pending_peers);
-    clear_peer_list(&ctx->eee.known_peers);
-    peer_info_free(ctx->eee.curr_sn);
+    clear_peer_list(&ctx->eee.client.pending_peers);
+    clear_peer_list(&ctx->eee.client.known_peers);
+    peer_info_free(ctx->eee.client.curr_sn);
     edge_term_conf(&ctx->eee.conf);
 }
 

@@ -433,34 +433,34 @@ int main (int argc, char * argv[]) {
 #endif
 
     /* Initialize the federation name from conf */
-    sss_node.federation->community[0] = '*';
+    sss_node.relay.federation->community[0] = '*';
     memcpy(
-        &sss_node.federation->community[1],
+        &sss_node.relay.federation->community[1],
         sss_node.conf.sn_federation,
         N2N_COMMUNITY_SIZE - 2
     );
-    sss_node.federation->community[N2N_COMMUNITY_SIZE - 1] = '\0';
+    sss_node.relay.federation->community[N2N_COMMUNITY_SIZE - 1] = '\0';
 
     /*setup the encryption key */
-    packet_header_setup_key(sss_node.federation->community,
-                            &(sss_node.federation->header_encryption_ctx_static),
-                            &(sss_node.federation->header_encryption_ctx_dynamic),
-                            &(sss_node.federation->header_iv_ctx_static),
-                            &(sss_node.federation->header_iv_ctx_dynamic));
+    packet_header_setup_key(sss_node.relay.federation->community,
+                            &(sss_node.relay.federation->header_encryption_ctx_static),
+                            &(sss_node.relay.federation->header_encryption_ctx_dynamic),
+                            &(sss_node.relay.federation->header_iv_ctx_static),
+                            &(sss_node.relay.federation->header_iv_ctx_dynamic));
 
-    HASH_ADD_STR(sss_node.communities, community, sss_node.federation);
+    HASH_ADD_STR(sss_node.relay.communities, community, sss_node.relay.federation);
 
-    uint32_t num_communities = HASH_COUNT(sss_node.communities);
+    uint32_t num_communities = HASH_COUNT(sss_node.relay.communities);
 
     traceEvent(
         TRACE_INFO,
         "added federation '%s' to the list of communities [total: %u]",
-        (char*)sss_node.federation->community,
+        (char*)sss_node.relay.federation->community,
         num_communities
     );
 
     // warn on default federation name
-    if(!strcmp(&sss_node.federation->community[1], FEDERATION_NAME_DEFAULT)) {
+    if(!strcmp(&sss_node.relay.federation->community[1], FEDERATION_NAME_DEFAULT)) {
         traceEvent(TRACE_WARNING, "The default federation name is FOR TESTING ONLY - use of a custom setting for supernode.federation is highly recommended!");
     }
 
@@ -478,7 +478,7 @@ int main (int argc, char * argv[]) {
 
     // After configuration phase, move the federation edges to their runtime
     // place
-    sss_node.federation->edges = sss_node.conf.sn_edges;
+    sss_node.relay.federation->edges = sss_node.conf.sn_edges;
 
     if(!sss_node.conf.spoofing_protection) {
         traceEvent(
@@ -588,7 +588,7 @@ int main (int argc, char * argv[]) {
     // TODO: this uses internal peer_info struct, move it to sn_utils?
     // (It is the last user in this file, so yes, move it)
     struct peer_info *scan, *tmp;
-    HASH_ITER(hh, sss_node.federation->edges, scan, tmp) {
+    HASH_ITER(hh, sss_node.relay.federation->edges, scan, tmp) {
         scan->socket_fd = -1;
     }
 
