@@ -35,7 +35,13 @@ struct pdu_ctx {
     uint8_t hash_buf[16];           // of the still encrypted PDU, user/pw auth only
     bool from_supernode;
     bool via_multicast;
+    bool in_community;              // relay: it belongs to a community known here
+    SOCKET socket_fd;               // the socket it came in on; relay: the main thread's for that address
     time_t now;
+
+    // only good on the thread that set them
+    const struct sockaddr *sender_sock;
+    socklen_t sock_size;
 };
 
 // Whether the header of a PDU looks unencrypted: a version, a message type

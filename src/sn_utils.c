@@ -1936,28 +1936,23 @@ static int sort_communities (struct n3n_runtime_data *sss,
 /* What the header of a PDU says, once it is decrypted. Finding it changes
  * nothing, so a packet thread can do that too, and it is all by value, so it
  * can travel to the main thread together with the decrypted PDU. */
-struct pdu_head {
-    char community[N2N_COMMUNITY_SIZE];     /* of the community found, empty if none */
-    uint32_t header_enc;                    /* 1 == encrypted by static key, 2 == encrypted by dynamic key */
-    uint64_t stamp;
-    uint8_t hash_buf[16];                   /* always size of 16 (max) despite the actual value of N2N_REG_SUP_HASH_CHECK_LEN (<= 16) */
-    SOCKET socket_fd;                       /* the main thread's socket for the address it came in on */
-};
-
-_Static_assert(sizeof(struct pdu_head) <= EDGE_THREADS_NOTE_MAX, "a pdu_head has to fit into a note");
+_Static_assert(sizeof(struct pdu_ctx) <= EDGE_THREADS_NOTE_MAX, "a pdu_ctx has to fit into a note");
 
 
 /* Find the community a PDU belongs to and decrypt its header, if encrypted.
  * Returns -1 if the PDU is to be dropped. */
 static int pdu_head_find (struct n3n_runtime_data *sss,
-                          uint8_t *udp_buf,
-                          size_t udp_size,
-                          struct pdu_head *h,
+                          struct pdu_ctx *h,
                           struct sn_community **found) {
 
+    uint8_t *udp_buf = h->buf;
+    size_t udp_size = h->size;
     struct sn_community *comm, *tmp;
 
-    memset(h, 0, sizeof(*h));
+    h->header_enc = 0;
+    h->stamp = 0;
+    memset(h->hash_buf, 0, sizeof(h->hash_buf));
+    h->in_community = false;
     *found = NULL;
 
     if(udp_size < 24) {
@@ -2012,9 +2007,7 @@ static int pdu_head_find (struct n3n_runtime_data *sss,
         }
     }
 
-    if(comm) {
-        memcpy(h->community, comm->community, sizeof(h->community));
-    }
+    h->in_community = (comm != NULL);
     *found = comm;
     return 0;
 }
@@ -2096,14 +2089,15 @@ static bool community_appends_hash (const struct sn_community *comm) {
 
 
 static int process_pdu_body (struct n3n_runtime_data * sss,
-                             const struct sockaddr *sender_sock, socklen_t sock_size,
-                             const SOCKET socket_fd,
-                             uint8_t * udp_buf,
-                             size_t udp_size,
-                             struct sn_community *comm,
-                             struct pdu_head *h,
-                             time_t now
-) {
+                             struct pdu_ctx *h,
+                             struct sn_community *comm) {
+
+    const struct sockaddr *sender_sock = h->sender_sock;
+    socklen_t sock_size = h->sock_size;
+    const SOCKET socket_fd = h->socket_fd;
+    uint8_t *udp_buf = h->buf;
+    size_t udp_size = h->size;
+    time_t now = h->now;
 
     n2n_common_t cmn;        /* common fields in the packet header */
     size_t rem;
@@ -2183,8 +2177,13 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
 
     --(cmn.ttl); /* The value copied into all forwarded packets. */
 
+    h->cmn = cmn;
+    h->rem = rem;
+    h->idx = idx;
+    h->sender = sender;
+    h->from_supernode = from_supernode;
+
     if(n3n_thread_slot && !relay_here(sss, comm, &cmn, from_supernode, udp_buf, rem, idx)) {
-        h->socket_fd = socket_fd;
         edge_threads_post_pdu(sss, sender_sock, sock_size, udp_buf, udp_size, h, sizeof(*h));
         return 0;
     }
@@ -3183,13 +3182,20 @@ static int process_pdu (struct n3n_runtime_data * sss,
                         size_t udp_size,
                         time_t now) {
 
-    struct pdu_head h;
+    struct pdu_ctx h = {
+        .buf = udp_buf,
+        .size = udp_size,
+        .socket_fd = socket_fd,
+        .now = now,
+        .sender_sock = sender_sock,
+        .sock_size = sock_size,
+    };
     struct sn_community *comm;
 
-    if(pdu_head_find(sss, udp_buf, udp_size, &h, &comm) < 0) {
+    if(pdu_head_find(sss, &h, &comm) < 0) {
         return -1;
     }
-    return process_pdu_body(sss, sender_sock, sock_size, socket_fd, udp_buf, udp_size, comm, &h, now);
+    return process_pdu_body(sss, &h, comm);
 }
 
 
@@ -3199,15 +3205,21 @@ static void process_pdu_handed_over (struct n3n_runtime_data *sss,
                                      const struct sockaddr *sender, socklen_t sender_len,
                                      uint8_t *buf, size_t size, const void *note) {
 
-    struct pdu_head *h = (struct pdu_head *)note;
-    struct pdu_head again;
+    struct pdu_ctx h = *(const struct pdu_ctx *)note;
     struct sn_community *comm = NULL;
 
-    if(h->community[0]) {
+    // what points somewhere is set again on this thread
+    h.buf = buf;
+    h.size = size;
+    h.sender_sock = sender;
+    h.sock_size = sender_len;
+    h.now = time(NULL);
+
+    if(h.in_community) {
         // the community may have gone meanwhile
-        HASH_FIND_COMMUNITY(sss->relay.communities, h->community, comm);
+        HASH_FIND_COMMUNITY(sss->relay.communities, (char *)h.cmn.community, comm);
         if(!comm) {
-            traceEvent(TRACE_DEBUG, "dropped a PDU for community '%s' which is gone", h->community);
+            traceEvent(TRACE_DEBUG, "dropped a PDU for community '%s' which is gone", h.cmn.community);
             return;
         }
     } else {
@@ -3216,13 +3228,11 @@ static void process_pdu_handed_over (struct n3n_runtime_data *sss,
         // this REGISTER_SUPER creates a second community of the same name,
         // and the edges in one never find those in the other. The thread
         // found no community, so it has not decrypted the header either.
-        if(pdu_head_find(sss, buf, size, &again, &comm) < 0) {
+        if(pdu_head_find(sss, &h, &comm) < 0) {
             return;
         }
-        again.socket_fd = h->socket_fd;
-        h = &again;
     }
-    process_pdu_body(sss, sender, sender_len, h->socket_fd, buf, size, comm, h, time(NULL));
+    process_pdu_body(sss, &h, comm);
 }
 
 

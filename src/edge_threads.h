@@ -49,7 +49,7 @@ struct edge_thread_ops {
 };
 
 // the most a note to edge_threads_post_pdu() can hold
-#define EDGE_THREADS_NOTE_MAX 64
+#define EDGE_THREADS_NOTE_MAX 192
 
 // How many threads can handle packets with this configuration, the main
 // thread included: 1 unless it asks for more and they work here.
