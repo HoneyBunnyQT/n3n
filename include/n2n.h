@@ -98,6 +98,7 @@ int tuntap_open (struct tuntap_dev *device, char *dev, uint8_t address_mode,
                  struct n2n_ip_subnet v4subnet,
                  const char * device_mac, int mtu,
                  int metric);
+int tuntap_take_fd (tuntap_dev *device, int fd, struct n2n_ip_subnet v4subnet, const char *device_mac);
 int tuntap_read (struct tuntap_dev *tuntap, unsigned char *buf, int len);
 int tuntap_write (struct tuntap_dev *tuntap, unsigned char *buf, int len);
 void tuntap_close (struct tuntap_dev *tuntap);

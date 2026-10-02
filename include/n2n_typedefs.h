@@ -474,6 +474,7 @@ struct n3n_conf_tap {
     struct n2n_ip_subnet tuntap_v4;
     uint8_t tuntap_ip_mode;                          /**< Interface IP address allocated mode, eg. DHCP. */
     int type;                                        /**< N3N_TUNTAP_TAP or N3N_TUNTAP_TUN */
+    uint32_t fd;                                     /**< a device opened already, 0: open one */
 };
 
 #define N3N_TUNTAP_TAP 0

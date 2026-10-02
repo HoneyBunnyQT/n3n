@@ -730,6 +730,9 @@ int edge_tap_open (struct n3n_runtime_data *eee) {
 
     eee->tap.device.tun = eee->conf.tap.type == N3N_TUNTAP_TUN;
 #ifdef __linux__
+    if(eee->conf.tap.fd) {
+        return tuntap_take_fd(&eee->tap.device, eee->conf.tap.fd, eee->conf.tap.tuntap_v4, eee->conf.tap.device_mac);
+    }
     return tuntap_open_queues(&eee->tap.device, edge_threads_possible(&eee->conf),
                               eee->conf.tap.tuntap_dev_name,
                               eee->conf.tap.tuntap_ip_mode,

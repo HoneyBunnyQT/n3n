@@ -63,6 +63,7 @@ address=0.0.0.0/0
 type=tap
 address_mode=auto
 metric=0
+fd=0
 mtu=0
 
 ### test: load_dump tests/conf/communities.conf (community parts)

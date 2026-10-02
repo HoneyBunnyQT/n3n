@@ -674,6 +674,18 @@ static struct n3n_conf_option section_tuntap[] = {
                 "better multiplayer game detection.",
     },
     {
+        .name = "fd",
+        .type = n3n_conf_uint32,
+        .offset = offsetof(n2n_edge_conf_t, tap.fd),
+        .desc = "Use a device opened already",
+        .help = "The file descriptor of a TUN or TAP device that the program "
+                "starting the edge has opened and set up - address, MTU, "
+                "routes - such as the one Android's VpnService gives an "
+                "app.  The edge then neither opens nor configures a device, "
+                "and takes tuntap.type, tuntap.address and tuntap.macaddr "
+                "only for itself.  Linux and Android only.",
+    },
+    {
         .name = "mtu",
         .type = n3n_conf_uint32,
         .offset = offsetof(n2n_edge_conf_t, tap.mtu),

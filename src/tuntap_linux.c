@@ -316,6 +316,32 @@ int tuntap_open_queues (tuntap_dev *device,
 }
 
 
+// A device that the program starting the edge opened and set up already
+// (tuntap.fd): nothing to open or configure, only to take over
+int tuntap_take_fd (tuntap_dev *device, int fd, struct n2n_ip_subnet v4subnet, const char *device_mac) {
+
+    device->fd = fd;
+    device->queue_fd[0] = fd;
+    for(int q = 1; q < N2N_TUNTAP_QUEUES_MAX; q++) {
+        device->queue_fd[q] = -1;
+    }
+    device->queues = 1;
+    snprintf(device->dev_name, sizeof(device->dev_name), "fd%d", fd);
+    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
+
+    if(device_mac && device_mac[0]) {
+        str2mac(device->mac_addr, device_mac);
+    } else {
+        memrnd(device->mac_addr, N2N_MAC_SIZE);
+        device->mac_addr[0] &= ~0x01;
+        device->mac_addr[0] |= 0x02;
+    }
+    device->ip_addr = v4subnet.net_addr;
+    traceEvent(TRACE_NORMAL, "using the %s device given as fd %d", device->tun ? "TUN" : "TAP", fd);
+    return fd;
+}
+
+
 int tuntap_open (tuntap_dev *device,
                  char *dev,
                  uint8_t address_mode,
