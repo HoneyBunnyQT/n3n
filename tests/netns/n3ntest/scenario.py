@@ -499,8 +499,12 @@ class Run:
             "{} at {}".format(s, e["registered_at"])
             for s, e in sorted(self.edges.items())))
 
-        # The peers' MACs are known up front: no ARP frames in the counts
+        # The peers' MACs are known up front: no ARP frames in the counts.
+        # A TUN device has no neighbours: there the edge finds the MACs.
         for sname, e in self.edges.items():
+            if self.sc.sites[sname].conf.get("tuntap", {}).get("type") \
+                    == "tun":
+                continue
             for oname, o in self.edges.items():
                 if oname != sname:
                     run(["ip", "-n", e["ns"], "neigh", "replace",

@@ -243,6 +243,20 @@ SCENARIOS = [
         Site(["easy-kept"], tcp_only=True, expect_nat="unknown"),
         Site([]),
         "relayed", sn_tcp_port=4443),
+    Scenario(
+        "tun-tap",
+        "an edge with a TUN device (tuntap.type=tun) and one with a TAP "
+        "device: the TUN edge builds the frames, both ways",
+        Site(["easy-kept"], conf={"tuntap": {"type": "tun"}}),
+        Site(["easy-changed"]),
+        "direct", tags=["quick"]),
+    Scenario(
+        "tun-tun",
+        "two edges with TUN devices, relayed: each finds the other's MAC "
+        "from what it announces",
+        Site(["hard-range"], conf={"tuntap": {"type": "tun"}}),
+        Site(["hard-range"], conf={"tuntap": {"type": "tun"}}),
+        "relayed"),
 ]
 
 BY_NAME = {s.name: s for s in SCENARIOS}
