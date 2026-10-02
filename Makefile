@@ -128,6 +128,7 @@ OBJS=\
 	src/crypto/tf.o \
 	src/edge_threads.o \
 	src/edge_utils.o \
+	src/embed.o \
 	src/header_encryption.o \
 	src/hexdump.o \
 	src/initfuncs.o \

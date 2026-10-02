@@ -30,6 +30,7 @@ endif
 
 EXAMPLES+=example_edge_embed_quick_edge_init
 EXAMPLES+=example_edge_embed
+EXAMPLES+=example_edge_embed_tun
 ifneq ($(CONFIG_RELAY),no)
 EXAMPLES+=example_sn_embed
 endif
@@ -45,6 +46,8 @@ examples: $(EXAMPLES)
 # TODO: a better path for this lib, as it would need to change to use this
 # makefile outside the build environment
 $(APPS) $(EXAMPLES): ../src/libn3n.a
+
+example_edge_embed_tun: LDLIBS+=-lpthread
 
 n3n: n3n.c n3n-edge.c $(ROLES)
 
