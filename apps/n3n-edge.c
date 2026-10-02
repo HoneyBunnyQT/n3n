@@ -62,7 +62,7 @@
 #include "../src/management.h"       // for mgmt_password_warn
 #include "../src/notify.h"           // for n3n_notify_ready
 #include "../src/peer_info.h"        // for peer_info, peer_info_t
-#include "../src/resolve.h"          // for resolve_check
+#include "../src/resolve.h"          // for resolve_check, resolve_forked
 
 #ifdef HAVE_LIBCRYPTO
 #include <openssl/crypto.h>          // for OpenSSL_version
@@ -1156,6 +1156,8 @@ int n3n_edge_main (int argc, char* argv[]) {
     if(conf.background) {
         setUseSyslog(1); /* traceEvent output now goes to syslog. */
         daemonize();
+        // the resolver thread stayed with the parent
+        resolve_forked(eee->resolve_parameter);
     }
 
 #ifdef HAVE_LIBCAP
