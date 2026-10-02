@@ -25,6 +25,7 @@ nav:
       - TAP Device: configure/TapConfiguration.md
       - Advanced: configure/Advanced.md
       - Security: configure/Security.md
+      - Running as a Service: configure/Systemd.md
   - Advanced Topics:
       - Overview: advanced/index.md
       - NAT Traversal: advanced/NatTraversal.md

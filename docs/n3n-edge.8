@@ -306,6 +306,14 @@ With \fBtcp://\fR on every supernode, the edge uses TCP only.  In
 \fBconnection.bind\fR, \fBtcp://\fR picks the address of the TCP connection,
 \fBudp://\fR those of the UDP sockets.
 
+.SH SERVICE MANAGERS
+Under systemd with \fBType=notify\fR (as the packaged units are), the edge
+tells systemd when it is up, its status for \fBsystemctl status\fR and that
+its main loop still runs (\fBWatchdogSec\fR of 30 seconds or more).
+Without \fBNOTIFY_SOCKET\fR in its environment it does none of this, so it
+runs the same under any other service manager.  See
+docs/configure/Systemd.md.
+
 .SH THREADS
 With \fBdaemon.threads\fR the edge encrypts and decrypts packets on several
 threads.  This needs Linux and a build with \fB--enable-pthread\fR, see

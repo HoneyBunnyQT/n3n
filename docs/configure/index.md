@@ -17,3 +17,5 @@ How to set up edges and supernodes.
 - [TAP Device Configuration](TapConfiguration.md): addresses, MTU, routes
 - [Advanced Configuration](Advanced.md)
 - [Security Considerations](Security.md)
+- [Running as a Service](Systemd.md): systemd (status, watchdog), or any
+  other service manager
