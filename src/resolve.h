@@ -40,6 +40,8 @@ struct n3n_resolve_parameter {
     bool request;                          /* flags main thread's need for intermediate resolution */
     pthread_t id;                          /* thread id */
     pthread_mutex_t access;                /* mutex for shared access */
+    pthread_cond_t wake;                   /* to stop the thread while it waits */
+    bool stop;                             /* the thread is asked to stop */
 };
 #endif
 

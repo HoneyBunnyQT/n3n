@@ -16,7 +16,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>          // for sleep
+#include <time.h>            // for clock_gettime
 
 #include "config.h"          // for HAVE_LIBPTHREAD
 #include "resolve.h"
@@ -301,22 +301,25 @@ N2N_THREAD_RETURN_DATATYPE resolve_thread (N2N_THREAD_PARAMETER_DATATYPE p) {
     time_t rep_time = N2N_RESOLVE_INTERVAL / 10;
     time_t now;
 
-    while(1) {
-        int cancel_state;
+    pthread_mutex_lock(&param->access);
 
-        // sleep() is where resolve_cancel_thread() stops this thread
-        sleep(N2N_RESOLVE_INTERVAL / 60); /* wake up in-between to check for signaled requests */
+    while(!param->stop) {
+        struct timespec wake;
 
-        // Not while holding the lock, though: the name lookups below have
-        // cancellation points too, and a thread cancelled in there would
-        // leave the lock locked for good.
-        pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancel_state);
+        // wake up in-between to check for signaled requests, or straight
+        // away when resolve_cancel_thread() asks to stop.  The wait lets go
+        // of the lock while it waits.  (No pthread_cancel(): Android has
+        // none, and a program that runs the edge inside itself should not
+        // see threads cancelled in its C library.)
+        clock_gettime(CLOCK_REALTIME, &wake);
+        wake.tv_sec += N2N_RESOLVE_INTERVAL / 60;
+        pthread_cond_timedwait(&param->wake, &param->access, &wake);
+        if(param->stop) {
+            break;
+        }
 
         // what's the time?
         now = time(NULL);
-
-        // lock access
-        pthread_mutex_lock(&param->access);
 
         // is it time to resolve yet?
         if(((param->request)) || ((now - param->last_resolved) > rep_time)) {
@@ -344,12 +347,11 @@ N2N_THREAD_RETURN_DATATYPE resolve_thread (N2N_THREAD_PARAMETER_DATATYPE p) {
                 }
             }
         }
-
-        // unlock access
-        pthread_mutex_unlock(&param->access);
-
-        pthread_setcancelstate(cancel_state, NULL);
     }
+
+    pthread_mutex_unlock(&param->access);
+
+    return 0;
 }
 
 int resolve_create_thread (n3n_resolve_parameter_t **param, struct peer_info *sn_list) {
@@ -395,6 +397,7 @@ int resolve_create_thread (n3n_resolve_parameter_t **param, struct peer_info *sn
 
     // the thread takes the mutex straight away, so it has to exist first
     pthread_mutex_init(&((*param)->access), NULL);
+    pthread_cond_init(&((*param)->wake), NULL);
 
     // create thread
     ret = pthread_create(&((*param)->id), NULL, resolve_thread, (void *)*param);
@@ -408,8 +411,9 @@ int resolve_create_thread (n3n_resolve_parameter_t **param, struct peer_info *sn
 
 
 // After a fork() - the edge becoming a daemon - the child has none of the
-// parent's threads: start the resolver anew there.  The lock is made anew
-// too, the thread could have held it just when the fork happened.
+// parent's threads: start the resolver anew there.  The lock and the
+// condition are made anew too, the thread could have held the lock just
+// when the fork happened.
 void resolve_forked (n3n_resolve_parameter_t *param) {
     int ret;
 
@@ -418,6 +422,8 @@ void resolve_forked (n3n_resolve_parameter_t *param) {
     }
 
     pthread_mutex_init(&param->access, NULL);
+    pthread_cond_init(&param->wake, NULL);
+    param->stop = false;
 
     ret = pthread_create(&param->id, NULL, resolve_thread, (void *)param);
     if(ret) {
@@ -433,11 +439,16 @@ void resolve_cancel_thread (n3n_resolve_parameter_t *param) {
         return;
     }
 
-    // Cancelling only asks the thread to stop; wait until it has, before
-    // freeing what it works on - and before the caller frees the supernode
-    // list, whose host names the entries point to.
-    pthread_cancel(param->id);
+    // Ask the thread to stop, and wait until it has, before freeing what
+    // it works on - and before the caller frees the supernode list, whose
+    // host names the entries point to.  If it is resolving names just now,
+    // that is as long as the lookups take.
+    pthread_mutex_lock(&param->access);
+    param->stop = true;
+    pthread_cond_signal(&param->wake);
+    pthread_mutex_unlock(&param->access);
     pthread_join(param->id, NULL);
+    pthread_cond_destroy(&param->wake);
     pthread_mutex_destroy(&param->access);
 
     HASH_ITER(hh, param->list, entry, tmp_entry) {
