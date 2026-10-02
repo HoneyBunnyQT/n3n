@@ -30,6 +30,8 @@ role and by concern.
 | `role_client.c` | registering with the supernodes and the peers, the NAT classification, the handlers of the control messages (`edge_rx_register()` ...) |
 | `punch.c` | hole punching through the NATs between two edges |
 | `role_tap.c` | the TAP device, encoding and sending its frames, the handler of a PACKET (`edge_rx_packet()`) |
+| `tun.c` | TUN mode (`tuntap.type = tun`): the Ethernet header and ARP in place of the kernel |
+| `embed.c` | `n3n_edge_run()`: an edge inside another program, such as the Android app (`include/n3n/embed.h`) |
 
 ## The supernode
 
@@ -43,3 +45,10 @@ role and by concern.
 Each of these has a header of the same name for what the others use of it.
 The handlers of each role are listed in a table by message type,
 `edge_pdu_handlers` in `edge_utils.c` and `sn_pdu_handlers` in `sn_utils.c`.
+
+## Next to the core
+
+`android/` is the Android app.  Its native library is built from the
+sources in `src/` directly (`android/app/src/main/cpp/CMakeLists.txt`), so
+a file added to or removed from the edge may need a line there too; see
+[its README](../../android/README.md).

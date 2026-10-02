@@ -13,3 +13,4 @@ documents with useful information.
 - [Where the code lives](SourceLayout.md)
 - [Roadmap and Scratchpad](Roadmap.md)
 - [Mobile and TUN: design notes](MobileAndTun.md)
+- [The Android app](../../android/README.md): building and trying it

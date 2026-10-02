@@ -5,8 +5,10 @@ SPDX-FileCopyrightText: Copyright Honey Bunny QT
 
 Ideas for two things that belong together: an edge with a TUN device (layer
 3) instead of a TAP device (layer 2), and an Android app built on it.
-Nothing of this is code yet; it is here to be discussed and refined.  See
-the [Roadmap](Roadmap.md) for where it stands.
+TUN mode, the library entry point and a first app are code now (see the
+steps below, and [android/](../../android/README.md)); the rest is here to
+be discussed and refined.  See the [Roadmap](Roadmap.md) for where it
+stands.
 
 Both keep the v3 protocol: on the wire there are Ethernet frames as before,
 so a TUN edge and a TAP edge are in the same community and reach each other.
@@ -71,7 +73,7 @@ This is what hin2n, the Android app of n2n, does as well.
    header in and out), and `tuntap.type = tun` on Linux.
 2. Done: netns scenarios `tun-tap` (a TUN edge and a TAP edge, direct) and
    `tun-tun` (relayed), traffic both ways.
-3. `tuntap.fd`, for Android and for tests.
+3. Done: `tuntap.fd`, for Android and for tests.
 4. IPv6 (neighbour discovery), later.
 
 ## Android app
@@ -140,11 +142,16 @@ with the phone (always-on VPN).
 
 ### Steps
 
-1. TUN mode on Linux, with tests (see above).
-2. The library entry point and the socket hook, tried from a small C
-   program on Linux with a TUN fd handed over.
-3. libn3n built by the NDK in CI.
-4. A minimal app: import a file or a QR code, connect, disconnect, state.
+1. Done: TUN mode on Linux, with tests (see above).
+2. Done: the library entry point (`include/n3n/embed.h`) and the socket
+   hook, tried from a small C program on Linux with a TUN fd handed over
+   (`apps/example_edge_embed_tun.c`).
+3. Done: libn3n built by the NDK, in the app's Gradle build, in CI (the
+   `Android` workflow).
+4. Done in part: a minimal app in [android/](../../android/README.md):
+   import a file, connect, disconnect, the log.  Open: QR codes, the
+   state (peers, supernode) from the management API, automatic addresses,
+   reconnecting on network changes.
 5. Then: several networks, always-on, a quick settings tile, per-app VPN,
    F-Droid (the app would be GPL-3.0 like n3n).
 
