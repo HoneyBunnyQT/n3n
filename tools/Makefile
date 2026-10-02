@@ -39,9 +39,10 @@ $(TOOLS) $(TOOLS_OPTIONAL) $(TESTS): ../src/libn3n.a
 	@$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
 
 # See comments in the topdir Makefile about how to generate coverage
-# data.
+# data.  Compiled and linked in one step, gcc names the notes of x.c
+# x-x.gcno, as in apps/.
 gcov:
-	gcov $(TOOLS) $(TESTS)
+	gcov $(foreach t,$(TOOLS) $(TESTS),$(t)-$(t))
 
 clean:
 	rm -rf $(TOOLS) *.o *.dSYM *~
