@@ -164,6 +164,7 @@ OBJS=\
 	src/transform_speck.o \
 	src/transform_tf.o \
 	src/transform_zstd.o \
+	src/tun.o \
 	src/tuntap_freebsd.o \
 	src/tuntap_linux.o \
 	src/tuntap_netbsd.o \

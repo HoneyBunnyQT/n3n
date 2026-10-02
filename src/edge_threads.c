@@ -117,6 +117,10 @@ int edge_threads_possible (const n2n_edge_conf_t *conf) {
     if(conf->client.connect_tcp) {
         return 1;
     }
+    if(conf->tap.type == N3N_TUNTAP_TUN) {
+        // tun.c keeps one table, for the main thread
+        return 1;
+    }
     if(threads > N3N_THREADS_MAX) {
         return N3N_THREADS_MAX;
     }

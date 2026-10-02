@@ -49,7 +49,7 @@
 
 static int setup_ifname (int fd, const char *ifname,
                          struct n2n_ip_subnet v4subnet,
-                         uint8_t *mac, int mtu) {
+                         uint8_t *mac, int mtu, bool tun) {
 
     struct ifreq ifr;
 
@@ -61,7 +61,8 @@ static int setup_ifname (int fd, const char *ifname,
     ifr.ifr_hwaddr.sa_family = ARPHRD_ETHER;
     memcpy(ifr.ifr_hwaddr.sa_data, mac, 6);
 
-    if(ioctl(fd, SIOCSIFHWADDR, &ifr) == -1) {
+    // a TUN device has no MAC address: the edge's is its own, see tun.c
+    if(!tun && (ioctl(fd, SIOCSIFHWADDR, &ifr) == -1)) {
         traceEvent(TRACE_ERROR, "ioctl(SIOCSIFHWADDR) failed [%d]: %s", errno, strerror(errno));
         return -1;
     }
@@ -188,8 +189,8 @@ int tuntap_open_queues (tuntap_dev *device,
 
     memset(&ifr, 0, sizeof(ifr));
 
-    // want a TAP device for layer 2 frames
-    ifr.ifr_flags = IFF_TAP|IFF_NO_PI;
+    // a TAP device for layer 2 frames, or a TUN device for IP packets
+    ifr.ifr_flags = (device->tun ? IFF_TUN : IFF_TAP) | IFF_NO_PI;
     if(queues > 1) {
         ifr.ifr_flags |= IFF_MULTI_QUEUE;
     }
@@ -203,12 +204,13 @@ int tuntap_open_queues (tuntap_dev *device,
         // queue
         traceEvent(TRACE_WARNING, "tuntap cannot open several queues: %s[%d], using one", strerror(errno), errno);
         queues = 1;
-        ifr.ifr_flags = IFF_TAP|IFF_NO_PI;
+        ifr.ifr_flags = (device->tun ? IFF_TUN : IFF_TAP) | IFF_NO_PI;
         rc = ioctl(device->fd, TUNSETIFF, (void *)&ifr);
     }
 
     if(rc < 0) {
-        traceEvent(TRACE_ERROR, "tuntap ioctl(TUNSETIFF, IFF_TAP) error: %s[%d]\n", strerror(errno), rc);
+        traceEvent(TRACE_ERROR, "tuntap ioctl(TUNSETIFF, %s) error: %s[%d]\n", device->tun ? "IFF_TUN" : "IFF_TAP",
+                   strerror(errno), rc);
         close(device->fd);
         return -1;
     }
@@ -268,7 +270,7 @@ int tuntap_open_queues (tuntap_dev *device,
         return -1;
     }
 
-    if(setup_ifname(ioctl_fd, device->dev_name, v4subnet, device->mac_addr, mtu) < 0) {
+    if(setup_ifname(ioctl_fd, device->dev_name, v4subnet, device->mac_addr, mtu, device->tun) < 0) {
         close(nl_fd);
         close(ioctl_fd);
         tuntap_close(device);

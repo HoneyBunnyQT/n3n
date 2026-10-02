@@ -130,6 +130,7 @@ typedef char devstr_t[N2N_IFNAMSIZ];
 
 
 typedef struct tuntap_dev {
+    bool tun;                               /* a TUN device (IP packets), not a TAP one (Ethernet frames), see tun.c */
 #ifndef _WIN32
     int fd;
     devstr_t dev_name;
@@ -472,6 +473,20 @@ struct n3n_conf_tap {
     devstr_t tuntap_dev_name;
     struct n2n_ip_subnet tuntap_v4;
     uint8_t tuntap_ip_mode;                          /**< Interface IP address allocated mode, eg. DHCP. */
+    int type;                                        /**< N3N_TUNTAP_TAP or N3N_TUNTAP_TUN */
+};
+
+#define N3N_TUNTAP_TAP 0
+#define N3N_TUNTAP_TUN 1
+
+/* With a TUN device: the MAC address of an IPv4 address of the community,
+ * see tun.c */
+#define N3N_TUN_ARP_SLOTS 256
+struct n3n_tun_arp {
+    uint32_t ip;                    /* network order, 0: unused */
+    n2n_mac_t mac;
+    bool known;                     /* else only asked for */
+    time_t asked;                   /* the last ARP request for it */
 };
 
 /* The communities, the federation, the addresses handed out: the relay role */
@@ -709,6 +724,7 @@ struct n3n_rt_client {
 /* The TAP device and what goes in and out of it: the tap role of a peer */
 struct n3n_rt_tap {
     tuntap_dev device;                                                   /**< All about the TUNTAP device */
+    struct n3n_tun_arp tun_arp[N3N_TUN_ARP_SLOTS];                       /**< with a TUN device, see tun.c */
     network_traffic_filter_t         *network_traffic_filter;
 #ifdef HAVE_BRIDGING_SUPPORT
     struct host_info *               known_hosts;                        /**< hosts we know. */

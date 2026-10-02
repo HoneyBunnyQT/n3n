@@ -553,6 +553,18 @@ static struct n3n_conf_option section_supernode[] = {
     {.name = NULL},
 };
 
+static struct n3n_conf_str2id_data tuntap_type_data[] = {
+    {
+        .id = N3N_TUNTAP_TAP,
+        .name = "tap",
+    },
+    {
+        .id = N3N_TUNTAP_TUN,
+        .name = "tun",
+    },
+    {},
+};
+
 static struct n3n_conf_str2id_data test_output_format_data[] = {
     {
         .id = 0,
@@ -617,6 +629,22 @@ static struct n3n_conf_option section_tuntap[] = {
                 "of the address_mode setting. "
                 "The address can also contain an optional trailing '/' and "
                 "subnet size.",
+    },
+    {
+        .name = "type",
+        .type = n3n_conf_str2id,
+        .str2id_data = tuntap_type_data,
+        .offset = offsetof(n2n_edge_conf_t, tap.type),
+        .desc = "The kind of device: tap or tun",
+        .help = "Defaulting to tap, a TAP device that carries Ethernet "
+                "frames.  A TUN device carries IP packets: the edge then "
+                "adds and removes the Ethernet header itself, answers ARP "
+                "for its address and finds the MAC address of the others "
+                "from what they announce or by ARP, so on the wire nothing "
+                "changes and TUN and TAP edges share a community.  For "
+                "systems that offer only TUN devices (Android).  IPv4 only "
+                "for now, no bridging, no dhcp address_mode, one thread.  "
+                "Linux only.",
     },
     {
         .name = "address_mode",

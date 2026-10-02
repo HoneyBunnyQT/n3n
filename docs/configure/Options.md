@@ -446,6 +446,14 @@ Set the tuntap IP address.
 
 By default, the supernode will assign an address. The address defined here may be ignored depending on the value of the address_mode setting. The address can also contain an optional trailing '/' and subnet size.
 
+### tuntap.type
+
+The kind of device: tap or tun.
+
+Defaulting to tap, a TAP device that carries Ethernet frames. A TUN device carries IP packets: the edge then adds and removes the Ethernet header itself, answers ARP for its address and finds the MAC address of the others from what they announce or by ARP, so on the wire nothing changes and TUN and TAP edges share a community. For systems that offer only TUN devices (Android). IPv4 only for now, no bridging, no dhcp address_mode, one thread. Linux only.
+
+Default: `tap`
+
 ### tuntap.address_mode
 
 Define how the tuntap address is set.

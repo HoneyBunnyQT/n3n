@@ -32,6 +32,7 @@
 #include "n2n_wire.h"
 #include "punch.h"
 #include "role_client.h"
+#include "tun.h"              // for tun_to_frame, tun_from_frame
 #include "role_tap.h"
 #include "sn_selection.h"
 #include "edge_threads.h"
@@ -156,7 +157,7 @@ static int tap_read (struct n3n_runtime_data *eee, uint8_t *buf, int len) {
 }
 
 
-static int tap_write (struct n3n_runtime_data *eee, uint8_t *buf, int len) {
+static int tap_write_device (struct n3n_runtime_data *eee, uint8_t *buf, int len) {
 
 #ifdef __linux__
     if(n3n_thread_slot) {
@@ -164,6 +165,17 @@ static int tap_write (struct n3n_runtime_data *eee, uint8_t *buf, int len) {
     }
 #endif
     return tuntap_write(&eee->tap.device, buf, len);
+}
+
+
+// A frame for the device: as it is to a TAP device, its IP packet to a TUN
+// device, see tun.c
+static int tap_write (struct n3n_runtime_data *eee, uint8_t *buf, int len) {
+
+    if(eee->tap.device.tun) {
+        return tun_from_frame(eee, buf, len, tap_write_device);
+    }
+    return tap_write_device(eee, buf, len);
 }
 
 
@@ -716,6 +728,7 @@ void edge_send_packet2net (struct n3n_runtime_data * eee,
  */
 int edge_tap_open (struct n3n_runtime_data *eee) {
 
+    eee->tap.device.tun = eee->conf.tap.type == N3N_TUNTAP_TUN;
 #ifdef __linux__
     return tuntap_open_queues(&eee->tap.device, edge_threads_possible(&eee->conf),
                               eee->conf.tap.tuntap_dev_name,
@@ -757,7 +770,13 @@ static int edge_tap_take (struct n3n_runtime_data * eee,
      * do not test a stale errno below */
     errno = 0;
 
-    len = tap_read(eee, eth_pkt, N2N_PKT_BUF_SIZE);
+    // a TUN device gives the IP packet, which gets its Ethernet header in
+    // front, see tun.c
+    if(eee->tap.device.tun) {
+        len = tap_read(eee, eth_pkt + 14, N2N_PKT_BUF_SIZE - 14);
+    } else {
+        len = tap_read(eee, eth_pkt, N2N_PKT_BUF_SIZE);
+    }
 
     if((len < 0) && ((errno == EAGAIN) || (errno == EWOULDBLOCK))) {
         /* The tap device is opened non blocking, so this just means that
@@ -787,6 +806,14 @@ static int edge_tap_take (struct n3n_runtime_data * eee,
         }
         return -1;
 
+    }
+
+    if(eee->tap.device.tun) {
+        len = tun_to_frame(eee, eth_pkt, len);
+        if(!len) {
+            // taken, but nothing to send
+            return 1;
+        }
     }
 
     const uint8_t * mac = eth_pkt;

@@ -303,6 +303,17 @@ int edge_verify_conf (const n2n_edge_conf_t *conf) {
        ((conf->community.encrypt_key != NULL) && (conf->community.transop_id == N2N_TRANSFORM_ID_NULL)))
         return -4;
 
+    if(conf->tap.type == N3N_TUNTAP_TUN) {
+#ifndef __linux__
+        traceEvent(TRACE_ERROR, "tuntap.type = tun works on Linux only so far");
+        return -6;
+#endif
+        if(conf->tap.tuntap_ip_mode == TUNTAP_IP_MODE_DHCP) {
+            traceEvent(TRACE_ERROR, "tuntap.type = tun cannot take its address by DHCP");
+            return -6;
+        }
+    }
+
     return 0;
 }
 
