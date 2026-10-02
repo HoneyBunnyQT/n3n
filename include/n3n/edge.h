@@ -38,6 +38,9 @@ bool transport_note_giveup (struct n3n_runtime_data *eee, time_t now);
 // the first supernode that can be reached over the transport in use, and the
 // next one after sn (round the list)
 struct peer_info *supernode_first (struct n3n_runtime_data *eee);
+// whether the edge is registered at a supernode: one answered within the
+// last three registration intervals
+bool edge_is_registered (const struct n3n_runtime_data *eee, time_t now);
 struct peer_info *supernode_next (struct n3n_runtime_data *eee, struct peer_info *sn);
 
 #endif

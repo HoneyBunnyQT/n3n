@@ -130,6 +130,16 @@ static const n3n_sock_t *sn_tcp_sock (const struct peer_info *sn) {
 }
 
 
+bool edge_is_registered (const struct n3n_runtime_data *eee, time_t now) {
+
+    time_t last = SHARED_LOAD(eee->client.last_sup);
+
+    // not just !sn_wait: that is also set while the answer to the periodic
+    // re-registration is on its way
+    return eee->client.curr_sn && last && (now - last <= 3 * (time_t)eee->conf.client.register_interval);
+}
+
+
 struct peer_info *supernode_first (struct n3n_runtime_data *eee) {
 
     return supernode_next(eee, NULL);
@@ -269,6 +279,7 @@ static void transport_probe (struct n3n_runtime_data *eee, time_t now) {
 
     len = encode_query_peer(eee, pktbuf, null_mac);
     traceEvent(TRACE_DEBUG, "probing UDP to the supernode");
+    eee->client.ping_sent_us = n3n_monotonic_us();
     sendto_logged(eee->client.probe_sock, pktbuf, len, (struct sockaddr *)&dest, dest_len);
 }
 
@@ -970,6 +981,7 @@ void send_query_peer (struct n3n_runtime_data * eee,
 
     } else {
         traceEvent(TRACE_DEBUG, "send PING to supernodes");
+        eee->client.ping_sent_us = n3n_monotonic_us();
 
         n_o_pings = eee->conf.client.number_max_sn_pings;
         eee->conf.client.number_max_sn_pings = NUMBER_SN_PINGS_REGULAR;
@@ -1915,6 +1927,12 @@ void edge_rx_peer_info (struct n3n_runtime_data *eee, struct pdu_ctx *c) {
             scan->last_seen = now;
             scan->uptime = pi.uptime;
             memcpy(scan->version, pi.version, sizeof(n2n_version_t));
+            // what the page and get_supernodes show, whatever the strategy
+            scan->sn_load = pi.load;
+            if(eee->client.ping_sent_us) {
+                uint64_t rtt = n3n_monotonic_us() - eee->client.ping_sent_us;
+                scan->sn_rtt_us = (rtt > UINT32_MAX) ? UINT32_MAX : (rtt ? rtt : 1);
+            }
             /* The data type depends on the actual selection strategy that has been chosen. */
             uint64_t sn_sel_tmp = pi.load;
             sn_selection_criterion_calculate(eee, scan, sn_sel_tmp);

@@ -59,6 +59,7 @@
 // FIXME, including private headers
 #include "../src/crypto/speck.h"     // for speck_init, speck_context_t
 #include "../src/edge_threads.h"     // for edge_threads_open_early
+#include "../src/management.h"       // for mgmt_password_warn
 #include "../src/peer_info.h"        // for peer_info, peer_info_t
 #include "../src/resolve.h"          // for resolve_check
 
@@ -1204,6 +1205,7 @@ int n3n_edge_main (int argc, char* argv[]) {
 #endif /* _WIN32 */
 
     traceEvent(TRACE_NORMAL, "edge started");
+    mgmt_password_warn(eee);
     rc = run_edge_loop(eee);
 
 #ifdef HAVE_LIBCAP

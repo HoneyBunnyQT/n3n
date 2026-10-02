@@ -64,8 +64,10 @@
     {
         "current": 1,
         "last_seen": 0,
+        "load": 0,
         "macaddr": "02:00:00:55:00:00",
         "purgeable": 0,
+        "rtt_us": 0,
         "selection": "",
         "sockaddr": "127.0.0.1:7654",
         "tcp_sockaddr": "127.0.0.1:7654",

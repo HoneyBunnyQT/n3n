@@ -27,9 +27,10 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>          // for free, atoi, calloc, strtol
-#include <string.h>
-#include <strings.h>            // for strncasecmp          // for memcmp, memcpy, memset, strlen, strerror
+#include <string.h>          // for memcmp, memcpy, memset, strlen, strerror
+#include <strings.h>         // for strncasecmp
 #include <sys/time.h>        // for gettimeofday, timeval
+#include <time.h>            // for clock_gettime
 
 #include "n2n.h"
 #include "n2n_define.h"
@@ -821,6 +822,21 @@ static uint64_t time_stamp_next (uint64_t previous, uint64_t micro_seconds) {
     micro_seconds |= new_co;
 
     return micro_seconds;
+}
+
+
+// Microseconds of a clock that only goes forward, for measuring how long
+// something took: not the time of day
+uint64_t n3n_monotonic_us (void) {
+
+#ifdef _WIN32
+    return (uint64_t)GetTickCount64() * 1000;
+#else
+    struct timespec ts;
+
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000 + (uint64_t)ts.tv_nsec / 1000;
+#endif
 }
 
 

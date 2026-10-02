@@ -132,6 +132,7 @@ socklen_t prepare_sockaddr_for_send (struct sockaddr_storage *out_sa,
 
 /* Header encryption */
 uint64_t time_stamp (void);
+uint64_t n3n_monotonic_us (void);
 
 /* Public functions */
 struct n3n_runtime_data* edge_init (const n2n_edge_conf_t *conf, int *rv);

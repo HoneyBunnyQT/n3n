@@ -673,6 +673,7 @@ struct n3n_rt_client {
     int probe_sock;                                                      /**< over TCP by fallback: a UDP socket to see whether UDP works again */
     bool probe_ok;                                                       /**< a supernode answered on it */
     time_t last_probe;
+    uint64_t ping_sent_us;                                               /**< when the last PINGs to the supernodes went out (n3n_monotonic_us) */
     n2n_trans_op_t transop;                                              /**< The transop to use when encoding */
     n2n_trans_op_t transop_lzo;                                          /**< The transop for LZO  compression */
     n2n_trans_op_t transop_zstd;                                         /**< The transop for ZSTD compression */

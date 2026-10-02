@@ -31,4 +31,9 @@ struct n3n_runtime_data;
 
 void mgmt_event_post (const enum n3n_event_topic topic, const int data0, const void *data1);
 void mgmt_api_handler (struct n3n_runtime_data *, conn_t *);
+
+// Whether management.password is still the default everybody knows, and a
+// warning in the log if so
+bool mgmt_password_is_default (const struct n3n_runtime_data *rt);
+void mgmt_password_warn (const struct n3n_runtime_data *rt);
 #endif

@@ -865,6 +865,8 @@ static void jsonrpc_get_supernodes (char *id, struct n3n_runtime_data *eee, conn
                     "\"sockaddr\":\"%s\","
                     "\"tcp_sockaddr\":\"%s\","
                     "\"transports\":\"%s\","
+                    "\"load\":%u,"
+                    "\"rtt_us\":%u,"
                     "\"selection\":\"%s\","
                     "\"last_seen\":%u,"
                     "\"uptime\":%u},",
@@ -875,6 +877,8 @@ static void jsonrpc_get_supernodes (char *id, struct n3n_runtime_data *eee, conn
                     sock_to_cstr(sockbuf, &(peer->sock)),
                     sock_to_cstr(tcpbuf, peer->tcp_hostname ? &peer->tcp_sock : &peer->sock),
                     (peer->transports == N3N_TRANSPORT_UDP) ? "udp" : (peer->transports == N3N_TRANSPORT_TCP) ? "tcp" : "udp tcp",
+                    peer->sn_load,
+                    peer->sn_rtt_us,
                     sn_selection_criterion_str(eee, sel_buf, peer),
                     (uint32_t)peer->last_seen,
                     (uint32_t)peer->uptime);
@@ -1427,6 +1431,21 @@ static void render_help_page (struct n3n_runtime_data *eee, conn_t *conn) {
 
     generate_http_headers(conn, "text/plain", 200);
 }
+
+bool mgmt_password_is_default (const struct n3n_runtime_data *rt) {
+
+    return !rt->conf.mgmt_password || !strcmp(rt->conf.mgmt_password, N3N_MGMT_PASSWORD);
+}
+
+
+void mgmt_password_warn (const struct n3n_runtime_data *rt) {
+
+    if(mgmt_password_is_default(rt)) {
+        traceEvent(TRACE_WARNING, "management.password is the default \"%s\": whoever can reach the "
+                   "management interface can stop n3n; set one of your own", N3N_MGMT_PASSWORD);
+    }
+}
+
 
 void mgmt_api_handler (struct n3n_runtime_data *eee, conn_t *conn) {
     int i;

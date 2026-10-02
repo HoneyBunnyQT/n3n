@@ -12,6 +12,7 @@
  */
 
 #include <connslot/strbuf.h>    // for strbuf_t, sb_reprintf
+#include <n3n/edge.h>           // for edge_is_registered
 #include <n3n/ethernet.h>       // for macaddr_str, is_null_mac
 #include <n3n/logging.h>        // for getTraceLevel
 #include <n3n/strings.h>        // for sock_to_cstr, ip_subnet_to_str
@@ -21,11 +22,13 @@
 #include <string.h>
 #include <time.h>
 #include "counter.h"            // for SHARED_LOAD
+#include "management.h"         // for mgmt_password_is_default
 #include "management_page.h"
 #include "n2n.h"
 #include "n2n_typedefs.h"
 #include "natclass.h"           // for nat_view_str, nat_hint_str
 #include "peer_info.h"
+#include "sn_selection.h"         // for SN_SELECTION_STRATEGY_RTT
 #include "stats.h"              // for n3n_stats_sum
 #include "uthash.h"
 
@@ -250,7 +253,7 @@ static void section_edge (strbuf_t **b, struct n3n_runtime_data *eee, bool own_o
     n3n_sock_str_t sockbuf;
     struct peer_info *peer, *tmp;
     struct peer_info *sn = eee->client.curr_sn;
-    bool registered = sn && !eee->client.sn_wait && SHARED_LOAD(eee->client.last_sup);
+    bool registered = edge_is_registered(eee, now);
     int rows;
 
     inet_ntop(AF_INET, &eee->tap.device.ip_addr, ip, sizeof(ip));
@@ -273,6 +276,11 @@ static void section_edge (strbuf_t **b, struct n3n_runtime_data *eee, bool own_o
         sb_reprintf(b, "<dt>NAT</dt><dd>IPv4: %s &nbsp; IPv6: %s</dd>\n",
                     nat_view_str(nat4, sizeof(nat4), &eee->client.nat[0]),
                     nat_view_str(nat6, sizeof(nat6), &eee->client.nat[1]));
+        sb_reprintf(b, "<dt>Chooses</dt><dd>the supernode with the %s "
+                    "<span class=dim>(connection.supernode_selection)</span></dd>\n",
+                    (eee->conf.client.sn_selection_strategy == SN_SELECTION_STRATEGY_RTT) ? "shortest round trip" :
+                    (eee->conf.client.sn_selection_strategy == SN_SELECTION_STRATEGY_MAC) ? "lowest MAC address" :
+                    "lowest load");
     }
     sb_reprintf(b, "</dl>\n");
 
@@ -300,7 +308,8 @@ static void section_edge (strbuf_t **b, struct n3n_runtime_data *eee, bool own_o
         char version[N2N_VERSION_STRING_SIZE + 1];
 
         sb_reprintf(b, "<h3>Supernodes</h3><div class=scroll><table>"
-                    "<tr><th></th><th>socket</th><th>TCP</th><th>over</th><th>version</th><th>last seen</th></tr>\n");
+                    "<tr><th></th><th>socket</th><th>TCP</th><th>over</th><th class=num>load</th>"
+                    "<th class=num>round trip</th><th>version</th><th>last seen</th></tr>\n");
         rows = 0;
         HASH_ITER(hh, eee->client.supernodes, peer, tmp) {
             n3n_sock_str_t tcpbuf;
@@ -308,16 +317,23 @@ static void section_edge (strbuf_t **b, struct n3n_runtime_data *eee, bool own_o
                 continue;
             }
             snprintf(version, sizeof(version), "%.*s", N2N_VERSION_STRING_SIZE, peer->version);
-            sb_reprintf(b, "<tr><td>%s</td><td class=mono>%s</td><td class=mono>%s</td><td>%s</td><td>",
+            sb_reprintf(b, "<tr><td>%s</td><td class=mono>%s</td><td class=mono>%s</td><td>%s</td>",
                         (peer == sn) ? "<span class=\"b info\">current</span>" : "",
                         sock_to_cstr(sockbuf, &peer->sock),
                         sock_to_cstr(tcpbuf, peer->tcp_hostname ? &peer->tcp_sock : &peer->sock),
                         (peer->transports == N3N_TRANSPORT_UDP) ? "UDP" :
                         (peer->transports == N3N_TRANSPORT_TCP) ? "TCP" : "UDP, TCP");
+            sb_reprintf(b, "<td class=num>");
+            if(peer->sn_rtt_us) {
+                sb_reprintf(b, "%u</td><td class=num>%u.%u ms</td><td>", peer->sn_load,
+                            peer->sn_rtt_us / 1000, (peer->sn_rtt_us % 1000) / 100);
+            } else {
+                sb_reprintf(b, "</td><td class=num></td><td>");
+            }
             html_text(b, version, sizeof(version));
             sb_reprintf(b, "</td><td>%s</td></tr>\n", ago(when, sizeof(when), now, peer->last_seen));
         }
-        row_more(b, 6, rows - PAGE_ROWS_MAX);
+        row_more(b, 8, rows - PAGE_ROWS_MAX);
         sb_reprintf(b, "</table></div>\n");
     }
 
@@ -456,9 +472,14 @@ void mgmt_page_render (strbuf_t **b, struct n3n_runtime_data *rt, struct n3n_run
                 "<button name=do value=less%s>less</button>\n"
                 "<button name=do value=more%s>more</button>\n"
                 "<button name=do value=stop class=bad>stop n3n</button>\n"
-                "</form>\n<p class=dim>Buttons ask for the management password (user name: anything). "
+                "</form>\n%s<p class=dim>Buttons ask for the management password (user name: anything). "
                 "As of %s.</p></section>\n",
-                level, (level <= 0) ? " disabled" : "", (level >= 4) ? " disabled" : "", clock);
+                level, (level <= 0) ? " disabled" : "", (level >= 4) ? " disabled" : "",
+                mgmt_password_is_default(rt) ?
+                "<p class=bad><b>The management password is still the default one</b> "
+                "(\"" N3N_MGMT_PASSWORD "\"): whoever can reach this page can stop n3n. "
+                "Set <code>management.password</code> in the configuration.</p>\n" : "",
+                clock);
 
     if(edge) {
         section_edge(b, edge, relay != NULL, now);
