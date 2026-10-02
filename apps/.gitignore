@@ -9,7 +9,9 @@ n3n-supernode.exe
 # Examples
 example_edge_embed_quick_edge_init
 example_edge_embed
+example_edge_embed_tun
 example_sn_embed
 example_edge_embed_quick_edge_init.exe
 example_edge_embed.exe
+example_edge_embed_tun.exe
 example_sn_embed.exe
