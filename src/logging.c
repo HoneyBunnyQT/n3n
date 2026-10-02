@@ -22,6 +22,8 @@ static int traceLevel = 2 /* NORMAL */;
 static int useSyslog = 0;
 static int syslog_opened = 0;
 static FILE *traceFile = NULL;
+static void (*trace_callback)(void *ctx, int level, const char *line);
+static void *trace_callback_ctx;
 static int output_dateprefix = -1; // initially "unknown"
 
 #ifdef _WIN32
@@ -39,6 +41,14 @@ void syslog (int a, char *fmt, ...) {
     return;
 }
 #endif
+
+// Every line of the log to fn instead of the log's usual way, see n3n/embed.h
+void setTraceCallback (void (*fn)(void *ctx, int level, const char *line), void *ctx) {
+
+    trace_callback = fn;
+    trace_callback_ctx = ctx;
+}
+
 
 int getTraceLevel () {
 
@@ -95,6 +105,14 @@ void _traceEvent (int eventTraceLevel, char* file, int line, char * format, ...)
     // Remove trailing newlines
     while(buf[strlen(buf) - 1] == '\n') {
         buf[strlen(buf) - 1] = '\0';
+    }
+
+    if(trace_callback) {
+        char out[sizeof(buf) + 16];
+
+        snprintf(out, sizeof(out), "%s%s", extra_msg, buf);
+        trace_callback(trace_callback_ctx, eventTraceLevel, out);
+        return;
     }
 
     if(useSyslog) {

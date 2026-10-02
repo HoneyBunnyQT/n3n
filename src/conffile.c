@@ -1285,21 +1285,11 @@ char *extract_section (char *line) {
     return section;
 }
 
-int n3n_config_load_file (void *conf, char *name) {
+// The options of a configuration in the INI format, from f; filename is
+// only for the messages
+static int load_stream (void *conf, FILE *f, const char *filename) {
     int error = -1;
     char *section = NULL;
-
-    char *filename = find_config(name);
-    if(!filename) {
-        // Couldnt find a filename
-        return -2;
-    }
-    FILE *f = fopen(filename, "r");
-    if(!f) {
-        // Shouldnt happen, since find_config found a file
-        printf("Unexpected error opening %s\n", filename);
-        goto out1;
-    }
 
     char buf[1024];
     char *line;
@@ -1441,11 +1431,45 @@ int n3n_config_load_file (void *conf, char *name) {
     error = 0;
 
 out:
-    fclose(f);
-out1:
     free(section);
+    return error;
+}
+
+
+int n3n_config_load_file (void *conf, char *name) {
+
+    char *filename = find_config(name);
+    if(!filename) {
+        // Couldnt find a filename
+        return -2;
+    }
+    FILE *f = fopen(filename, "r");
+    if(!f) {
+        // Shouldnt happen, since find_config found a file
+        printf("Unexpected error opening %s\n", filename);
+        free(filename);
+        return -1;
+    }
+    int error = load_stream(conf, f, filename);
+    fclose(f);
     free(filename);
     return error;
+}
+
+
+int n3n_config_load_text (void *conf, const char *text) {
+
+#ifdef _WIN32
+    return -1;
+#else
+    FILE *f = fmemopen((void *)text, strlen(text), "r");
+    if(!f) {
+        return -1;
+    }
+    int error = load_stream(conf, f, "(text)");
+    fclose(f);
+    return error;
+#endif
 }
 
 
@@ -1691,6 +1715,16 @@ static int mkdir_p (const char *pathname, int mode, int uid, int gid) {
     return 0;
 }
 
+// Where the session directories go instead of CONFIG_RUNDIR/n3n, for an app
+// that embeds n3n (n3n/embed.h)
+static const char *rundir;
+
+void n3n_config_set_rundir (const char *dir) {
+
+    rundir = dir;
+}
+
+
 int n3n_config_setup_sessiondir (n2n_edge_conf_t *conf) {
     if(!conf->sessionname) {
         traceEvent(TRACE_NORMAL, "cannot setup sessiondir: no sessionname");
@@ -1703,7 +1737,7 @@ int n3n_config_setup_sessiondir (n2n_edge_conf_t *conf) {
 
 
 #ifndef _WIN32
-    char *basedir = CONFIG_RUNDIR "/n3n";
+    const char *basedir = rundir ? rundir : CONFIG_RUNDIR "/n3n";
 #endif
 #ifdef _WIN32
     char basedir[1024];

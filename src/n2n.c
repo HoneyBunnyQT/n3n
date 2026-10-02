@@ -54,6 +54,32 @@
 
 /* ************************************** */
 
+// An app that embeds n3n can claim every socket n3n opens towards the
+// network before it is used: on Android VpnService.protect(), so that what
+// n3n sends does not go back into the VPN.  See n3n/embed.h.
+static bool (*socket_hook)(void *ctx, int fd);
+static void *socket_hook_ctx;
+
+void n3n_set_socket_hook (bool (*fn)(void *ctx, int fd), void *ctx) {
+
+    socket_hook = fn;
+    socket_hook_ctx = ctx;
+}
+
+
+SOCKET n3n_socket (int domain, int type, int protocol) {
+
+    SOCKET fd = socket(domain, type, protocol);
+
+    if(((int)fd >= 0) && socket_hook && !socket_hook(socket_hook_ctx, (int)fd)) {
+        closesocket(fd);
+        errno = EACCES;
+        return -1;
+    }
+    return fd;
+}
+
+
 SOCKET open_socket (struct sockaddr *local_address, socklen_t addrlen, int type /* 0 = UDP, TCP otherwise */) {
 
     SOCKET sock_fd;
@@ -68,7 +94,7 @@ SOCKET open_socket (struct sockaddr *local_address, socklen_t addrlen, int type 
         family = AF_INET;
     }
 
-    if((int)(sock_fd = socket(family, ((type == 0) ? SOCK_DGRAM : SOCK_STREAM), 0)) < 0) {
+    if((int)(sock_fd = n3n_socket(family, ((type == 0) ? SOCK_DGRAM : SOCK_STREAM), 0)) < 0) {
         traceEvent(TRACE_ERROR, "Unable to create socket for family %d [%s][%d]\n",
                    family, strerror(errno), sock_fd);
         return -1;
@@ -193,7 +219,7 @@ static SOCKET open_bind_socket (const struct sockaddr *sa, int type, int v6only)
 
     socklen_t len = (sa->sa_family == AF_INET) ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6);
     int one = 1;
-    SOCKET fd = socket(sa->sa_family, type, 0);
+    SOCKET fd = n3n_socket(sa->sa_family, type, 0);
 #ifdef _WIN32
     if(fd == INVALID_SOCKET) {
         return -1;

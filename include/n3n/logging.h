@@ -18,6 +18,7 @@
 #define TRACE_DEBUG       4
 
 void setTraceLevel (int level);
+void setTraceCallback (void (*fn)(void *ctx, int level, const char *line), void *ctx);
 void setUseSyslog (int use_syslog);
 int getTraceLevel ();
 void closeTraceFile ();

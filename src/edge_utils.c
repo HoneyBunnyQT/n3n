@@ -370,7 +370,7 @@ int detect_local_ip_address (n3n_sock_t* out_sock, const struct n3n_runtime_data
     // as re-connecting to AF_UNSPEC might not work to release the socket
     // on non-UNIXoids, we use a temporary socket
 
-    probe_sock = socket(sn_sock.ss_family, SOCK_DGRAM, 0);
+    probe_sock = n3n_socket(sn_sock.ss_family, SOCK_DGRAM, 0);
     if(probe_sock < 0) {
         return -2;
     }

@@ -93,6 +93,9 @@ void n3n_config_debug_addr (void *, FILE *);
 int n3n_config_load_env (void *);
 
 int n3n_config_load_file (void *, char *);
+// a configuration in the INI format, as a string
+int n3n_config_load_text (void *conf, const char *text);
+void n3n_config_set_rundir (const char *dir);
 
 enum n3n_subcmd_type {
     n3n_subcmd_type_nest = 1,

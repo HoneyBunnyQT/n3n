@@ -120,6 +120,9 @@ int memxor (uint8_t *destination, const uint8_t *source, size_t len);
 
 /* Sockets */
 SOCKET open_socket(struct sockaddr *, socklen_t, int type);
+// socket(), offered to the hook of n3n_set_socket_hook() first, see n2n.c
+SOCKET n3n_socket (int domain, int type, int protocol);
+void n3n_set_socket_hook (bool (*fn)(void *ctx, int fd), void *ctx);
 int n3n_open_bind_sockets (struct n3n_runtime_data *sss, struct n3n_bind *list,
                            bool with_tcp, int missing_v6_level);
 // closes what n3n_open_bind_sockets() opened

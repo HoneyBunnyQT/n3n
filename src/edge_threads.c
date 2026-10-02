@@ -571,7 +571,7 @@ static SOCKET open_like (SOCKET like) {
     if(local.ss_family == AF_INET6) {
         getsockopt(like, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, &optlen);
     }
-    sock = socket(local.ss_family, SOCK_DGRAM, 0);
+    sock = n3n_socket(local.ss_family, SOCK_DGRAM, 0);
     if(sock < 0) {
         return -1;
     }

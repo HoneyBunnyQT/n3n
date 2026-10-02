@@ -304,7 +304,7 @@ static int punch_open_sock (struct n3n_runtime_data *eee, int family, int *ttl0)
     socklen_t len = sizeof(sa);
     int i = bind_entry_for_family(eee, family);
 
-    int sock = socket(family, SOCK_DGRAM, IPPROTO_UDP);
+    int sock = n3n_socket(family, SOCK_DGRAM, IPPROTO_UDP);
     if(sock < 0) {
         return -1;
     }

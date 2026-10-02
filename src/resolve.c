@@ -119,7 +119,7 @@ static struct hostname_list_item *hostname_lists[3];
 // is not enough: once the edge's TAP device is up, its IPv4 address makes an
 // IPv6 only host look as if it had IPv4 too.
 static bool have_route_to (const struct addrinfo *ai) {
-    SOCKET sock = socket(ai->ai_family, SOCK_DGRAM, 0);
+    SOCKET sock = n3n_socket(ai->ai_family, SOCK_DGRAM, 0);
 #ifdef _WIN32
     if(sock == INVALID_SOCKET) {
         return false;
