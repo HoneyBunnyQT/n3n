@@ -1,0 +1,54 @@
+---
+name: Android
+
+# yamllint disable-line rule:truthy
+on:
+  push:
+    paths:
+      - 'android/**'
+      - 'include/**'
+      - 'libs/**'
+      - 'src/**'
+      - 'VERSION'
+      - '.github/workflows/android.yml'
+  pull_request:
+    paths:
+      - 'android/**'
+      - 'include/**'
+      - 'libs/**'
+      - 'src/**'
+      - 'VERSION'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    name: Build the app
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Fix Checkout
+        run: |
+          git fetch --force --tags
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Build the debug APK
+        working-directory: android
+        run: |
+          ./gradlew --no-daemon assembleDebug
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: n3n-android-debug
+          path: android/app/build/outputs/apk/debug/*.apk
