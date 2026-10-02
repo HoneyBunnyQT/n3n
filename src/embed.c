@@ -68,6 +68,10 @@ int n3n_edge_run (const char *config, int tun_fd, const struct n3n_embed *e) {
     conf.userid = getuid();
     conf.groupid = getgid();
 
+    // the device has its address: the one given is static
+    if(conf.tap.tuntap_v4.net_addr) {
+        conf.tap.tuntap_ip_mode = TUNTAP_IP_MODE_STATIC;
+    }
     if(conf.tap.tuntap_ip_mode != TUNTAP_IP_MODE_STATIC) {
         traceEvent(TRACE_ERROR, "embed: the device is set up already, so tuntap.address has to be given");
         return -3;
