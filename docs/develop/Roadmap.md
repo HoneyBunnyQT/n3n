@@ -123,6 +123,20 @@ tests and `make lint` pass after each.
       `tcp6://` and the like, which would only matter for names to resolve.
       Open: supernodes the federation tells about are tried over TCP at
       their UDP port
+- [x] The page and get_supernodes show each supernode's load and round
+      trip, and the selection strategy; a warning while the management
+      password is the default.  Found on the way: the supernode's load
+      never got across (0 from n3n supernodes, swapped from n2n ones) -
+      fixed, also on `fixes`
+- [x] systemd: Type=notify units (ready, status line, watchdog,
+      stopping), without libsystemd and only when NOTIFY_SOCKET is set
+- [ ] Ideas to pick from (all v3 compatible): react to network changes and
+      wake-up (netlink, clock jumps); keep learned supernodes on disk;
+      names for peers (DNS); IPv6 on the TAP device from a prefix derived
+      from the community; reload on SIGHUP; interop tests against n2n 3.x
+      and older n3n in the netns lab; epoll and batched I/O; no alloc per
+      packet; fewer privileges (CAP_NET_ADMIN only, Landlock); packages for
+      the single binary; tools init / tools qr
 - [ ] TUN mode (layer 3 device), see [Mobile and TUN](MobileAndTun.md)
 - [ ] Android app (`VpnService`, configuration by QR code), see
       [Mobile and TUN](MobileAndTun.md)
