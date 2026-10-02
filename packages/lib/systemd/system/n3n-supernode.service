@@ -5,7 +5,11 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=simple
+# n3n tells systemd when it is up, how it is doing (systemctl status) and
+# that its main loop still runs; see docs/configure/Systemd.md
+Type=notify
+NotifyAccess=main
+WatchdogSec=60
 User=n3n
 Group=n3n
 RuntimeDirectory=n3n

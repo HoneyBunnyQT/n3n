@@ -143,6 +143,7 @@ OBJS=\
 	src/n2n_regex.o \
 	src/natclass.o \
 	src/network_traffic_filter.o \
+	src/notify.o \
 	src/pdu_in.o \
 	src/punch.o \
 	src/peer_info.o \

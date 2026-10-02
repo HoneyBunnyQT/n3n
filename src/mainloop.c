@@ -36,6 +36,7 @@
 #include "role_tap.h"           // for edge_read_from_tap_batch
 #include "edge_threads.h"       // for edge_threads_main_release, ...
 #include "management.h"         // for readFromMgmtSocket
+#include "notify.h"             // for n3n_notify_tick
 #include "minmax.h"             // for min, max
 #include "portable_endian.h"    // for htobe16
 
@@ -1133,7 +1134,11 @@ void mainloop_run (struct n3n_runtime_data *rt) {
         }
 
         run_ticks(rt, time(NULL));
+
+        // systemd's watchdog and status, if it asked for them
+        n3n_notify_tick(rt);
     }
+    n3n_notify("STOPPING=1");
 }
 
 void n3n_initfuncs_mainloop () {

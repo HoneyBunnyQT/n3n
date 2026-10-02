@@ -5,7 +5,11 @@ After=network-online.target nfw.target
 Wants=network-online.target
 
 [Service]
-Type=simple
+# n3n tells systemd when it is up, how it is doing (systemctl status) and
+# that its main loop still runs; see docs/configure/Systemd.md
+Type=notify
+NotifyAccess=main
+WatchdogSec=60
 ExecStartPre=
 ExecStart=/usr/sbin/n3n-edge start
 Restart=on-abnormal

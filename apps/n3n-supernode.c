@@ -46,6 +46,7 @@
 // FIXME, including private headers
 #include "../src/edge_threads.h"      // for edge_threads_open_early
 #include "../src/management.h"        // for mgmt_password_warn
+#include "../src/notify.h"            // for n3n_notify_ready
 #include "../src/peer_info.h"         // for peer_info
 #include "../src/resolve.h"           // for resolve_hostnames_str_to_peer_info
 
@@ -643,6 +644,7 @@ int n3n_supernode_main (int argc, char * argv[]) {
 
     traceEvent(TRACE_NORMAL, "supernode started");
     mgmt_password_warn(&sss_node);
+    n3n_notify_ready(&sss_node);
 
 #ifndef _WIN32
     signal(SIGPIPE, SIG_IGN);

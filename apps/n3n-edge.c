@@ -60,6 +60,7 @@
 #include "../src/crypto/speck.h"     // for speck_init, speck_context_t
 #include "../src/edge_threads.h"     // for edge_threads_open_early
 #include "../src/management.h"       // for mgmt_password_warn
+#include "../src/notify.h"           // for n3n_notify_ready
 #include "../src/peer_info.h"        // for peer_info, peer_info_t
 #include "../src/resolve.h"          // for resolve_check
 
@@ -1125,6 +1126,7 @@ int n3n_edge_main (int argc, char* argv[]) {
         // we usually wait for some answer, there however are exceptions when going back to a previous runlevel
         if(seek_answer) {
             mainloop_runonce(eee);
+            n3n_notify_tick(eee);
 
             // FIXME: the mainloop could wait for BOOTSTRAP_TIMEOUT, not its
             // usual timeout ?!?
@@ -1206,6 +1208,7 @@ int n3n_edge_main (int argc, char* argv[]) {
 
     traceEvent(TRACE_NORMAL, "edge started");
     mgmt_password_warn(eee);
+    n3n_notify_ready(eee);
     rc = run_edge_loop(eee);
 
 #ifdef HAVE_LIBCAP
