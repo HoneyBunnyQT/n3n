@@ -59,7 +59,7 @@
 #include "../src/crypto/speck.h"     // for speck_init, speck_context_t
 #include "../src/edge_threads.h"     // for edge_threads_open_early
 #include "../src/peer_info.h"        // for peer_info, peer_info_t
-#include "../src/resolve.h"          // for resolve_check
+#include "../src/resolve.h"          // for resolve_check, resolve_forked
 
 #ifdef HAVE_LIBCRYPTO
 #include <openssl/crypto.h>          // for OpenSSL_version
@@ -1191,6 +1191,8 @@ int main (int argc, char* argv[]) {
     if(conf.background) {
         setUseSyslog(1); /* traceEvent output now goes to syslog. */
         daemonize();
+        // the resolver thread stayed with the parent
+        resolve_forked(eee->resolve_parameter);
     }
 
 #ifdef HAVE_LIBCAP
