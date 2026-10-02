@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">n3n</string>
+    <string name="config_hint">The configuration, as in a .conf file of n3n:\n\n[community]\nname = mynetwork\nkey = mysecret\nsupernode = sn.example.org:7654\n\n[tuntap]\naddress = 10.1.2.3/24</string>
+    <string name="import_file">Import file</string>
+    <string name="connect">Connect</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="no_address">The configuration needs tuntap.address (e.g. 10.1.2.3/24): the app sets up the device with it.</string>
+    <string name="channel">VPN</string>
+    <string name="running">n3n is connected</string>
+</resources>
