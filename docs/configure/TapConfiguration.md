@@ -9,6 +9,22 @@ n3n provides its service through a TAP device which is the virtual ethernet devi
 
 For MacOS and Windows there are specific instructions; please see the [Building](../build/index.md) document.
 
+## TAP or TUN
+
+By default the edge uses a TAP device, which carries Ethernet frames.  With
+`tuntap.type = tun` it uses a TUN device instead, which carries IP packets:
+the edge then puts the Ethernet header on and takes it off itself, answers
+ARP for its own address, and finds the MAC address of the other edges from
+what they announce of themselves, or by asking with ARP.  On the wire nothing
+changes, so edges with TUN and with TAP devices are in the same community.
+
+This is for systems that offer only TUN devices (Android, later others); on
+Linux it works too, and is what the tests use.  For now: IPv4 (and IPv6
+multicast and IPv6 coming in, but not IPv6 unicast going out), no bridging
+(`filter.allow_routing` with a bridge), no `dhcp` address mode, one thread,
+Linux only.  Routes and address work as with a TAP device; there are no
+neighbour entries on a TUN device (`ip neigh`): the edge keeps its own.
+
 ## Device Name
 
 If the OS specific driver allows **naming** the virtual Ethernet device created

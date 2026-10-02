@@ -137,7 +137,9 @@ tests and `make lint` pass after each.
       and older n3n in the netns lab; epoll and batched I/O; no alloc per
       packet; fewer privileges (CAP_NET_ADMIN only, Landlock); packages for
       the single binary; tools init / tools qr
-- [ ] TUN mode (layer 3 device), see [Mobile and TUN](MobileAndTun.md)
+- [x] TUN mode (layer 3 device): `tuntap.type = tun`, `src/tun.c`, netns
+      scenarios `tun-tap` and `tun-tun`.  Open: IPv6 unicast out (neighbour
+      discovery), other systems than Linux; see [Mobile and TUN](MobileAndTun.md)
 - [ ] Android app (`VpnService`, configuration by QR code), see
       [Mobile and TUN](MobileAndTun.md)
 - [ ] `n3n-edge help transform`: list the ciphers and compressions built in,
@@ -209,6 +211,13 @@ while `peer` keeps getting what does not touch the wire, merged into
       something only edges get.  (v3 today: TCP only from edge to
       supernode, the federation over UDP, and the federation's supernode
       list carries no transport - its entry has a spare byte for it.)
+- [ ] A peer store behind an interface, not files spread around: the
+      relays and peers a peer has learned, with their addresses and keys,
+      kept across restarts.  From it, a peer that finds no relay tries the
+      peers it knew directly, to get back to them without any relay - only
+      with authenticated, replay protected packets (in v3 terms: header
+      encryption), as anything replayed from an old address must not get in.
+      Decided 2026-10-02: not in v3, no local files for it there
 - [ ] Learned relays survive: keep the relays a peer has learned (with
       all their transports) on disk, so that a laptop woken up behind a
       network that blocks its usual relay - an airport abroad - still knows

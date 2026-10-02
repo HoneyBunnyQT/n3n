@@ -49,7 +49,7 @@ This is what hin2n, the Android app of n2n, does as well.
 
 ### Configuration
 
-- `tuntap.mode = tap | tun`, `tap` by default.
+- `tuntap.type = tap | tun`, `tap` by default.
 - `tuntap.fd = N`: use an already open device (from Android's `VpnService`,
   or a parent process), instead of opening one.
 - The device setup (address, MTU, routes) is up to the platform: on Linux
@@ -67,10 +67,10 @@ This is what hin2n, the Android app of n2n, does as well.
 
 ### Steps
 
-1. The layer between device and edge (ARP table, header in and out), with
-   unit tests over captured frames.
-2. `tuntap.mode = tun` on Linux, and a netns scenario with one TUN edge and
-   one TAP edge, traffic both ways.
+1. Done: the layer between device and edge (`src/tun.c`: ARP table,
+   header in and out), and `tuntap.type = tun` on Linux.
+2. Done: netns scenarios `tun-tap` (a TUN edge and a TAP edge, direct) and
+   `tun-tun` (relayed), traffic both ways.
 3. `tuntap.fd`, for Android and for tests.
 4. IPv6 (neighbour discovery), later.
 

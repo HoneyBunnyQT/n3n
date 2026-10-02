@@ -108,6 +108,8 @@ router behind a carrier NAT.  The block of hard-range ends at a multiple of
 | tcp-fallback-userpw | as tcp-fallback-back, with user/password authentication | direct, a back on UDP |
 | tcp-port | as tcp-fallback-back, the supernodes with UDP on 7654 and TCP on 4443 only (`sn_tcp_port`) | direct, after a over TCP to 4443 |
 | tcp-only | easy-kept with its supernodes as `tcp://` only (`tcp_only`) / public | relayed, a over TCP from the start |
+| tun-tap | easy-kept with `tuntap.type=tun` / easy-changed with a TAP device | direct, the TUN edge building the frames |
+| tun-tun | hard-range / hard-range, both with `tuntap.type=tun` | relayed |
 
 An edge connected over TCP does not learn how its NAT maps it, so the NAT
 class of tcp-tcp and tcp-udp is not checked for those edges (`expect_nat` of
