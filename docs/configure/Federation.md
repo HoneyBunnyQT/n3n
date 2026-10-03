@@ -63,6 +63,18 @@ Furthermore, `connection.supernode_selection=mac` would switch to a MAC address
 based selection strategy choosing the supernode active with the lowest MAC
 address.
 
+Whatever the strategy, IPv6 comes first: once a supernode answers at an
+IPv6 address the edge knows it by, the edge registers over IPv6, at the
+best of those, and its IPv4 entries - including the IPv4 address of the
+same supernode, and the supernodes learned from the federation, which come
+as IPv4 - only count when none does.  Registered over IPv6, the edge is
+known by its own address, not by its NAT's: the address the supernode
+tells the other edges, so that those with IPv6 too reach it directly, NAT
+or not.  A supernode given by both its addresses
+(`supernode = 198.51.100.1:7654` and `supernode = [2001:db8::1]:7654`) is
+kept as two entries, each with its own round trip.  An IPv6 address that
+does not answer, e.g. behind a firewall, changes nothing.
+
 ## Example
 
 Two supernodes, at 198.51.100.1 and 198.51.100.2, each with this config, but
