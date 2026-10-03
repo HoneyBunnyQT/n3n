@@ -1,14 +1,16 @@
-# Upstream PRs: parked
+# Upstream PRs: ready to open
 
-State (2026-10-03): nine branches `pr/*`, cut from n42n/n3n main 732467d,
-each verified alone (clean build, unit and builtin tests, upstream lint
-with uncrustify 0.72); all nine merge into upstream main without conflict.
+State (2026-10-03): nine branches `pr/*`, on n42n/n3n main 7e528e3, each
+verified alone (clean build, unit and builtin tests, upstream lint with
+uncrustify 0.78.1); all nine merge into upstream main without conflict.
 big-endian also tested under qemu on s390x, mips and aarch64.
 
-Open:
+- New files are GPL-2.0-only, as upstream's docs/LICENSE.md expects, with
+  `SPDX-FileCopyrightText: Copyright Honey Bunny QT`.
+- Benchmarks (x86-64, bench-prs.sh) are in the commit messages of the
+  performance relevant commits.  No ARM numbers: the NEON commit and the
+  plain C Speck/ChaCha20 commit change no code an x86 build runs.
 - Integration tests: not run here (the container has no IPv6, which
   upstream's supernode needs by default).
-- Benchmarks: run bench-prs.sh on a real machine (root, or
-  perf_event_paranoid=1), put the output into the commit messages it
-  names (also the PASTE placeholder in pr/arm-speck).
-- Then open the PRs with pr-texts.md.
+
+Next: open the PRs with pr-texts.md.
