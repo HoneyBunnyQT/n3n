@@ -36,9 +36,10 @@
 #define N2N_HAVE_TCP    /* needs to be defined before it gets undefined */
 
 
-#ifdef _WIN32
-#include "config.h" /* Visual C++ */
+#include <config.h>         // for HAVE_LIBZSTD, HAVE_LIBCRYPTO: before their #ifdefs below
+                            // (<>: the include path decides, as for the .c files)
 
+#ifdef _WIN32
 #define N2N_CAN_NAME_IFACE 1
 #undef N2N_HAVE_TCP           /* as explained on https://github.com/ntop/n2n/pull/627#issuecomment-782093706 */
 #endif /* _WIN32 */
