@@ -38,7 +38,9 @@ object Status {
         val now = System.currentTimeMillis() / 1000
         for (i in 0 until supernodes.length()) {
             val sn = supernodes.optJSONObject(i) ?: continue
-            if (sn.optInt("current") == 1) {
+            // 2: the current one too, while its re-registration waits for
+            // the answer
+            if (sn.optInt("current") != 0) {
                 supernode = sn.optString("sockaddr")
                 val rtt = sn.optLong("rtt_us")
                 rttMs = if (rtt > 0) (rtt + 500) / 1000 else null
