@@ -177,8 +177,11 @@ class Lab:
     def enslave(self, ns, dev, bridge):
         run(["ip", "-n", ns, "link", "set", dev, "master", bridge])
 
-    def addr(self, ns, dev, cidr):
-        run(["ip", "-n", ns, "addr", "add", cidr, "dev", dev])
+    def addr(self, ns, dev, cidr, nodad=False):
+        # nodad: an IPv6 address usable at once, without duplicate
+        # address detection first
+        run(["ip", "-n", ns, "addr", "add", cidr, "dev", dev] +
+            (["nodad"] if nodad else []))
 
     def route(self, ns, dst, via):
         run(["ip", "-n", ns, "route", "add", dst, "via", via])

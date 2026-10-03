@@ -382,7 +382,7 @@ lint.ccode:
 	scripts/indent.sh -e '$(LINT_EXCLUDE)' $(LINT_CCODE)
 
 lint.shell:
-	shellcheck scripts/*.sh
+	shellcheck scripts/*.sh tests/netns/*.sh
 
 lint.yaml:
 	yamllint .

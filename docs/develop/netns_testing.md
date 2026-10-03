@@ -43,6 +43,30 @@ prints `SKIP` instead if something it needs is missing.  Several scenarios
 run at once (`-j`, 4 by default): the quick ones take about half a minute,
 all of them a minute and a half.
 
+### IPv6, in a kernel of its own
+
+The `dual-stack` scenario (tag `ipv6`) needs a kernel with IPv6, which
+many containers lack; without it, the scenario fails at once ("this kernel
+has no IPv6").  `tests/netns/uml.sh` runs the scenarios in User-Mode
+Linux instead: a Linux kernel built as a program, which boots from the
+host's file system and runs the harness inside, with its own namespaces,
+links and nftables - no root on the host's network needed, and nothing of
+the host's network touched.
+
+```
+apt install linux-source flex bison bc        # or any kernel source tree
+tar xjf /usr/src/linux-source-*.tar.bz2 -C ~
+tests/netns/uml.sh kernel ~/linux-source-*    # configure and build, once
+tests/netns/uml.sh run dual-stack             # run.py's arguments
+tests/netns/uml.sh run @quick
+```
+
+The UML kernel runs on one CPU and slower than the host, so `uml.sh`
+passes `-j 1` and `--register-interval 10` unless given: with 5 seconds,
+the peers' idle timeout (half of it) can pass while the senders of the
+next flow start, and their first frames then go through the supernode.
+The kernel is at `tests/netns/out/linux`, or where `UML_KERNEL` says.
+
 Logs, the config files, the nftables rulesets with their drop counters,
 the daemons' management output at the end (`state.json`) and the results
 of each scenario (`result.json`) are kept in `tests/netns/out/<scenario>/`,
@@ -91,6 +115,7 @@ router behind a carrier NAT.  The block of hard-range ends at a multiple of
 | failover-tcp | easy-kept with connect_tcp / easy-changed, a's supernode killed | relayed, a over TCP to the other one |
 | cgnat-both | easy-changed+easy-kept on both sides | direct |
 | same-lan | both sites 192.168.1.0/24, the edges at the same address | direct |
+| dual-stack | both edges public, with IPv4 and IPv6; a knows the supernode by IPv6, b by IPv4, and they find each other by multicast over both: each may hear the other from either family (needs IPv6, see `uml.sh`) | direct, the peers kept at one address |
 | tcp-tcp | easy-kept / easy-changed, both edges with connect_tcp | relayed, over TCP both ways |
 | tcp-udp | as tcp-tcp, only a with connect_tcp | relayed, between TCP and UDP |
 | hard-hard-threads | as hard-hard, the supernodes with daemon.threads=3 | relayed |
@@ -154,6 +179,9 @@ To keep runs short, the edges use `connection.register_interval=5` and
    - `relay:supernodes:` the supernodes' `sn_fwd` counted next to none
      of them (direct), or all of them (relayed)
    - `path:after:` the edges are still on the path they should be
+   - `moves:` (dual-stack) with a trickle of frames each way for 4 more
+     rounds of registration, how often each edge moved its peer to
+     another address ("peer ... changed" in its log): at most once
 4. no daemon died along the way, and all of them exit cleanly on SIGTERM
 
 The peers' MAC addresses are set as permanent neighbours and the TAP

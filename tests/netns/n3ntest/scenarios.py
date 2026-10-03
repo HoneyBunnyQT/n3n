@@ -128,6 +128,14 @@ SCENARIOS = [
         Site(["easy-changed", "easy-kept"]),
         "direct"),
     Scenario(
+        "dual-stack",
+        "both edges public with IPv4 and IPv6, a registers at the "
+        "supernode over IPv6, b over IPv4: each learns the other at "
+        "another family than it hears it from, and has to keep one",
+        Site([], supernodes=["sn1"], sn_family=6, expect_nat="unknown"),
+        Site([], supernodes=["sn1"], sn_family=4),
+        "direct", ipv6=True, max_moves=1, tags=["ipv6"]),
+    Scenario(
         "same-lan",
         "both sites use 192.168.1.0/24, the edges at the same address",
         Site(["easy-kept"], lan="192.168.1.0/24"),

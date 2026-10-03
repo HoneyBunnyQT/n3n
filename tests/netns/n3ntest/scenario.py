@@ -45,6 +45,9 @@ from .node import Edge, MgmtError, Supernode, stats_delta
 
 INET_NET = "203.0.113.{}"
 INET_PREFIX = 24
+# with Scenario(ipv6=True), the "internet" has IPv6 too (RFC 3849)
+INET6_NET = "2001:db8::{}"
+INET6_PREFIX = 64
 OVERLAY_NET = "10.99.0.{}"
 OVERLAY_PREFIX = 24
 # beyond the community, for tuntap.gateway (TEST-NET-1, RFC 5737)
@@ -60,6 +63,7 @@ PASSWORD = "nettest-password"
 
 FLOW_WARM = 1
 FLOW_MEAS = 2
+FLOW_HOLD = 3
 
 TRAFFIC_PY = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                           "traffic.py")
@@ -86,8 +90,11 @@ class Site:
 
     def __init__(self, nat=(), lan=None, supernodes=("sn1", "sn2"),
                  conf=None, expect_nat=None, on_supernode=None,
-                 block_udp=False, tcp_only=False):
+                 block_udp=False, tcp_only=False, sn_family=4):
         self.on_supernode = on_supernode
+        # the address family the edge knows its supernodes by (6 needs
+        # Scenario(ipv6=True))
+        self.sn_family = sn_family
         self.block_udp = block_udp
         # the edge gets its supernodes as tcp://, at their TCP port
         self.tcp_only = tcp_only
@@ -104,7 +111,8 @@ class Scenario:
     def __init__(self, name, desc, a, b, expect, traffic="both",
                  tags=(), conf=None, connect_timeout=None, failover=None,
                  sn_conf=None, auth=None, community_conf=False,
-                 unblock_udp=False, sn_tcp_port=None, gateway=None):
+                 unblock_udp=False, sn_tcp_port=None, gateway=None,
+                 ipv6=False, max_moves=None):
         self.name = name
         self.desc = desc
         self.sites = {"a": a, "b": b}
@@ -135,6 +143,12 @@ class Scenario:
         # The site whose edge is the other one's tuntap.gateway: it holds
         # GATEWAY_TARGET, outside the community, which the other pings
         self.gateway = gateway
+        # The "internet", the supernodes and the edges on it without NAT
+        # have IPv6 next to IPv4 (dual stack)
+        self.ipv6 = ipv6
+        # At most this many times an edge may move its peer to another
+        # address ("peer ... changed" in its log) once they are direct
+        self.max_moves = max_moves
 
     def directions(self):
         return {
@@ -220,10 +234,15 @@ class Run:
 
     def build(self):
         lab = self.lab
+        if self.sc.ipv6 and not os.path.exists("/proc/sys/net/ipv6"):
+            raise LabError("this kernel has no IPv6 (see tests/netns/uml.sh)")
         inet = lab.netns("inet")
         lab.bridge(inet, "br0")
         lab.addr(inet, "br0", "{}/{}".format(INET_NET.format(254),
                                              INET_PREFIX))
+        if self.sc.ipv6:
+            lab.addr(inet, "br0", "{}/{}".format(INET6_NET.format("fe"),
+                                                 INET6_PREFIX))
         self.inet = inet
 
         for i, name in enumerate(("sn1", "sn2"), start=1):
@@ -233,6 +252,11 @@ class Run:
             ip = INET_NET.format(i)
             lab.addr(ns, "eth0", "{}/{}".format(ip, INET_PREFIX))
             self.supernodes[name] = {"ns": ns, "ip": ip}
+            if self.sc.ipv6:
+                ip6 = INET6_NET.format(i)
+                lab.addr(ns, "eth0", "{}/{}".format(ip6, INET6_PREFIX),
+                         nodad=True)
+                self.supernodes[name]["ip6"] = ip6
 
         for i, (sname, site) in enumerate(sorted(self.sc.sites.items())):
             self._build_site(i, sname, site)
@@ -296,6 +320,14 @@ class Run:
             lab.enslave(up_ns, up_if, "br0")
             ip = INET_NET.format(101 + i)
             lab.addr(ns, "eth0", "{}/{}".format(ip, INET_PREFIX))
+            if self.sc.ipv6:
+                lab.addr(ns, "eth0", "{}/{}".format(
+                    INET6_NET.format(101 + i), INET6_PREFIX), nodad=True)
+                # as a LAN with a default route has: the edges find each
+                # other by IPv4 multicast too (local_discovery), not only
+                # by IPv6
+                run(["ip", "-n", ns, "route", "add", "224.0.0.0/4",
+                     "dev", "eth0"])
         else:
             lab.addr(up_ns, up_if, "{}/24".format(up_net.format(1)))
             ip = up_net.format(2)
@@ -455,6 +487,8 @@ class Run:
         tcp_port = self.sc.sn_tcp_port or SN_PORT
         for sn in site.supernodes:
             ip = self.supernodes[sn]["ip"]
+            if site.sn_family == 6:
+                ip = "[{}]".format(self.supernodes[sn]["ip6"])
             if not site.tcp_only:
                 sections[community].append(
                     ("supernode", "{}:{}".format(ip, SN_PORT)))
@@ -912,6 +946,8 @@ class Run:
                 self.check_alive("measurement")
             if self.sc.gateway and self.check_alive("measurement"):
                 self.check_gateway()
+            if self.sc.max_moves is not None:
+                self.check_moves()
             self._dump_state()
         except LabError as e:
             self.check("setup", False, str(e))
@@ -928,6 +964,32 @@ class Run:
         with open(os.path.join(self.workdir, "result.json"), "w") as f:
             json.dump(self.result, f, indent=2, sort_keys=True)
         return self.result
+
+    def check_moves(self):
+        """How often each edge moved its peer to another address: with
+        more than one way to it, it should keep one while that one works
+        (see check_known_peer_sock_change())"""
+        # a few more rounds of registration, which bring the other ways
+        # to each peer up again, with a trickle of frames both ways as
+        # between edges in use
+        hold = 4 * self.st.register_interval
+        self.log("watching the peers' addresses for {}s".format(hold))
+        trickle = [self.sender(s, d, FLOW_HOLD, 0, 10)
+                   for s, d in self.sc.directions()]
+        time.sleep(hold)
+        for p in trickle:
+            p.stop()
+        for sname, e in sorted(self.edges.items()):
+            if "daemon" not in e:
+                continue
+            with open(e["daemon"].proc.log_path, errors="replace") as f:
+                moves = [line.strip() for line in f
+                         if re.search(r"peer \S+ changed \[", line)]
+            detail = "{} moves of its peer".format(len(moves))
+            if moves:
+                detail += ", the last: " + moves[-1].split("peer ", 1)[-1]
+            self.check("moves:" + sname, len(moves) <= self.sc.max_moves,
+                       detail)
 
     def _dump_state(self):
         state = {}
