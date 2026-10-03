@@ -74,3 +74,9 @@ or not.  A supernode given by both its addresses
 (`supernode = 198.51.100.1:7654` and `supernode = [2001:db8::1]:7654`) is
 kept as two entries, each with its own round trip.  An IPv6 address that
 does not answer, e.g. behind a firewall, changes nothing.
+
+Between the edges, the same order holds for the ways to a peer: its LAN
+address (private IPv4, or a unique local IPv6 address) before public
+IPv6, before public IPv4.  A peer heard from at a better address moves
+there at once; one heard from at a worse one stays where it is, as long
+as it answers there.
