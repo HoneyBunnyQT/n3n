@@ -21,6 +21,7 @@
 #include <stdint.h>
 #include <stdlib.h>      // for strtoul
 #include <string.h>      // for strtok, strlen, strncpy
+#include <strings.h>     // for strncasecmp
 #include <time.h>
 #include <unistd.h>
 
@@ -1161,9 +1162,44 @@ static void render_help_page (struct n3n_runtime_data *eee, conn_t *conn) {
     generate_http_headers(conn, "text/plain", 200);
 }
 
-void mgmt_api_handler (struct n3n_runtime_data *eee, conn_t *conn) {
+// Whether an http client wants the connection closed after the reply:
+// HTTP/1.0 does unless it asks to keep it alive (lynx reads to the end of
+// the connection), and any with "Connection: close"
+static bool http_close_after (const char *req) {
+
+    const char *eol = strstr(req, "\r\n");
+    const char *end = strstr(req, "\r\n\r\n");
+    bool close = eol && (eol - req >= 8) && !strncmp(eol - 8, "HTTP/1.0", 8);
+
+    if(!strncmp(req, "GET /events/", 12)) {
+        // a subscription stays, see event_subscribe()
+        return false;
+    }
+    for(const char *p = eol; p && end && (p < end); p = strstr(p + 2, "\r\n")) {
+        if(strncasecmp(p + 2, "Connection:", 11)) {
+            continue;
+        }
+        const char *v = p + 13;
+        while(*v == ' ') {
+            v++;
+        }
+        if(!strncasecmp(v, "close", 5)) {
+            close = true;
+        } else if(!strncasecmp(v, "keep-alive", 10)) {
+            close = false;
+        }
+    }
+    return close;
+}
+
+// Whether the connection is to be closed once the reply is sent, see
+// http_close_after()
+bool mgmt_api_handler (struct n3n_runtime_data *eee, conn_t *conn) {
     int i;
     int nr_handlers = sizeof(api_endpoints) / sizeof(api_endpoints[0]);
+    // before the handlers, which can reuse the request for the reply
+    bool close_after = http_close_after(conn->request->str);
+
     for( i=0; i < nr_handlers; i++ ) {
         if(!strncmp(
                api_endpoints[i].match,
@@ -1185,4 +1221,5 @@ void mgmt_api_handler (struct n3n_runtime_data *eee, conn_t *conn) {
 
     // Try to immediately start sending the reply
     conn_write(conn, conn->fd);
+    return close_after;
 }
