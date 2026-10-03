@@ -272,6 +272,16 @@ while `peer` keeps getting what does not touch the wire, merged into
 
 Current ideas, half-decided things, commands worth keeping.
 
+### Parked: the fixes as PRs for upstream
+
+Nine branches `pr/*` on honeybunnyqt/n3n, cut from n42n/n3n main, one per
+topic of the `fixes` branch; each builds and passes its tests and
+upstream's lint alone, and all nine merge into upstream main without
+conflict.  Branch `pr-notes` has the PR texts, the state, and
+`bench-prs.sh` for the before/after benchmarks the performance commits
+need (on a real machine, with the CPU counters).  Then: benchmarks into
+the commit messages, open the PRs one or two at a time.
+
 ### Communities for both roles
 
 Today the edge has one community from `community.name`, `community.key`,
