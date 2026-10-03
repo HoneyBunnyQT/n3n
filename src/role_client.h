@@ -29,6 +29,7 @@ void send_register (struct n3n_runtime_data * eee,
                     const n2n_mac_t peer_mac,
                     const n2n_cookie_t cookie);
 bool is_link_local (const n3n_sock_t *sock);
+int peer_way_rank (const n3n_sock_t *sock);
 int is_valid_peer_sock (const n3n_sock_t *sock);
 void check_peer_registration_needed (struct n3n_runtime_data *eee,
                                      uint8_t from_supernode,

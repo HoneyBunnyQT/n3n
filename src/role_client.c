@@ -461,6 +461,31 @@ bool is_link_local (const n3n_sock_t *sock) {
 }
 
 
+/* How good a way to a peer its address is, the higher the better: its
+ * LAN (a private IPv4 or a unique local IPv6 address), then public IPv6,
+ * which needs no NAT, then public IPv4.  A peer heard from at a better one
+ * moves there at once, see check_known_peer_sock_change(). */
+int peer_way_rank (const n3n_sock_t *sock) {
+
+    if(sock->family == AF_INET) {
+        const uint8_t *a = sock->addr.v4;
+        if((a[0] == 10)
+           || ((a[0] == 172) && ((a[1] & 0xf0) == 16))
+           || ((a[0] == 192) && (a[1] == 168))) {
+            return 3;
+        }
+        return 1;
+    }
+    if(sock->family == AF_INET6) {
+        if((sock->addr.v6[0] & 0xfe) == 0xfc) {
+            return 3;
+        }
+        return 2;
+    }
+    return 0;
+}
+
+
 /* Exclude localhost as it may be received when an edge node runs
  * in the same supernode host.
  */
@@ -700,9 +725,14 @@ static void peer_set_p2p_confirmed (struct n3n_runtime_data * eee,
             scan->last_cookie = N2N_NO_REG_COOKIE;
         } else {
             // update sock but ...
-            // ... ignore ACKs's (and their socks) from lower ranked inbound ways for a while
+            // ... ignore ACKs's (and their socks) from lower ranked inbound
+            // ways for a while: ranked by the address first (LAN, IPv6,
+            // IPv4), then by the cookie (how the REGISTER found the peer)
+            int rank_new = peer_way_rank(peer);
+            int rank_cur = peer_way_rank(&scan->sock);
             if(((now - scan->last_seen) > REGISTRATION_TIMEOUT / 4)
-               ||(cookie > scan->last_cookie)) {
+               || (rank_new > rank_cur)
+               || ((rank_new == rank_cur) && (cookie > scan->last_cookie))) {
                 scan->sock = *peer;
                 scan->last_cookie = cookie;
             }
@@ -861,14 +891,17 @@ void check_known_peer_sock_change (struct n3n_runtime_data *eee,
         return;
 
     if(!sock_equal(&(scan->sock), peer)) {
-        if(!from_supernode && ((when - scan->last_seen) < REGISTRATION_TIMEOUT / 4)) {
+        if(!from_supernode
+           && ((when - scan->last_seen) < REGISTRATION_TIMEOUT / 4)
+           && (peer_way_rank(peer) <= peer_way_rank(&scan->sock))) {
             /* The peer still answers at its address: a packet from another
-             * one of its addresses - IPv6 next to IPv4, its LAN address next
-             * to the public one - is taken, but does not move the peer, else
-             * it moves back and forth with whichever comes first.  When the
-             * address goes quiet, as when the peer roams or its NAT rebinds,
-             * the next packet from the new one moves it, as do the ACKs in
-             * peer_set_p2p_confirmed(). */
+             * one of its addresses that is no better a way - see
+             * peer_way_rank() - is taken, but does not move the peer, else
+             * it moves back and forth with whichever comes first.  A better
+             * one (its LAN, IPv6 rather than IPv4) moves it at once.  When
+             * the address goes quiet, as when the peer roams or its NAT
+             * rebinds, the next packet from any other one moves it, as do
+             * the ACKs in peer_set_p2p_confirmed(). */
         } else if(!from_supernode) {
             /* This is a P2P packet */
             traceEvent(TRACE_NORMAL, "peer %s changed [%s] -> [%s]",
