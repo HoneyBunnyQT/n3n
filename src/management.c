@@ -68,42 +68,38 @@ static void render_error (conn_t *conn, const char *message) {
     generate_http_headers(conn, "text/plain", 404);
 }
 
-static bool auth_check (struct n3n_runtime_data *eee, conn_t *conn) {
-    char *p = strstr(conn->request->str, "Authorization:");
-    if(!p) {
-        // No auth header
-        return false;
-    }
-    strtok(p, " "); // Skip the Authorization: header
-    p = strtok(NULL, " ");
-    if(strcmp(p, "Basic")) {
-        // They sent something other than basic
-        return false;
-    }
+static bool http_header (conn_t *conn, const char *name, char *buf, size_t size);
 
-    p = strtok(NULL, " \r\n");
+// Whether the request carries the management password, as HTTP basic
+// authentication (any user name).  Reads the request, does not change it.
+static bool auth_check (struct n3n_runtime_data *eee, conn_t *conn) {
+    char header[256];
+
+    if(!http_header(conn, "Authorization", header, sizeof(header))) {
+        return false;
+    }
+    if(strncasecmp(header, "Basic ", 6)) {
+        return false;
+    }
+    char *p = header + 6;
+    while(*p == ' ') {
+        p++;
+    }
+    p[strcspn(p, " ")] = 0;
+    if(!*p) {
+        return false;
+    }
 
     char *decoded = base64decode(p);
     if(!decoded) {
-        // they didnt send us valid base64
         return false;
     }
-
-    p = strtok(decoded,":"); // Skip the username
-    p = strtok(NULL,":");
-    if(!p) {
-        // they didnt send us a complete auth header
-        return false;
-    }
-
-    if(strcmp(eee->conf.mgmt_password, p)) {
-        // They didnt send the right password
-        free(decoded);
-        return false;
-    }
+    // the password is all after the first ':', and may have ':' in it
+    char *password = strchr(decoded, ':');
+    bool ok = password && eee->conf.mgmt_password && !strcmp(eee->conf.mgmt_password, password + 1);
 
     free(decoded);
-    return true;
+    return ok;
 }
 
 static void auth_request (conn_t *conn) {
