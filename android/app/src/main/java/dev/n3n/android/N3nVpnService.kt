@@ -41,7 +41,18 @@ class N3nVpnService : VpnService() {
         /** The last lines of the log, and who wants the new ones (the UI) */
         val log = ArrayDeque<String>()
         var logListener: ((String) -> Unit)? = null
+
+        // The edge's thread, and whether it was asked to stop: here, not in
+        // the service object, as Android may make a new one for the next
+        // intent while the edge of the last one still runs.  Main thread.
+        private var edge: Thread? = null
+        private var stopping = false
+        // a start that came while the last edge was stopping: it follows
+        private var next: Intent? = null
+
+        /** For the UI: an edge runs, or is about to, and not on its way out */
         @Volatile var running = false
+            private set
 
         private val main = Handler(Looper.getMainLooper())
 
@@ -56,8 +67,6 @@ class N3nVpnService : VpnService() {
         }
     }
 
-    private var edge: Thread? = null
-
     private external fun nativeRun(config: String, tunFd: Int, rundir: String): Int
     private external fun nativeStop()
 
@@ -69,25 +78,45 @@ class N3nVpnService : VpnService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            next = null
             stopEdge()
             return START_NOT_STICKY
         }
-        val configText = intent?.getStringExtra(EXTRA_CONFIG) ?: return START_NOT_STICKY
+        if (intent?.getStringExtra(EXTRA_CONFIG) == null) {
+            // a restart by the system, without the configuration
+            if (edge == null) {
+                stopSelf()
+            }
+            return START_NOT_STICKY
+        }
+        if (edge != null) {
+            if (stopping) {
+                // once the last edge has stopped, see the end of its thread
+                next = intent
+                running = true
+                // Android wants it in the foreground soon after
+                // startForegroundService(), whenever the edge gets going
+                startForeground(intent.getStringExtra(EXTRA_GATEWAY))
+            }
+            return START_NOT_STICKY
+        }
+        return if (startEdge(intent)) START_STICKY else START_NOT_STICKY
+    }
+
+    private fun startEdge(intent: Intent): Boolean {
+        val configText = intent.getStringExtra(EXTRA_CONFIG) ?: return false
         val gateway = intent.getStringExtra(EXTRA_GATEWAY)
         val dns = intent.getStringExtra(EXTRA_DNS)
         // the edge sends what is not for the network to the exit peer
         // (tuntap.gateway); a later value overrides one in the configuration
         val text = if (gateway != null) "$configText\n\n[tuntap]\ngateway = $gateway\n" else configText
-        if (edge != null) {
-            return START_NOT_STICKY
-        }
         val config = Config(text)
         val address = config.address
         val network = config.network
         if (address == null || network == null) {
             addLog(getString(R.string.no_address))
             stopSelf()
-            return START_NOT_STICKY
+            return false
         }
 
         startForeground(gateway)
@@ -120,30 +149,48 @@ class N3nVpnService : VpnService() {
         }
         if (tun == null) {
             addLog("the VPN is not allowed (anymore)")
+            stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
-            return START_NOT_STICKY
+            return false
         }
 
         // the edge takes the device over, and closes it
         val fd = tun.detachFd()
         running = true
-        edge = Thread({
+        stopping = false
+        val thread = Thread({
             val rc = nativeRun(text, fd, filesDir.absolutePath)
             addLog("edge stopped ($rc)")
-            running = false
-            edge = null
-            main.post {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-            }
-        }, "n3n-edge").also { it.start() }
-        return START_STICKY
+            main.post { edgeEnded() }
+        }, "n3n-edge")
+        edge = thread
+        thread.start()
+        return true
+    }
+
+    /** Main thread, once the edge's thread is through */
+    private fun edgeEnded() {
+        edge = null
+        stopping = false
+        val start = next
+        next = null
+        if (start != null && startEdge(start)) {
+            return
+        }
+        running = false
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     private fun stopEdge() {
         if (edge != null) {
+            // the edge ends, and then its thread the service
+            stopping = true
+            running = false
             nativeStop()
         } else {
+            running = false
+            stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
     }
@@ -154,7 +201,13 @@ class N3nVpnService : VpnService() {
     }
 
     override fun onDestroy() {
-        stopEdge()
+        // the edge's thread outlives this object; it is told to stop, if
+        // nothing waits to follow it
+        if (edge != null && next == null) {
+            stopping = true
+            running = false
+            nativeStop()
+        }
         super.onDestroy()
     }
 
