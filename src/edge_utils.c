@@ -1490,7 +1490,15 @@ static void check_known_peer_sock_change (struct n3n_runtime_data *eee,
         return;
 
     if(!sock_equal(&(scan->sock), peer)) {
-        if(!from_supernode) {
+        if(!from_supernode && ((when - scan->last_seen) < REGISTRATION_TIMEOUT / 4)) {
+            /* The peer still answers at its address: a packet from another
+             * one of its addresses - IPv6 next to IPv4, its LAN address next
+             * to the public one - is taken, but does not move the peer, else
+             * it moves back and forth with whichever comes first.  When the
+             * address goes quiet, as when the peer roams or its NAT rebinds,
+             * the next packet from the new one moves it, as do the ACKs in
+             * peer_set_p2p_confirmed(). */
+        } else if(!from_supernode) {
             /* This is a P2P packet */
             traceEvent(TRACE_NORMAL, "peer %s changed [%s] -> [%s]",
                        macaddr_str(mac_buf, scan->mac_addr),
