@@ -49,10 +49,10 @@ n3n-qr: n3n-qr.c
 	@$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) $< $(LDLIBS_QR) -o $@
 
 # See comments in the topdir Makefile about how to generate coverage
-# data.  Compiled and linked in one step, gcc names the notes of x.c
-# x-x.gcno, as in apps/.
+# data.  The notes are x.gcno or, compiled and linked in one step with
+# the library, x-x.gcno: whichever there are.
 gcov:
-	gcov $(foreach t,$(TOOLS) $(TESTS),$(t)-$(t))
+	gcov $(basename $(wildcard *.gcno))
 
 clean:
 	rm -rf $(TOOLS) *.o *.dSYM *~
