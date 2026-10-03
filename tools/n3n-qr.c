@@ -4,8 +4,8 @@
  *
  * n3n-qr: an edge's configuration file as a QR code, for the Android app
  * to scan (see android/README.md).  The code holds the configuration as
- * text, without its comments and blank lines, so that any QR reader shows
- * it as it is.
+ * text, without its comments and with at most one blank line in a row, so
+ * that any QR reader shows it as it is.
  *
  *   n3n-qr home.conf             writes home.qr.png
  *   n3n-qr -t home.conf          shows it in the terminal
@@ -34,8 +34,8 @@ static void usage (void) {
         "Usage: n3n-qr [options] FILE.conf\n"
         "\n"
         "Make a QR code of an edge's configuration, for the n3n Android app.\n"
-        "Comments and blank lines are left out.  FILE.conf may be - for the\n"
-        "standard input.\n"
+        "Comments are left out, and blank lines in a row become one.  FILE.conf\n"
+        "may be - for the standard input.\n"
         "\n"
         "  -o, --output NAME   write the PNG image to NAME (- for the standard\n"
         "                      output); by default FILE.qr.png in the current\n"
@@ -107,10 +107,22 @@ static char *compact (char *text, bool *has_secret, bool *has_address) {
     *has_secret = false;
     *has_address = false;
 
-    char *saveptr = NULL;
-    for(char *raw = strtok_r(text, "\n", &saveptr); raw; raw = strtok_r(NULL, "\n", &saveptr)) {
+    // one blank line where the file has one or more, none at the ends
+    bool blank = false;
+
+    for(char *raw = text; raw; ) {
+        char *nl = strchr(raw, '\n');
+        if(nl) {
+            *nl = 0;
+        }
         char *line = trim(raw);
-        if(!*line || *line == '#' || *line == ';') {
+        raw = nl ? nl + 1 : NULL;
+
+        if(!*line) {
+            blank = (o > out);
+            continue;
+        }
+        if(*line == '#' || *line == ';') {
             continue;
         }
         char *comment = strchr(line, '#');
@@ -120,6 +132,10 @@ static char *compact (char *text, bool *has_secret, bool *has_address) {
             if(!*line) {
                 continue;
             }
+        }
+        if(blank) {
+            *o++ = '\n';
+            blank = false;
         }
 
         if(*line == '[') {

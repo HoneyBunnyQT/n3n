@@ -43,7 +43,8 @@ tools/n3n-qr -p phone.conf       # prints the text that goes into the code
 ```
 
 The code holds the configuration as text, as any QR reader shows it:
-without comments, blank lines and the spaces around `=`, otherwise as it
+without comments and the spaces around `=`, and with at most one blank
+line in a row, otherwise as it
 is, so the edge reads it as it reads the file.  A typical configuration is
 well below the 2900 or so bytes a code can hold.
 

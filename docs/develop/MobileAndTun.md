@@ -123,7 +123,7 @@ so a network can be set up once and shared:
   `[connection]`, ...).
 - **Scan a QR code**: the configuration in a QR code.  Done, simpler than
   first thought: the code holds the configuration as plain text, less its
-  comments and blank lines (`tools/n3n-qr`), so any QR reader shows what
+  comments and runs of blank lines (`tools/n3n-qr`), so any QR reader shows what
   is in it.  A usual configuration is a few hundred bytes, well within
   what a code holds (around 2900 bytes).  Compression (`n3n:1:` with
   deflate and base64url, as first suggested) can come when configurations

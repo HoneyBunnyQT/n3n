@@ -4,6 +4,7 @@ name=phones
 key=not-a-real-key
 supernode=sn1.example.org:7777
 supernode=tcp://sn2.example.org:443
+
 [tuntap]
 address=10.20.30.40/24
 mtu=1290
