@@ -680,6 +680,8 @@ struct n3n_rt_client {
     struct peer_info                 *curr_sn;                           /**< Currently active supernode. */
     uint8_t sn_wait;                                                     /**< Whether we are waiting for a supernode response. */
     uint8_t sn_pong;                                                     /**< Whether we have seen a PONG since last time reset. */
+    bool sn_other_family;                                                /**< the current supernode keeps an address of the other family, see N3N_REG_SUPER_OTHER_FAMILY */
+    n2n_cookie_t other_family_cookie;                                    /**< of the last REGISTER_SUPER of the other family */
     bool resolution_request;                                             /**< Flag an immediate DNS resolution request */
     bool multicast_joined_v4;                                            /**< 1 if the IPV4 group has been joined.*/
     bool multicast_joined_v6;                                            /**< 1 if the IPV6 group has been joined.*/

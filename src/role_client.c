@@ -1063,7 +1063,8 @@ void send_query_peer (struct n3n_runtime_data * eee,
 
 
 /** Send a REGISTER_SUPER packet to the current supernode. */
-void send_register_super (struct n3n_runtime_data *eee) {
+/* A REGISTER_SUPER to sn, with key_time 0 or N3N_REG_SUPER_OTHER_FAMILY */
+static void register_super_to (struct n3n_runtime_data *eee, struct peer_info *sn, uint32_t key_time) {
 
     uint8_t pktbuf[N2N_PKT_BUF_SIZE] = {0};
     uint8_t hash_buf[16] = {0};
@@ -1073,10 +1074,8 @@ void send_register_super (struct n3n_runtime_data *eee) {
     n2n_REGISTER_SUPER_t reg;
     n3n_sock_str_t sockbuf;
 
-    /* reg.key_time is not set by this caller; zero it so encode_REGISTER_SUPER
-     * does not emit garbage for that field */
-    // TODO: refactor code to avoid needing memet
     memset(&reg, 0, sizeof(reg));
+    reg.key_time = key_time;
 
     cmn.ttl = N2N_DEFAULT_TTL;
     cmn.pc = MSG_TYPE_REGISTER_SUPER;
@@ -1088,9 +1087,9 @@ void send_register_super (struct n3n_runtime_data *eee) {
     }
     memcpy(cmn.community, eee->conf.community.community_name, N2N_COMMUNITY_SIZE);
 
-    eee->client.curr_sn->last_cookie = n3n_rand();
+    sn->last_cookie = n3n_rand();
 
-    reg.cookie = eee->client.curr_sn->last_cookie;
+    reg.cookie = sn->last_cookie;
     reg.dev_addr.net_addr = ntohl(eee->tap.device.ip_addr);
     reg.dev_addr.net_bitlen = eee->conf.tap.tuntap_v4.net_bitlen;
     memcpy(reg.dev_desc, eee->conf.dev_desc, N2N_DESC_SIZE);
@@ -1101,8 +1100,9 @@ void send_register_super (struct n3n_runtime_data *eee) {
     idx = 0;
     encode_REGISTER_SUPER(pktbuf, &idx, &cmn, &reg);
 
-    traceEvent(TRACE_DEBUG, "send REGISTER_SUPER to [%s]",
-               sock_to_cstr(sockbuf, &(eee->client.curr_sn->sock)));
+    traceEvent(TRACE_DEBUG, "send REGISTER_SUPER%s to [%s]",
+               key_time ? " of the other family" : "",
+               sock_to_cstr(sockbuf, &(sn->sock)));
 
     if(eee->conf.community.header_encryption == HEADER_ENCRYPTION_ENABLED) {
         packet_header_encrypt(pktbuf, idx, idx,
@@ -1116,7 +1116,40 @@ void send_register_super (struct n3n_runtime_data *eee) {
         }
     }
 
-    edge_sendto_sock(eee, pktbuf, idx, &(eee->client.curr_sn->sock));
+    edge_sendto_sock(eee, pktbuf, idx, &(sn->sock));
+}
+
+
+void send_register_super (struct n3n_runtime_data *eee) {
+
+    register_super_to(eee, eee->client.curr_sn, 0);
+}
+
+
+/* Where the current supernode keeps an address of the other family (see
+ * N3N_REG_SUPER_OTHER_FAMILY), and the edge knows it at an address of that
+ * family which answered lately: register there too, so that the supernode
+ * tells the edges of either family one they can reach. */
+static void send_register_super_other (struct n3n_runtime_data *eee, time_t now) {
+
+    struct peer_info *curr = eee->client.curr_sn, *scan, *tmp;
+
+    if(!eee->client.sn_other_family || eee->client.tcp || is_null_mac(curr->mac_addr)) {
+        return;
+    }
+    HASH_ITER(hh, eee->client.supernodes, scan, tmp) {
+        if((scan == curr)
+           || memcmp(scan->mac_addr, curr->mac_addr, sizeof(n2n_mac_t))
+           || ((scan->sock.family != AF_INET) && (scan->sock.family != AF_INET6))
+           || (scan->sock.family == curr->sock.family)
+           || !scan->last_seen
+           || ((now - scan->last_seen) > 3 * (time_t)eee->conf.client.register_interval)) {
+            continue;
+        }
+        register_super_to(eee, scan, N3N_REG_SUPER_OTHER_FAMILY);
+        eee->client.other_family_cookie = scan->last_cookie;
+        return;
+    }
 }
 
 
@@ -1698,11 +1731,6 @@ void edge_rx_register_super_ack (struct n3n_runtime_data *eee, struct pdu_ctx *c
     int i;
     int skip_add;
 
-    if(!(eee->client.sn_wait)) {
-        traceEvent(TRACE_DEBUG, "Rx REGISTER_SUPER_ACK with no outstanding REGISTER_SUPER");
-        return;
-    }
-
     if(decode_REGISTER_SUPER_ACK(&ra, &cmn, udp_buf, &rem, &idx, tmpbuf) < 0) {
         traceEvent(TRACE_INFO, "REGISTER_SUPER_ACK section in N2N_UDP too short");
         return;
@@ -1736,10 +1764,25 @@ void edge_rx_register_super_ack (struct n3n_runtime_data *eee, struct pdu_ctx *c
         }
     }
 
+    if(eee->client.other_family_cookie && (ra.cookie == eee->client.other_family_cookie)) {
+        // the supernode took the address of the other family, see
+        // send_register_super_other(): nothing else to do
+        traceEvent(TRACE_DEBUG, "Rx REGISTER_SUPER_ACK of the other family from [%s]",
+                   sock_to_cstr(sockbuf1, &sender));
+        return;
+    }
+
+    if(!(eee->client.sn_wait)) {
+        traceEvent(TRACE_DEBUG, "Rx REGISTER_SUPER_ACK with no outstanding REGISTER_SUPER");
+        return;
+    }
+
     if(ra.cookie != eee->client.curr_sn->last_cookie) {
         traceEvent(TRACE_INFO, "Rx REGISTER_SUPER_ACK with wrong or old cookie");
         return;
     }
+
+    eee->client.sn_other_family = (ra.lifetime & N3N_LIFETIME_OTHER_FAMILY) != 0;
 
     if(handle_remote_auth(eee, sn, &(ra.auth))) {
         traceEvent(TRACE_INFO, "Rx REGISTER_SUPER_ACK with wrong or old response to challenge");
@@ -1818,9 +1861,13 @@ void edge_rx_register_super_ack (struct n3n_runtime_data *eee, struct pdu_ctx *c
             send_grat_arps(eee);
         }
         SHARED_STORE(eee->client.last_sup, now);
+
+        // and the address of the other family, where it keeps one
+        send_register_super_other(eee, now);
     }
 
     // NOTE: the register_interval should be chosen by the edge node based on its NAT configuration.
+    // (the lowest 15 bits of ra.lifetime, see N3N_LIFETIME_OTHER_FAMILY)
     // eee->conf.client.register_interval = ra.lifetime;
 
 }
