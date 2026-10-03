@@ -438,6 +438,16 @@ static const char *json_str (char *buf, const void *s, size_t max) {
 }
 
 
+// Whether the JSON-RPC request being answered carries the password
+static bool rpc_unlocked;
+
+// A community's name as the API shows it
+static const char *rpc_name (char *buf, const char *name, uint8_t header_encryption) {
+
+    return mgmt_name_hidden(header_encryption, rpc_unlocked) ?
+           MGMT_NAME_HIDDEN : json_str(buf, name, N2N_COMMUNITY_SIZE);
+}
+
 static void jsonrpc_result_head (char *id, conn_t *conn) {
     // Reuse the request buffer
     sb_zero(conn->request);
@@ -561,7 +571,7 @@ static void jsonrpc_get_mac (char *id, struct n3n_runtime_data *eee, conn_t *con
                         "\"dest\":\"%s\","
                         "\"last_seen\":%u},",
                         macaddr_str(mac_buf, assoc->mac),
-                        (community->is_federation) ? "-/-" : json_str(name, community->community, N2N_COMMUNITY_SIZE),
+                        (community->is_federation) ? "-/-" : rpc_name(name, community->community, community->header_encryption),
                         sockaddr_to_str(buf, sizeof(buf), &assoc->sock),
                         (uint32_t)assoc->last_seen
             );
@@ -583,7 +593,7 @@ static void jsonrpc_get_mac (char *id, struct n3n_runtime_data *eee, conn_t *con
 static void jsonrpc_get_communities (char *id, struct n3n_runtime_data *eee, conn_t *conn, const char *params) {
     if(!eee->relay.communities) {
         // This is an edge
-        if(eee->conf.community.header_encryption != HEADER_ENCRYPTION_NONE) {
+        if(mgmt_name_hidden(eee->conf.community.header_encryption, rpc_unlocked)) {
             jsonrpc_error(id, conn, 403, "Forbidden", 0);
             return;
         }
@@ -626,7 +636,7 @@ static void jsonrpc_get_communities (char *id, struct n3n_runtime_data *eee, con
                     "\"purgeable\":%i,"
                     "\"is_federation\":%i,"
                     "\"ip4addr\":\"%s\"},",
-                    (community->is_federation) ? "-/-" : json_str(name, community->community, N2N_COMMUNITY_SIZE),
+                    (community->is_federation) ? "-/-" : rpc_name(name, community->community, community->header_encryption),
                     community->purgeable,
                     community->is_federation,
                     (community->auto_ip_net.net_addr == 0) ? "" : ip_subnet_to_str(ip_bit_str, &community->auto_ip_net));
@@ -723,7 +733,8 @@ static void jsonrpc_get_edges (char *id, struct n3n_runtime_data *eee, conn_t *c
             &conn->request,
             peer,
             "pSp",
-            eee->conf.community.community_name,
+            mgmt_name_hidden(eee->conf.community.header_encryption, rpc_unlocked) ?
+            MGMT_NAME_HIDDEN : eee->conf.community.community_name,
             eee->client.nat_peers
         );
 
@@ -748,7 +759,8 @@ static void jsonrpc_get_edges (char *id, struct n3n_runtime_data *eee, conn_t *c
             &conn->request,
             peer,
             "p2p",
-            eee->conf.community.community_name,
+            mgmt_name_hidden(eee->conf.community.header_encryption, rpc_unlocked) ?
+            MGMT_NAME_HIDDEN : eee->conf.community.community_name,
             eee->client.nat_peers
         );
 
@@ -774,7 +786,8 @@ static void jsonrpc_get_edges (char *id, struct n3n_runtime_data *eee, conn_t *c
                 &conn->request,
                 peer,
                 "sn",
-                (community->is_federation) ? "-/-" : community->community,
+                (community->is_federation) ? "-/-" :
+                mgmt_name_hidden(community->header_encryption, rpc_unlocked) ? MGMT_NAME_HIDDEN : community->community,
                 eee->client.nat_peers
             );
 
@@ -1143,6 +1156,10 @@ static void handle_jsonrpc (struct n3n_runtime_data *eee, conn_t *conn) {
 }
 
 static void handle_jsonrpc_role (struct n3n_runtime_data *eee, conn_t *conn) {
+    // before the reply overwrites the request: whether it may see the
+    // names that header encryption hides, see mgmt_name_hidden()
+    rpc_unlocked = auth_check(eee, conn);
+
     char *body = strstr(conn->request->str, "\r\n\r\n");
     if(!body) {
         render_error(conn, "Error: no body");
@@ -1305,8 +1322,10 @@ static int page_buf_take (conn_t *conn) {
 
 
 // The human interface: one page for the edge and the supernode, see
-// management_page.c
-static void render_index_page (struct n3n_runtime_data *eee, conn_t *conn) {
+// management_page.c.  With the password (once given for /unlock or a
+// button, the browser sends it along), it shows the names that header
+// encryption hides.
+static void render_page (struct n3n_runtime_data *eee, conn_t *conn, bool unlocked) {
 
     int i = page_buf_take(conn);
 
@@ -1314,9 +1333,24 @@ static void render_index_page (struct n3n_runtime_data *eee, conn_t *conn) {
         render_error(conn, "busy, try again");
         return;
     }
-    mgmt_page_render(&page_bufs[i].buf, eee, mgmt_edge(eee), mgmt_relay(eee));
+    mgmt_page_render(&page_bufs[i].buf, eee, mgmt_edge(eee), mgmt_relay(eee), unlocked);
     conn->reply = page_bufs[i].buf;
     generate_http_headers(conn, "text/html; charset=utf-8", 200);
+}
+
+static void render_index_page (struct n3n_runtime_data *eee, conn_t *conn) {
+
+    render_page(eee, conn, auth_check(eee, conn));
+}
+
+// The page, asking for the password first
+static void render_unlock_page (struct n3n_runtime_data *eee, conn_t *conn) {
+
+    if(!auth_check(eee, conn)) {
+        auth_request(conn);
+        return;
+    }
+    render_page(eee, conn, true);
 }
 
 
@@ -1398,6 +1432,7 @@ static const struct mgmt_api_endpoint api_endpoints[] = {
     { "POST /v1/supernode ", handle_jsonrpc_supernode, "JsonRPC of the supernode in this process" },
     { "POST /page ", handle_page_action, "The buttons of the human interface" },
     { "GET / ", render_index_page, "Human interface" },
+    { "GET /unlock ", render_unlock_page, "Human interface, with the names header encryption hides" },
     { "GET /debug/slots ", render_debug_slots, "Internal slots dump" },
     { "GET /events/", event_subscribe, "Subscribe to events" },
     { "GET /help ", render_help_page, "Describe available endpoints" },
@@ -1426,6 +1461,13 @@ static void render_help_page (struct n3n_runtime_data *eee, conn_t *conn) {
     conn->reply = conn->request;
 
     generate_http_headers(conn, "text/plain", 200);
+}
+
+// Unknown counts as encrypted: a supernode knows only once an edge of the
+// community has registered
+bool mgmt_name_hidden (uint8_t header_encryption, bool unlocked) {
+
+    return !unlocked && (header_encryption != HEADER_ENCRYPTION_NONE);
 }
 
 bool mgmt_password_is_default (const struct n3n_runtime_data *rt) {

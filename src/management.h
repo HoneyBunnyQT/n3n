@@ -35,5 +35,10 @@ void mgmt_api_handler (struct n3n_runtime_data *, conn_t *);
 // Whether management.password is still the default everybody knows, and a
 // warning in the log if so
 bool mgmt_password_is_default (const struct n3n_runtime_data *rt);
+
+// What shows of a community name with header encryption, to who has not
+// given the management password: the name is the key of the headers
+#define MGMT_NAME_HIDDEN "***"
+bool mgmt_name_hidden (uint8_t header_encryption, bool unlocked);
 void mgmt_password_warn (const struct n3n_runtime_data *rt);
 #endif

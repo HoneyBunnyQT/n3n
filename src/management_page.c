@@ -182,9 +182,20 @@ static void row_more (strbuf_t **b, int cols, int left) {
 }
 
 
+// A community's name, or what shows instead while header encryption hides it
+static void community_name (strbuf_t **b, const char *name, uint8_t header_encryption, bool unlocked) {
+
+    if(mgmt_name_hidden(header_encryption, unlocked)) {
+        sb_reprintf(b, "<span class=dim title=\"header encryption: unlock to show\">%s</span>", MGMT_NAME_HIDDEN);
+    } else {
+        html_text(b, name, N2N_COMMUNITY_SIZE);
+    }
+}
+
+
 // A peer of the edge, or an edge registered at the supernode
 static void peer_row (strbuf_t **b, const struct peer_info *peer, const char *mode, const char *mode_class,
-                      const char *community, struct nat_peer *nat_peers, time_t now) {
+                      const struct sn_community *community, bool unlocked, struct nat_peer *nat_peers, time_t now) {
 
     macstr_t mac_buf;
     n3n_sock_str_t sockbuf;
@@ -196,7 +207,7 @@ static void peer_row (strbuf_t **b, const struct peer_info *peer, const char *mo
     sb_reprintf(b, "<tr><td><span class=\"b %s\">%s</span></td>", mode_class, mode);
     if(community) {
         sb_reprintf(b, "<td>");
-        html_text(b, community, N2N_COMMUNITY_SIZE);
+        community_name(b, community->community, community->header_encryption, unlocked);
         sb_reprintf(b, "</td>");
     }
     sb_reprintf(b, "<td class=mono>%s</td><td class=mono>%s</td><td class=mono>%s</td>",
@@ -243,7 +254,7 @@ static void counters (strbuf_t **b, const struct n3n_runtime_data *rt, bool rela
 }
 
 
-static void section_edge (strbuf_t **b, struct n3n_runtime_data *eee, bool own_of_supernode, time_t now) {
+static void section_edge (strbuf_t **b, struct n3n_runtime_data *eee, bool own_of_supernode, bool unlocked, time_t now) {
 
     char ip[INET_ADDRSTRLEN] = "";
     char nat4[40];
@@ -261,7 +272,7 @@ static void section_edge (strbuf_t **b, struct n3n_runtime_data *eee, bool own_o
     sb_reprintf(b, "<section id=edge><h2>Edge%s</h2><dl>\n",
                 own_of_supernode ? " <small class=dim>(of this supernode, supernode.tap)</small>" : "");
     sb_reprintf(b, "<dt>Community</dt><dd>");
-    html_text(b, eee->conf.community.community_name, N2N_COMMUNITY_SIZE);
+    community_name(b, eee->conf.community.community_name, eee->conf.community.header_encryption, unlocked);
     sb_reprintf(b, "</dd>\n<dt>Address</dt><dd class=mono>%s &nbsp; %s</dd>\n", ip,
                 macaddr_str(mac_buf, eee->tap.device.mac_addr));
     if(own_of_supernode) {
@@ -290,12 +301,12 @@ static void section_edge (strbuf_t **b, struct n3n_runtime_data *eee, bool own_o
     rows = 0;
     HASH_ITER(hh, eee->client.known_peers, peer, tmp) {
         if(rows++ < PAGE_ROWS_MAX) {
-            peer_row(b, peer, "direct", "ok", NULL, eee->client.nat_peers, now);
+            peer_row(b, peer, "direct", "ok", NULL, false, eee->client.nat_peers, now);
         }
     }
     HASH_ITER(hh, eee->client.pending_peers, peer, tmp) {
         if(rows++ < PAGE_ROWS_MAX) {
-            peer_row(b, peer, "via supernode", "warn", NULL, eee->client.nat_peers, now);
+            peer_row(b, peer, "via supernode", "warn", NULL, false, eee->client.nat_peers, now);
         }
     }
     row_more(b, 7, rows - PAGE_ROWS_MAX);
@@ -342,7 +353,7 @@ static void section_edge (strbuf_t **b, struct n3n_runtime_data *eee, bool own_o
 }
 
 
-static void section_supernode (strbuf_t **b, struct n3n_runtime_data *sss, time_t now) {
+static void section_supernode (strbuf_t **b, struct n3n_runtime_data *sss, bool unlocked, time_t now) {
 
     struct sn_community *comm, *tmp;
     struct peer_info *peer, *ptmp;
@@ -375,11 +386,12 @@ static void section_supernode (strbuf_t **b, struct n3n_runtime_data *sss, time_
             continue;
         }
         sb_reprintf(b, "<tr><td>");
-        html_text(b, comm->community, N2N_COMMUNITY_SIZE);
+        community_name(b, comm->community, comm->header_encryption, unlocked);
         sb_reprintf(b, "</td><td class=mono>%s</td><td class=num>%u</td><td>%s</td></tr>\n",
                     comm->auto_ip_net.net_addr ? ip_subnet_to_str(ip_bit_str, &comm->auto_ip_net) : "",
                     HASH_COUNT(comm->edges),
-                    (comm->header_encryption == HEADER_ENCRYPTION_ENABLED) ? "encrypted" : "plain");
+                    (comm->header_encryption == HEADER_ENCRYPTION_ENABLED) ? "encrypted" :
+                    (comm->header_encryption == HEADER_ENCRYPTION_NONE) ? "plain" : "not known yet");
     }
     row_more(b, 4, rows - PAGE_ROWS_MAX);
     if(!rows) {
@@ -399,7 +411,7 @@ static void section_supernode (strbuf_t **b, struct n3n_runtime_data *sss, time_
             if(rows++ < PAGE_ROWS_MAX) {
                 // its own edge is at 127.0.0.1:0, see local_link.h
                 peer_row(b, peer, peer->sock.port ? "here" : "own", peer->sock.port ? "info" : "ok",
-                         comm->community, NULL, now);
+                         comm, unlocked, NULL, now);
             }
         }
     }
@@ -440,8 +452,27 @@ static void section_supernode (strbuf_t **b, struct n3n_runtime_data *sss, time_
 }
 
 
+// Whether the page hides any name, so that it offers to unlock them
+static bool any_hidden (struct n3n_runtime_data *edge, struct n3n_runtime_data *relay) {
+
+    struct sn_community *comm, *tmp;
+
+    if(edge && mgmt_name_hidden(edge->conf.community.header_encryption, false)) {
+        return true;
+    }
+    if(relay) {
+        HASH_ITER(hh, relay->relay.communities, comm, tmp) {
+            if(!comm->is_federation && mgmt_name_hidden(comm->header_encryption, false)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+
 void mgmt_page_render (strbuf_t **b, struct n3n_runtime_data *rt, struct n3n_runtime_data *edge,
-                       struct n3n_runtime_data *relay) {
+                       struct n3n_runtime_data *relay, bool unlocked) {
 
     time_t now = time(NULL);
     char up[32];
@@ -473,19 +504,23 @@ void mgmt_page_render (strbuf_t **b, struct n3n_runtime_data *rt, struct n3n_run
                 "<button name=do value=more%s>more</button>\n"
                 "<button name=do value=stop class=bad>stop n3n</button>\n"
                 "</form>\n%s<p class=dim>Buttons ask for the management password (user name: anything). "
-                "As of %s.</p></section>\n",
+                "%sAs of %s.</p></section>\n",
                 level, (level <= 0) ? " disabled" : "", (level >= 4) ? " disabled" : "",
                 mgmt_password_is_default(rt) ?
                 "<p class=bad><b>The management password is still the default one</b>: "
                 "whoever can reach this page can stop n3n. "
                 "Set <code>management.password</code> in the configuration.</p>\n" : "",
+                unlocked ? "Unlocked: names of communities with header encryption are shown. " :
+                any_hidden(edge, relay) ?
+                "Names of communities with header encryption show as " MGMT_NAME_HIDDEN
+                ": <a href=\"/unlock\">unlock</a> (the same password). " : "",
                 clock);
 
     if(edge) {
-        section_edge(b, edge, relay != NULL, now);
+        section_edge(b, edge, relay != NULL, unlocked, now);
     }
     if(relay) {
-        section_supernode(b, relay, now);
+        section_supernode(b, relay, unlocked, now);
     }
 
     sb_reprintf(b, "</main>\n<script>%s</script>\n</body></html>\n", page_script);

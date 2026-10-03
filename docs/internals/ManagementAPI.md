@@ -50,6 +50,13 @@ buttons for more and less, and a button to stop n3n.
   password (HTTP Basic, any user name).  A form or a request from another
   site, which browsers mark with an `Origin` header, is refused, here and
   for the JsonRPC calls.
+- Names of communities with header encryption show as `***`: with header
+  encryption, the name is the key of the headers.  On a supernode this
+  also goes for communities whose kind is not known yet (no edge of them
+  has registered).  The link *unlock* (`/unlock`) asks for the management
+  password and shows them; the browser then sends the password along, so
+  the page stays unlocked as it refreshes.  The JsonRPC methods do the
+  same, see Authentication below.
 - A table shows at most 250 rows; the JsonRPC methods have them all.
 - Clients that speak HTTP/1.0, like lynx, get the connection closed after
   the reply.
@@ -174,6 +181,11 @@ The authentication is a simple password that the client must provide. It
 defaults to 'n3n' and can be set with the config option
 `management.password`.  Change it wherever other users of the machine, or
 anyone who can reach `management.port`, should not stop the daemon.
+
+The names of communities with header encryption are hidden from requests
+without the password: `get_edges`, `get_communities` and `get_supernodes`
+show `***` for them, and the edge's `get_communities` answers 403.  With
+the password (`n3nctl -k <password> get_communities`) they show.
 
 ## Pagination
 

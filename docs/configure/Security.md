@@ -37,7 +37,9 @@ root can use by default (`management.unix_sock_perms`).  Its password, for the
 methods that change things like `stop`, defaults to `n3n`: change it with
 `management.password`, and above all before opening a TCP port with
 `management.port`.  While it is the default, the daemons say so in the log
-when they start, and the management page shows a warning.
+when they start, and the management page shows a warning.  The names of
+communities with header encryption - the keys of their headers - are shown
+by the management page and the API only to requests with the password.
 
 The daemons drop their privileges after setting up the TAP device and the
 sockets, to the user n3n (or nobody) by default, see `daemon.userid` and
