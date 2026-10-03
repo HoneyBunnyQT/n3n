@@ -28,6 +28,33 @@ see [build configuration](build/BuildConfig.md).
 Example:
 - `tools/n3n-benchmark`
 
+### `n3n-qr`
+
+Makes a QR code of an edge's configuration file, for the Android app to
+scan (see [android/README.md](../android/README.md)).  It is built when
+`./configure` finds libqrencode and libpng (on Debian and Ubuntu
+`libqrencode-dev` and `libpng-dev`); `--without-qrencode` leaves it out.
+
+```
+tools/n3n-qr phone.conf          # writes phone.qr.png in the current directory
+tools/n3n-qr -t phone.conf       # shows the code in the terminal, e.g. over ssh
+tools/n3n-qr -o code.png -s 12 phone.conf
+tools/n3n-qr -p phone.conf       # prints the text that goes into the code
+```
+
+The code holds the configuration as text, as any QR reader shows it:
+without comments, blank lines and the spaces around `=`, otherwise as it
+is, so the edge reads it as it reads the file.  A typical configuration is
+well below the 2900 or so bytes a code can hold.
+
+- The code holds the community's key, if the file has one: share the image
+  like the key itself.
+- The app needs a static `address` in `[tuntap]`, and each phone its own;
+  `n3n-qr` notes when there is none.  One configuration file per phone is
+  the simple way.
+
+`make test.qr` checks that `zbarimg` (zbar-tools) reads back what went in.
+
 ### `n3n-route`
 
 This tool has not been converted to work with the JsonRPC API interface.

@@ -88,6 +88,15 @@ running daemon
 
 If the pcap library is available then the `n3n-decode` tool can be compiled.
 
+### `--without-qrencode`
+
+`tools/n3n-qr`, which makes QR codes of configurations for the Android
+app (see [Tools](../Tools.md)), is built when libqrencode and libpng are
+there (on Debian and Ubuntu `apt-get install libqrencode-dev libpng-dev`)
+and left out otherwise.  `--without-qrencode` leaves it out in any case,
+`--with-qrencode` makes `./configure` fail without the libraries.  Only
+`n3n-qr` links them.
+
 ### `--enable-natpmp`
 
 One of the two UPnP libraries, this one supports the NATPMP protocol.

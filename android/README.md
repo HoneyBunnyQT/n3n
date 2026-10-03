@@ -16,7 +16,8 @@ what comes next.
 ## What it does
 
 - The configuration is the same as on other systems: an edge's `.conf`
-  file, typed or pasted into the app, or imported from a file.  It needs a
+  file, typed or pasted into the app, imported from a file, or read from
+  a QR code that `tools/n3n-qr` makes of it.  It needs a
   static address, `tuntap.address = 10.0.0.5/24` in `[tuntap]`, because
   Android sets the device up before the edge starts.  `tuntap.mtu` is
   taken too (1290 when not given).
@@ -52,7 +53,9 @@ android/
     cpp/config.h                          what ./configure finds, for Android
     cpp/n3n_jni.c                         the JNI glue to n3n_edge_run()
     java/dev/n3n/android/
-      MainActivity.kt                     the one screen
+      MainActivity.kt                     the main screen
+      ScanActivity.kt                     the camera, until it sees a QR code
+      QrDecode.kt                         reads QR codes, with ZXing's core
       N3nVpnService.kt                    the VPN and the edge's thread
       Config.kt                           reads address and MTU of a .conf
     res/                                  layout, strings, icon
@@ -68,8 +71,10 @@ android/
   [`include/n3n/embed.h`](../include/n3n/embed.h), on the service's
   thread, with callbacks for `protect()` and the log; `nativeStop()` calls
   `n3n_edge_stop()`.
-- **The app** uses the platform's own classes only (no AndroidX), to keep
-  it small and its dependencies few.  Minimum Android 7.0 (API 24).
+- **The app** uses the platform's own classes (no AndroidX), to keep it
+  small and its dependencies few.  Minimum Android 7.0 (API 24).  The one
+  library is ZXing's core (Apache-2.0), which reads the QR codes on the
+  phone itself: no network, no Google Play services, no scanner app.
 
 ## Building
 
@@ -105,7 +110,7 @@ cmake --build build-android-native
 ## Trying it
 
 1. Install the APK (`adb install app-debug.apk`, or open it on the phone).
-2. Paste or import a configuration, for example:
+2. Get a configuration into the field, for example:
 
    ```ini
    [community]
@@ -116,6 +121,18 @@ cmake --build build-android-native
    [tuntap]
    address = 10.0.0.5/24
    ```
+
+   Three ways to get it there:
+   - **QR code**: make one on a computer with `tools/n3n-qr phone.conf`
+     (a PNG, or `-t` for the terminal), tap *QR code* and point the camera
+     at it.  The first time, the app asks for the camera.
+   - **File**: a `.conf` file, or an image with a QR code (the PNG of
+     `n3n-qr` sent to the phone, a screenshot).
+   - Type or paste it.
+
+   The app asks before it replaces a configuration already in the field,
+   and nothing starts before *Connect*: check it, or change the address
+   for this phone, first.
 
 3. Connect, and allow the VPN.  The log shows the registration with the
    supernode; the other edges of the community are reachable at their

@@ -142,8 +142,8 @@ tests and `make lint` pass after each.
       discovery), other systems than Linux; see [Mobile and TUN](MobileAndTun.md)
 - [ ] Android app (`VpnService`, configuration by QR code), see
       [Mobile and TUN](MobileAndTun.md).  Done: `android/` next to the
-      core, built from `src/` by the NDK, CI artifact; import a file,
-      connect, log.  Open: QR, state view, auto addresses, network
+      core, built from `src/` by the NDK, CI artifact; import a file or a
+      QR code (`tools/n3n-qr`), connect, log.  Open: state view, auto addresses, network
       changes, IPv6
 - [ ] `n3n-edge help transform`: list the ciphers and compressions built in,
       with the implementation of each (says "Not implemented" so far)

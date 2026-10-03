@@ -121,20 +121,22 @@ so a network can be set up once and shared:
 
 - **Import a file**: an `.conf` file as for Linux (`[community]`,
   `[connection]`, ...).
-- **Scan a QR code**: the configuration in a QR code.  A suggestion for its
-  content: `n3n:1:` followed by the configuration file, compressed with
-  deflate and in base64url.  A usual configuration (community, supernodes,
-  key, address) is a few hundred bytes, well within what a QR code holds
-  (around 2900 bytes in binary).
+- **Scan a QR code**: the configuration in a QR code.  Done, simpler than
+  first thought: the code holds the configuration as plain text, less its
+  comments and blank lines (`tools/n3n-qr`), so any QR reader shows what
+  is in it.  A usual configuration is a few hundred bytes, well within
+  what a code holds (around 2900 bytes).  Compression (`n3n:1:` with
+  deflate and base64url, as first suggested) can come when configurations
+  get too big for that.
 - **Secrets in the code**: the key or password is the secret of the whole
   community, and a QR code is easily photographed.  So the generator should
   be able to leave them out (the app asks for them on import), or encrypt
   the content with a PIN (a key derived from it with a slow KDF, such as
-  scrypt or Argon2, and ChaCha20-Poly1305).
-- **Making the codes**: a command `n3n-edge tools qr [session]`, or a
-  script `scripts/n3n-qr`, prints the code of a configuration in the
-  terminal or as a PNG; the supernode could offer one per community on its
-  management page later.
+  scrypt or Argon2, and ChaCha20-Poly1305).  For now `n3n-qr` only notes
+  that the code holds the key; the rest is open.
+- **Making the codes**: `tools/n3n-qr`, with libqrencode and libpng, as a
+  PNG or in the terminal; the supernode could offer one per community on
+  its management page later.
 
 What the app adds on top of the file: a name for the network, which apps
 use it (`VpnService.Builder.addAllowedApplication`), and whether it starts
@@ -149,7 +151,8 @@ with the phone (always-on VPN).
 3. Done: libn3n built by the NDK, in the app's Gradle build, in CI (the
    `Android` workflow).
 4. Done in part: a minimal app in [android/](../../android/README.md):
-   import a file, connect, disconnect, the log.  Open: QR codes, the
+   import a file or a QR code (camera or image), connect, disconnect, the
+   log.  Open: the
    state (peers, supernode) from the management API, automatic addresses,
    reconnecting on network changes.
 5. Then: several networks, always-on, a quick settings tile, per-app VPN,
