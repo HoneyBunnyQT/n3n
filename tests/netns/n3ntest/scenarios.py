@@ -136,6 +136,29 @@ SCENARIOS = [
         Site([], supernodes=["sn1"], sn_family=4),
         "direct", ipv6=True, max_moves=1, tags=["ipv6"]),
     Scenario(
+        "hard-hard-v6",
+        "as hard-hard over IPv4, but each site has routed IPv6 behind its "
+        "router's firewall, slower than IPv4 by 20 ms, and both edges know "
+        "the supernode by IPv4 and IPv6 and pick by round trip: they "
+        "should register over IPv6 all the same, and reach each other "
+        "directly over it",
+        Site(["hard-range"], supernodes=["sn1"], sn_family=46,
+             expect_nat=".*"),
+        Site(["hard-range"], supernodes=["sn1"], sn_family=46,
+             expect_nat=".*"),
+        "direct", ipv6=True, max_moves=1, delay6=20, tags=["ipv6"],
+        conf={"connection": {"supernode_selection": "rtt"}}),
+    Scenario(
+        "hard-hard-v6-blocked",
+        "as hard-hard-v6, but the supernodes' firewalls let nothing in over "
+        "IPv6: the edges stay with IPv4, relayed as in hard-hard",
+        Site(["hard-range"], supernodes=["sn1"], sn_family=46,
+             expect_nat=".*"),
+        Site(["hard-range"], supernodes=["sn1"], sn_family=46,
+             expect_nat=".*"),
+        "relayed", ipv6=True, delay6=20, sn_block6=True, tags=["ipv6"],
+        conf={"connection": {"supernode_selection": "rtt"}}),
+    Scenario(
         "same-lan",
         "both sites use 192.168.1.0/24, the edges at the same address",
         Site(["easy-kept"], lan="192.168.1.0/24"),

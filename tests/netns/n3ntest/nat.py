@@ -115,6 +115,8 @@ table inet filter {{
     chain input {{
         type filter hook input priority filter; policy accept;
         iifname "wan" ct state established,related accept
+        # neighbour discovery, without which no IPv6 gets routed here
+        icmpv6 type {{ nd-neighbor-solicit, nd-neighbor-advert }} accept
         iifname "wan" counter drop
     }}
     chain forward {{

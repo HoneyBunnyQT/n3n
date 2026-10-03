@@ -45,7 +45,8 @@ all of them a minute and a half.
 
 ### IPv6, in a kernel of its own
 
-The `dual-stack` scenario (tag `ipv6`) needs a kernel with IPv6, which
+The scenarios tagged `ipv6` (`dual-stack`, `hard-hard-v6`,
+`hard-hard-v6-blocked`) need a kernel with IPv6, which
 many containers lack; without it, the scenario fails at once ("this kernel
 has no IPv6").  `tests/netns/uml.sh` runs the scenarios in User-Mode
 Linux instead: a Linux kernel built as a program, which boots from the
@@ -57,7 +58,7 @@ the host's network touched.
 apt install linux-source flex bison bc        # or any kernel source tree
 tar xjf /usr/src/linux-source-*.tar.bz2 -C ~
 tests/netns/uml.sh kernel ~/linux-source-*    # configure and build, once
-tests/netns/uml.sh run dual-stack             # run.py's arguments
+tests/netns/uml.sh run @ipv6                  # run.py's arguments
 tests/netns/uml.sh run @quick
 ```
 
@@ -66,6 +67,8 @@ passes `-j 1` and `--register-interval 10` unless given: with 5 seconds,
 the peers' idle timeout (half of it) can pass while the senders of the
 next flow start, and their first frames then go through the supernode.
 The kernel is at `tests/netns/out/linux`, or where `UML_KERNEL` says.
+Even so, `fed-split` sometimes sends a few frames too many through the
+supernodes there (base and changed builds alike, 0 to 28 of 1000).
 
 Logs, the config files, the nftables rulesets with their drop counters,
 the daemons' management output at the end (`state.json`) and the results
@@ -116,6 +119,8 @@ router behind a carrier NAT.  The block of hard-range ends at a multiple of
 | cgnat-both | easy-changed+easy-kept on both sides | direct |
 | same-lan | both sites 192.168.1.0/24, the edges at the same address | direct |
 | dual-stack | both edges public, with IPv4 and IPv6; a knows the supernode by IPv6, b by IPv4, and they find each other by multicast over both: each may hear the other from either family (needs IPv6, see `uml.sh`) | direct, the peers kept at one address |
+| hard-hard-v6 | hard-range / hard-range, but each site with routed IPv6 behind its router's firewall, 20 ms slower than IPv4; the edges know the supernode by both, select by round trip (needs IPv6) | direct, over IPv6 |
+| hard-hard-v6-blocked | as hard-hard-v6, the supernodes' firewalls let nothing in over IPv6 (needs IPv6) | relayed, as hard-hard |
 | tcp-tcp | easy-kept / easy-changed, both edges with connect_tcp | relayed, over TCP both ways |
 | tcp-udp | as tcp-tcp, only a with connect_tcp | relayed, between TCP and UDP |
 | hard-hard-threads | as hard-hard, the supernodes with daemon.threads=3 | relayed |

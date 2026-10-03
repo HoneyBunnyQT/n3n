@@ -48,6 +48,8 @@ INET_PREFIX = 24
 # with Scenario(ipv6=True), the "internet" has IPv6 too (RFC 3849)
 INET6_NET = "2001:db8::{}"
 INET6_PREFIX = 64
+# the IPv6 network of each site behind a router, routed, not translated
+SITE6_NET = "2001:db8:{}::{}"
 OVERLAY_NET = "10.99.0.{}"
 OVERLAY_PREFIX = 24
 # beyond the community, for tuntap.gateway (TEST-NET-1, RFC 5737)
@@ -68,6 +70,17 @@ FLOW_HOLD = 3
 TRAFFIC_PY = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                           "traffic.py")
 
+
+# A supernode's firewall that lets nothing in over IPv6 but neighbour
+# discovery
+SN_BLOCK6 = """table ip6 block6 {
+    chain input {
+        type filter hook input priority 0; policy accept;
+        icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert } accept
+        iifname "eth0" drop
+    }
+}
+"""
 
 # What an airport's network lets out: no UDP but DNS (the overlay, on
 # n3n0, is not the airport's)
@@ -92,7 +105,8 @@ class Site:
                  conf=None, expect_nat=None, on_supernode=None,
                  block_udp=False, tcp_only=False, sn_family=4):
         self.on_supernode = on_supernode
-        # the address family the edge knows its supernodes by (6 needs
+        # the address family the edge knows its supernodes by: 4, 6, or
+        # 46 for both, each supernode twice (6 and 46 need
         # Scenario(ipv6=True))
         self.sn_family = sn_family
         self.block_udp = block_udp
@@ -112,7 +126,7 @@ class Scenario:
                  tags=(), conf=None, connect_timeout=None, failover=None,
                  sn_conf=None, auth=None, community_conf=False,
                  unblock_udp=False, sn_tcp_port=None, gateway=None,
-                 ipv6=False, max_moves=None):
+                 ipv6=False, max_moves=None, delay6=None, sn_block6=False):
         self.name = name
         self.desc = desc
         self.sites = {"a": a, "b": b}
@@ -149,6 +163,11 @@ class Scenario:
         # At most this many times an edge may move its peer to another
         # address ("peer ... changed" in its log) once they are direct
         self.max_moves = max_moves
+        # Milliseconds more for IPv6 than IPv4 on the way out of each site
+        # (its router's wan): IPv4 has the shorter round trip
+        self.delay6 = delay6
+        # The supernodes' firewalls drop what comes to them over IPv6
+        self.sn_block6 = sn_block6
 
     def directions(self):
         return {
@@ -243,6 +262,8 @@ class Run:
         if self.sc.ipv6:
             lab.addr(inet, "br0", "{}/{}".format(INET6_NET.format("fe"),
                                                  INET6_PREFIX))
+            # the "internet" routes each site's IPv6 network to its router
+            lab.sysctl(inet, "net.ipv6.conf.all.forwarding", 1)
         self.inet = inet
 
         for i, name in enumerate(("sn1", "sn2"), start=1):
@@ -257,6 +278,9 @@ class Run:
                 lab.addr(ns, "eth0", "{}/{}".format(ip6, INET6_PREFIX),
                          nodad=True)
                 self.supernodes[name]["ip6"] = ip6
+                self._route6(ns, "default", INET6_NET.format("fe"))
+                if self.sc.sn_block6:
+                    lab.nft(ns, SN_BLOCK6, name + "-block6")
 
         for i, (sname, site) in enumerate(sorted(self.sc.sites.items())):
             self._build_site(i, sname, site)
@@ -302,6 +326,20 @@ class Run:
                 wan = [up_net.format(2)]
                 lab.addr(ns, "wan", "{}/24".format(wan[0]))
                 lab.route(ns, "default", up_net.format(1))
+            if self.sc.ipv6:
+                # IPv6 is routed, not translated: the site's own /64
+                # behind the router's stateful firewall (nat.ruleset)
+                if not up_bridge:
+                    raise LabError("ipv6 takes one NAT layer at most")
+                wan6 = INET6_NET.format(11 + i)
+                lab.addr(ns, "wan", "{}/{}".format(wan6, INET6_PREFIX),
+                         nodad=True)
+                lab.sysctl(ns, "net.ipv6.conf.all.forwarding", 1)
+                self._route6(ns, "default", INET6_NET.format("fe"))
+                self._route6(self.inet, SITE6_NET.format(i + 1, "") +
+                             "/64", wan6)
+                if self.sc.delay6:
+                    self._delay6(ns, "wan", self.sc.delay6)
             lab.nft(ns, nat.ruleset(kind, wan, ctx),
                     "{}-r{}".format(sname, depth))
             self.routers["{}-r{}".format(sname, depth)] = ns
@@ -328,11 +366,18 @@ class Run:
                 # by IPv6
                 run(["ip", "-n", ns, "route", "add", "224.0.0.0/4",
                      "dev", "eth0"])
+                self._route6(ns, "default", INET6_NET.format("fe"))
         else:
             lab.addr(up_ns, up_if, "{}/24".format(up_net.format(1)))
             ip = up_net.format(2)
             lab.addr(ns, "eth0", "{}/24".format(ip))
             lab.route(ns, "default", up_net.format(1))
+            if self.sc.ipv6:
+                lab.addr(up_ns, up_if, "{}/64".format(
+                    SITE6_NET.format(i + 1, "1")), nodad=True)
+                lab.addr(ns, "eth0", "{}/64".format(
+                    SITE6_NET.format(i + 1, "2")), nodad=True)
+                self._route6(ns, "default", SITE6_NET.format(i + 1, "1"))
         # The TAP device comes up without IPv6, so no neighbour discovery
         # or MLD frames get counted alongside the test frames
         lab.sysctl(ns, "net.ipv6.conf.default.disable_ipv6", 1, optional=True)
@@ -348,6 +393,20 @@ class Run:
             "expect_nat": (site.expect_nat if site.expect_nat is not None
                            else nat.expected_class(layers)),
         }
+
+    def _delay6(self, ns, dev, ms):
+        """Delay the IPv6 packets leaving through dev by ms milliseconds"""
+        tc = ["ip", "netns", "exec", ns, "tc"]
+        run(tc + ["qdisc", "add", "dev", dev, "root", "handle", "1:",
+                  "prio"])
+        run(tc + ["qdisc", "add", "dev", dev, "parent", "1:3", "handle",
+                  "30:", "netem", "delay", "{}ms".format(ms)])
+        run(tc + ["filter", "add", "dev", dev, "parent", "1:0", "protocol",
+                  "ipv6", "prio", "1", "u32", "match", "u32", "0", "0",
+                  "flowid", "1:3"])
+
+    def _route6(self, ns, dst, via):
+        run(["ip", "-6", "-n", ns, "route", "add", dst, "via", via])
 
     # 2. The daemons
 
@@ -486,15 +545,18 @@ class Run:
         sections = {s: list(o.items()) for s, o in conf.items()}
         tcp_port = self.sc.sn_tcp_port or SN_PORT
         for sn in site.supernodes:
-            ip = self.supernodes[sn]["ip"]
-            if site.sn_family == 6:
-                ip = "[{}]".format(self.supernodes[sn]["ip6"])
-            if not site.tcp_only:
-                sections[community].append(
-                    ("supernode", "{}:{}".format(ip, SN_PORT)))
-            if site.tcp_only or self.sc.sn_tcp_port:
-                sections[community].append(
-                    ("supernode", "tcp://{}:{}".format(ip, tcp_port)))
+            ips = {4: [self.supernodes[sn]["ip"]],
+                   6: ["[{}]".format(self.supernodes[sn].get("ip6"))],
+                   46: [self.supernodes[sn]["ip"],
+                        "[{}]".format(self.supernodes[sn].get("ip6"))],
+                   }[site.sn_family]
+            for ip in ips:
+                if not site.tcp_only:
+                    sections[community].append(
+                        ("supernode", "{}:{}".format(ip, SN_PORT)))
+                if site.tcp_only or self.sc.sn_tcp_port:
+                    sections[community].append(
+                        ("supernode", "tcp://{}:{}".format(ip, tcp_port)))
         return sections
 
     def start_edges(self):
@@ -590,7 +652,8 @@ class Run:
         for sname, e in sorted(edges.items()):
             ok = re.match(e["expect_nat"], e["nat4"])
             detail = "nat4 {!r}".format(e["nat4"])
-            if self.sc.sites[sname].nat == ["hard-range"] and ok:
+            site = self.sc.sites[sname]
+            if site.nat == ["hard-range"] and site.expect_nat is None and ok:
                 ok = nat.hard_range_ok(e["nat4"])
                 detail += ", NAT block {}-{}".format(nat.HARD_RANGE_LO,
                                                      nat.HARD_RANGE_HI)
