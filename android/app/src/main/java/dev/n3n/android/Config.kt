@@ -119,4 +119,12 @@ class Config(text: String) {
 
     val community: String?
         get() = values["community.name"]
+
+    /** What the peer calls itself (connection.description): the name to show */
+    val description: String?
+        get() = values["connection.description"]?.takeIf { it.isNotEmpty() }
+
+    /** The exit peer, if the configuration names one (tuntap.gateway) */
+    val gateway: String?
+        get() = values["tuntap.gateway"]?.substringBefore("/")?.takeIf { it.isNotEmpty() }
 }

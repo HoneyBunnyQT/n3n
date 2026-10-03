@@ -28,6 +28,9 @@ class N3nVpnService : VpnService() {
         const val ACTION_START = "dev.n3n.android.START"
         const val ACTION_STOP = "dev.n3n.android.STOP"
         const val EXTRA_CONFIG = "config"
+        // routing all traffic through an exit peer, when given
+        const val EXTRA_GATEWAY = "gateway"
+        const val EXTRA_DNS = "dns"
         private const val CHANNEL = "vpn"
         private const val NOTIFICATION = 1
 
@@ -69,7 +72,12 @@ class N3nVpnService : VpnService() {
             stopEdge()
             return START_NOT_STICKY
         }
-        val text = intent?.getStringExtra(EXTRA_CONFIG) ?: return START_NOT_STICKY
+        val configText = intent?.getStringExtra(EXTRA_CONFIG) ?: return START_NOT_STICKY
+        val gateway = intent.getStringExtra(EXTRA_GATEWAY)
+        val dns = intent.getStringExtra(EXTRA_DNS)
+        // the edge sends what is not for the network to the exit peer
+        // (tuntap.gateway); a later value overrides one in the configuration
+        val text = if (gateway != null) "$configText\n\n[tuntap]\ngateway = $gateway\n" else configText
         if (edge != null) {
             return START_NOT_STICKY
         }
@@ -82,14 +90,34 @@ class N3nVpnService : VpnService() {
             return START_NOT_STICKY
         }
 
-        startForeground()
+        startForeground(gateway)
 
-        val tun = Builder()
-            .setSession(config.community ?: "n3n")
+        // the name Android shows for the VPN: never the community's, which
+        // may be the key of the headers
+        val builder = Builder()
+            .setSession(config.description ?: "n3n")
             .addAddress(address.first, address.second)
             .addRoute(network.first, network.second)
             .setMtu(config.mtu)
-            .establish()
+        if (gateway != null) {
+            // everything into the device; the edge's own sockets stay out
+            // of it through protect().  IPv6 too, where it is dropped: the
+            // exit peer takes IPv4 only, and nothing should go around it.
+            builder.addRoute("0.0.0.0", 0)
+            try {
+                builder.addRoute("::", 0)
+            } catch (e: IllegalArgumentException) {
+            }
+            if (dns != null) {
+                builder.addDnsServer(dns)
+            }
+        }
+        val tun = try {
+            builder.establish()
+        } catch (e: Exception) {
+            addLog("the VPN cannot be set up: ${e.message}")
+            null
+        }
         if (tun == null) {
             addLog("the VPN is not allowed (anymore)")
             stopSelf()
@@ -130,7 +158,7 @@ class N3nVpnService : VpnService() {
         super.onDestroy()
     }
 
-    private fun startForeground() {
+    private fun startForeground(gateway: String?) {
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26) {
             manager.createNotificationChannel(
@@ -141,7 +169,7 @@ class N3nVpnService : VpnService() {
         val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, CHANNEL) else Notification.Builder(this)
         val notification = builder
             .setSmallIcon(R.drawable.ic_n3n)
-            .setContentTitle(getString(R.string.running))
+            .setContentTitle(if (gateway != null) getString(R.string.running_route, gateway) else getString(R.string.running))
             .setContentIntent(open)
             .setOngoing(true)
             .build()

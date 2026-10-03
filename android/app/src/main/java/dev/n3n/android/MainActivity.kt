@@ -13,9 +13,14 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.View
 import android.widget.Button
+import android.widget.EditText
+import android.widget.Switch
 import android.widget.TextView
+import android.widget.Toast
 
 /**
  * The network at a glance: connect and disconnect, the state of the
@@ -38,6 +43,10 @@ class MainActivity : Activity() {
     private lateinit var supernode: TextView
     private lateinit var peers: TextView
     private lateinit var hint: TextView
+    private lateinit var routeAll: Switch
+    private lateinit var gateway: EditText
+    private lateinit var dns: EditText
+    private var shown = State.OFF
 
     private val main = Handler(Looper.getMainLooper())
     private var asking = false
@@ -60,6 +69,10 @@ class MainActivity : Activity() {
         supernode = findViewById(R.id.supernode)
         peers = findViewById(R.id.peers)
         hint = findViewById(R.id.hint)
+        routeAll = findViewById(R.id.route_all)
+        gateway = findViewById(R.id.gateway)
+        dns = findViewById(R.id.dns)
+        setupRoute()
 
         connect.setOnClickListener { toggle() }
         findViewById<Button>(R.id.scan).setOnClickListener {
@@ -91,11 +104,43 @@ class MainActivity : Activity() {
         super.onPause()
     }
 
+    /** The routing card: kept in the preferences as it is changed */
+    private fun setupRoute() {
+        val route = Store.route(this)
+        routeAll.isChecked = route.all
+        gateway.setText(route.gateway.ifEmpty { Config(Store.load(this)).gateway ?: "" })
+        dns.setText(route.dns)
+        findViewById<View>(R.id.route_row).visibility = if (route.all) View.VISIBLE else View.GONE
+
+        val save = {
+            Store.saveRoute(this, Store.Route(routeAll.isChecked, gateway.text.toString().trim(), dns.text.toString().trim()))
+        }
+        routeAll.setOnCheckedChangeListener { _, on ->
+            findViewById<View>(R.id.route_row).visibility = if (on) View.VISIBLE else View.GONE
+            save()
+            if (N3nVpnService.running) {
+                Toast.makeText(this, R.string.route_reconnect, Toast.LENGTH_SHORT).show()
+            }
+        }
+        val watcher = object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) = save()
+        }
+        gateway.addTextChangedListener(watcher)
+        dns.addTextChangedListener(watcher)
+    }
+
     private fun showConfig() {
         val text = Store.load(this)
         val config = Config(text)
         val addr = config.address
-        network.text = config.community ?: getString(R.string.no_network)
+        // the peer's own name; never the community's, which may be the key
+        // of the headers
+        network.text = when {
+            text.isBlank() -> getString(R.string.no_network)
+            else -> config.description ?: getString(R.string.unnamed)
+        }
         address.text = if (addr != null) "${addr.first}/${addr.second}" else getString(R.string.none)
         findViewById<Button>(R.id.share).isEnabled = text.isNotBlank()
         when {
@@ -127,6 +172,12 @@ class MainActivity : Activity() {
                 .show()
             return
         }
+        val route = Store.route(this)
+        if (route.all && !Store.isIpv4(route.gateway)) {
+            Toast.makeText(this, R.string.route_need_gateway, Toast.LENGTH_LONG).show()
+            gateway.requestFocus()
+            return
+        }
         // asks the user the first time; null when allowed already
         val ask = VpnService.prepare(this)
         if (ask != null) {
@@ -140,6 +191,11 @@ class MainActivity : Activity() {
         val intent = Intent(this, N3nVpnService::class.java)
             .setAction(N3nVpnService.ACTION_START)
             .putExtra(N3nVpnService.EXTRA_CONFIG, Store.load(this))
+        val route = Store.route(this)
+        if (route.all) {
+            intent.putExtra(N3nVpnService.EXTRA_GATEWAY, route.gateway)
+            intent.putExtra(N3nVpnService.EXTRA_DNS, if (Store.isIpv4(route.dns)) route.dns else "1.1.1.1")
+        }
         if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent) else startService(intent)
         main.postDelayed({ refresh() }, 300)
     }
@@ -167,7 +223,13 @@ class MainActivity : Activity() {
             main.post {
                 asking = false
                 if (N3nVpnService.running) {
-                    show(if (info?.registered == true) State.ON else State.WAIT, info)
+                    // one missed answer (a timeout) does not make it amber
+                    val s = when {
+                        info == null && shown == State.ON -> State.ON
+                        info?.registered == true -> State.ON
+                        else -> State.WAIT
+                    }
+                    show(s, info ?: lastInfo)
                 } else {
                     show(State.OFF, null)
                 }
@@ -175,7 +237,11 @@ class MainActivity : Activity() {
         }.start()
     }
 
+    private var lastInfo: Status.Info? = null
+
     private fun show(s: State, info: Status.Info?) {
+        shown = s
+        lastInfo = info
         val color = getColor(
             when (s) {
                 State.ON -> R.color.state_on

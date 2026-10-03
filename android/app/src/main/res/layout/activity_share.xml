@@ -7,6 +7,7 @@
     <include layout="@layout/bar" />
 
     <ScrollView
+        android:id="@+id/share_scroll"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1">

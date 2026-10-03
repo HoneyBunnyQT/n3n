@@ -26,8 +26,11 @@ object Status {
     )
 
     fun query(context: Context): Info? {
-        val supernodes = call(context, "get_supernodes") ?: return null
-        val edges = call(context, "get_edges") ?: JSONArray()
+        val supernodes = callList(context, "get_supernodes") ?: return null
+        val edges = callList(context, "get_edges") ?: JSONArray()
+        // as the edge itself sees it: still registered while its periodic
+        // re-registration waits for the answer
+        val info = callObject(context, "get_info")
 
         var registered = false
         var supernode: String? = null
@@ -39,9 +42,12 @@ object Status {
                 supernode = sn.optString("sockaddr")
                 val rtt = sn.optLong("rtt_us")
                 rttMs = if (rtt > 0) (rtt + 500) / 1000 else null
-                // registering again every 20 seconds or so
+                // an edge from before "registered": the supernode's last word
                 registered = now - sn.optLong("last_seen") < 90
             }
+        }
+        if (info != null && info.has("registered")) {
+            registered = info.optInt("registered") == 1
         }
         var direct = 0
         for (i in 0 until edges.length()) {
@@ -52,7 +58,13 @@ object Status {
         return Info(registered, supernode, rttMs, edges.length(), direct)
     }
 
-    private fun call(context: Context, method: String): JSONArray? {
+    private fun callList(context: Context, method: String): JSONArray? =
+        call(context, method)?.optJSONArray("result")
+
+    private fun callObject(context: Context, method: String): JSONObject? =
+        call(context, method)?.optJSONObject("result")
+
+    private fun call(context: Context, method: String): JSONObject? {
         val path = File(context.filesDir, "app/mgmt").absolutePath
         val socket = LocalSocket()
         return try {
@@ -64,7 +76,7 @@ object Status {
             socket.outputStream.write(request.toByteArray())
             socket.outputStream.flush()
             val reply = socket.inputStream.readBytes().toString(Charsets.UTF_8)
-            JSONObject(reply.substringAfter("\r\n\r\n")).optJSONArray("result")
+            JSONObject(reply.substringAfter("\r\n\r\n"))
         } catch (e: Exception) {
             null
         } finally {

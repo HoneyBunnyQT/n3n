@@ -7,11 +7,13 @@ import android.app.Activity
 import android.os.Bundle
 import android.view.View
 import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.ProgressBar
+import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
@@ -67,7 +69,12 @@ class ShareActivity : Activity() {
                 pin.requestFocus()
             }
         }
-        findViewById<Button>(R.id.seal).setOnClickListener { render() }
+        findViewById<Button>(R.id.seal).setOnClickListener {
+            // the keyboard away, and back up to where the code appears
+            getSystemService(InputMethodManager::class.java)?.hideSoftInputFromWindow(pin.windowToken, 0)
+            pin.clearFocus()
+            render()
+        }
 
         render()
     }
@@ -103,6 +110,8 @@ class ShareActivity : Activity() {
     }
 
     private fun draw(content: String, sealed: Boolean) {
+        val scroll = findViewById<ScrollView>(R.id.share_scroll)
+        scroll.post { scroll.smoothScrollTo(0, 0) }
         try {
             code.setImageBitmap(QrEncode.bitmap(content))
             what.setText(if (sealed) R.string.code_sealed else R.string.code_plain)

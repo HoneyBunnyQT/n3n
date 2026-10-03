@@ -20,6 +20,30 @@ object Store {
     fun save(context: Context, text: String) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_CONFIG, text).apply()
     }
+
+    /** Routing all traffic through an exit peer: whether, through which, and its DNS */
+    class Route(val all: Boolean, val gateway: String, val dns: String)
+
+    fun route(context: Context): Route {
+        val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        return Route(
+            p.getBoolean("route_all", false),
+            p.getString("route_gateway", "") ?: "",
+            p.getString("route_dns", "") ?: "",
+        )
+    }
+
+    fun saveRoute(context: Context, route: Route) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean("route_all", route.all)
+            .putString("route_gateway", route.gateway)
+            .putString("route_dns", route.dns)
+            .apply()
+    }
+
+    private val ipv4 = Regex("^((25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(25[0-5]|2[0-4]\\d|1?\\d?\\d)$")
+
+    fun isIpv4(text: String) = ipv4.matches(text)
 }
 
 /** The top bar of the screens besides the main one (layout/bar.xml) */

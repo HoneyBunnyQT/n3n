@@ -38,9 +38,32 @@ what comes next.
   configured, opens the TCP port as well.  The main screen asks it for
   the state: connecting or connected, the supernode with its round trip,
   the peers.
+- The name shown is the peer's own (`description` in `[connection]`),
+  never the community's: with header encryption, that is the key of the
+  headers.
 - Share shows the configuration as a QR code on the screen, for another
   phone to join with: with or without this phone's address (each device
   needs one of its own), and optionally sealed with a PIN.
+
+### All traffic through an exit peer
+
+The main screen's "Route all traffic through a peer" sends everything the
+phone does through the VPN to one peer, which takes it on to the internet:
+the app routes all IPv4 into the device (IPv6 too, where it is dropped, so
+that nothing goes around the exit peer), sets the DNS server given there
+(1.1.1.1 by default), and tells the edge `tuntap.gateway`, see
+[Options](../docs/configure/Options.md).  The edge's own traffic stays
+outside, through `protect()`.
+
+The exit peer, e.g. a Linux box, needs `filter.allow_routing = true` in its
+n3n configuration, IP forwarding (`sysctl net.ipv4.ip_forward=1`) and NAT
+towards its uplink, for example:
+
+```sh
+iptables -t nat -A POSTROUTING -o wlan0 -j MASQUERADE
+iptables -A FORWARD -i wlan0 -o n3n0 -m state --state RELATED,ESTABLISHED -j ACCEPT
+iptables -A FORWARD -i n3n0 -o wlan0 -j ACCEPT
+```
 
 ### QR codes sealed with a PIN
 
