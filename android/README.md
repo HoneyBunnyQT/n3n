@@ -8,8 +8,9 @@ A minimal app that runs an n3n edge on an Android phone, through
 core's sources straight from `../src`: every change to the core is in the
 next build of the app, with nothing to copy or update by hand.
 
-This is a first version, for trying it out: one network, configured by a
-`.conf` file, connect and disconnect, and the edge's log.  See
+One network at a time: its state at a glance, connect and disconnect, the
+configuration (written on the phone, imported, or scanned), sharing it as
+a QR code, and the edge's log.  See
 [Mobile and TUN](../docs/develop/MobileAndTun.md) for the design and for
 what comes next.
 
@@ -34,7 +35,27 @@ what comes next.
   own traffic does not go into the VPN.
 - The management API is there as on other systems, on the unix socket in
   the app's private directory (session `app`); `management.port`, if
-  configured, opens the TCP port as well.
+  configured, opens the TCP port as well.  The main screen asks it for
+  the state: connecting or connected, the supernode with its round trip,
+  the peers.
+- Share shows the configuration as a QR code on the screen, for another
+  phone to join with: with or without this phone's address (each device
+  needs one of its own), and optionally sealed with a PIN.
+
+### QR codes sealed with a PIN
+
+`n3n-qr -P` and Share with "Protect with a PIN" seal the configuration:
+the code then holds only base64url of a random salt and the ciphertext,
+and says neither what it holds nor that it is n3n's.  When the app scans a
+code that is no configuration but could be a sealed one, it asks: "if this
+is a protected n3n configuration, enter its PIN".
+
+Both use the same code of the core (`src/qr_seal.c`), with n3n's own
+ciphers: the key is the Pearson hash of PIN and salt, hashed again 300000
+times, and Speck in CTR mode encrypts `n3n1` and a newline in front of the
+configuration - what tells, after opening, that the PIN was right.  This
+keeps a code from saying what it is at a glance; it is no strong
+protection, a short PIN can be found by trying them all.
 
 Limits for now: IPv4 only, one network at a time, no automatic addresses
 (`tuntap.address_mode = auto`), no reconnect when the phone changes
@@ -53,9 +74,15 @@ android/
     cpp/config.h                          what ./configure finds, for Android
     cpp/n3n_jni.c                         the JNI glue to n3n_edge_run()
     java/dev/n3n/android/
-      MainActivity.kt                     the main screen
+      MainActivity.kt                     the main screen: state, connect
+      EditActivity.kt                     the configuration: edit, import, scan
+      ShareActivity.kt                    the configuration as a QR code
+      LogActivity.kt                      the edge's log
       ScanActivity.kt                     the camera, until it sees a QR code
-      QrDecode.kt                         reads QR codes, with ZXing's core
+      QrDecode.kt, QrEncode.kt            QR codes, with ZXing's core
+      Seal.kt                             sealed codes, from libn3n
+      Status.kt                           the edge's state, from its API
+      Store.kt                            where the configuration is kept
       N3nVpnService.kt                    the VPN and the edge's thread
       Config.kt                           reads address and MTU of a .conf
     res/                                  layout, strings, icon
@@ -124,11 +151,12 @@ cmake --build build-android-native
 
    Three ways to get it there:
    - **QR code**: make one on a computer with `tools/n3n-qr phone.conf`
-     (a PNG, or `-t` for the terminal), tap *QR code* and point the camera
+     (a PNG, or `-t` for the terminal; `-P` seals it with a PIN), or show
+     one on another phone with *Share*; tap *Scan QR code* and point the camera
      at it.  The first time, the app asks for the camera.
-   - **File**: a `.conf` file, or an image with a QR code (the PNG of
+   - **Import file** (in *Configuration*): a `.conf` file, or an image with a QR code (the PNG of
      `n3n-qr` sent to the phone, a screenshot).
-   - Type or paste it.
+   - Type or paste it in *Configuration*.
 
    The app asks before it replaces a configuration already in the field,
    and nothing starts before *Connect*: check it, or change the address
