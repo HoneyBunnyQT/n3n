@@ -267,15 +267,10 @@ struct peer_info* add_sn_to_list_by_mac_or_sock (struct peer_info **sn_list, n3n
 
     struct peer_info *scan, *tmp, *peer = NULL;
 
-    if(!is_null_mac(mac)) { /* not zero MAC */
-        HASH_FIND_PEER(*sn_list, mac, peer);
-    }
-
-    if(peer) {
-        return peer;
-    }
-
-    /* zero MAC, search by socket */
+    /* The entry of this very address first: one supernode can be listed
+     * under more than one, as by its IPv4 and its IPv6 address, and each
+     * entry keeps its own answers and round trip - by the MAC, an answer
+     * at one address went to the entry of the other. */
     HASH_ITER(hh, *sn_list, scan, tmp) {
         if(sock_equal(&(scan->sock), sock) == 0) {
             continue;
@@ -283,14 +278,18 @@ struct peer_info* add_sn_to_list_by_mac_or_sock (struct peer_info **sn_list, n3n
 
         // update mac if appropriate
         // (needs to be deleted first because it is key to the hash list)
-        if(!is_null_mac(mac)) {
+        if(!is_null_mac(mac) && memcmp(scan->mac_addr, mac, sizeof(n2n_mac_t))) {
             HASH_DEL(*sn_list, scan);
             memcpy(scan->mac_addr, mac, sizeof(n2n_mac_t));
             HASH_ADD_PEER(*sn_list, scan);
         }
 
-        peer = scan;
-        break;
+        return scan;
+    }
+
+    /* Then a supernode known at another address, by its MAC */
+    if(!is_null_mac(mac)) { /* not zero MAC */
+        HASH_FIND_PEER(*sn_list, mac, peer);
     }
 
     if(peer) {
