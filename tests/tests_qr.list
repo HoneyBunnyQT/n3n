@@ -1,0 +1,4 @@
+#
+# n3n-qr, when it is built: make test.qr
+
+test_qr.sh

@@ -332,7 +332,7 @@ $(info CC is: $(CC) $(CFLAGS) $(CPPFLAGS) -c -o $$@ $$<)
 %.h : %
 	libs/connslot/file2strbufc $< $(basename $(notdir $<)) >$@
 
-.PHONY: test test.units test.integration test.netns test.netns.full
+.PHONY: test test.units test.integration test.netns test.netns.full test.qr
 test: test.builtin test.units test.integration test.netns
 
 test.units: tools		# needs tools
@@ -343,6 +343,11 @@ test.integration: apps	# needs apps
 
 test.builtin: apps		# needs apps
 	scripts/test_harness.sh tests/tests_builtin.list
+
+# n3n-qr is only built with libqrencode and libpng, and its test needs
+# zbarimg to read the image back, so it is not part of "make test"
+test.qr: tools
+	scripts/test_harness.sh tests/tests_qr.list
 
 # Edges and supernodes in network namespaces behind NATs of several kinds,
 # see docs/develop/netns_testing.md.  This needs root, so it runs through

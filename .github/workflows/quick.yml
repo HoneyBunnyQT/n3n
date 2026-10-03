@@ -61,7 +61,10 @@ jobs:
             libnatpmp-dev \
             libpcap-dev \
             libcap-dev \
-            libzstd-dev
+            libzstd-dev \
+            libqrencode-dev \
+            libpng-dev \
+            zbar-tools
 
       - name: Run minimal test set
         run: |
@@ -79,6 +82,7 @@ jobs:
           make build-dep
           make -j4 all examples
           make test
+          make test.qr
 
       - name: Generate coverage reports
         run: |
