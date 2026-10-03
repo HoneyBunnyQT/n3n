@@ -454,6 +454,12 @@ Defaulting to tap, a TAP device that carries Ethernet frames. A TUN device carri
 
 Default: `tap`
 
+### tuntap.gateway
+
+TUN: the peer that takes packets for other networks.
+
+With tuntap.type = tun, packets for addresses outside the community's subnet go to this peer (its address in the community), to be routed on from there - an exit node, e.g. for all traffic when the system routes it into the device. That peer needs filter.allow_routing = true, IP forwarding and, for the internet, NAT. Without it, such packets are dropped. A TAP device leaves this to the routes of the system (see tools/n3n-route).
+
 ### tuntap.address_mode
 
 Define how the tuntap address is set.

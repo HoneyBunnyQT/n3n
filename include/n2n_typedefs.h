@@ -472,6 +472,7 @@ struct n3n_conf_tap {
     char device_mac[N2N_MACNAMSIZ];
     devstr_t tuntap_dev_name;
     struct n2n_ip_subnet tuntap_v4;
+    struct n2n_ip_subnet gateway;     // TUN: the peer for addresses outside the subnet, 0: none
     uint8_t tuntap_ip_mode;                          /**< Interface IP address allocated mode, eg. DHCP. */
     int type;                                        /**< N3N_TUNTAP_TAP or N3N_TUNTAP_TUN */
     uint32_t fd;                                     /**< a device opened already, 0: open one */

@@ -47,6 +47,9 @@ INET_NET = "203.0.113.{}"
 INET_PREFIX = 24
 OVERLAY_NET = "10.99.0.{}"
 OVERLAY_PREFIX = 24
+# beyond the community, for tuntap.gateway (TEST-NET-1, RFC 5737)
+GATEWAY_NET = "192.0.2.0/24"
+GATEWAY_TARGET = "192.0.2.1"
 EDGE_PORT = 50001
 SN_PORT = 7654
 TRAFFIC_PORT = 9000
@@ -101,7 +104,7 @@ class Scenario:
     def __init__(self, name, desc, a, b, expect, traffic="both",
                  tags=(), conf=None, connect_timeout=None, failover=None,
                  sn_conf=None, auth=None, community_conf=False,
-                 unblock_udp=False, sn_tcp_port=None):
+                 unblock_udp=False, sn_tcp_port=None, gateway=None):
         self.name = name
         self.desc = desc
         self.sites = {"a": a, "b": b}
@@ -129,6 +132,9 @@ class Scenario:
         # (connection.bind udp:// and tcp://), and the edges know it
         # (community.supernode tcp://)
         self.sn_tcp_port = sn_tcp_port
+        # The site whose edge is the other one's tuntap.gateway: it holds
+        # GATEWAY_TARGET, outside the community, which the other pings
+        self.gateway = gateway
 
     def directions(self):
         return {
@@ -436,6 +442,10 @@ class Run:
         for overrides in (self.sc.conf, site.conf):
             for section, options in overrides.items():
                 conf.setdefault(section, {}).update(options)
+        if self.sc.gateway == sname:
+            conf.setdefault("filter", {})["allow_routing"] = True
+        elif self.sc.gateway:
+            conf["tuntap"]["gateway"] = self.edges[self.sc.gateway]["overlay"]
         community = "community"
         if self.sc.community_conf:
             # the edge's only community, from a named section
@@ -848,6 +858,37 @@ class Run:
         stayed = all((m == "p2p") == (want == "p2p") for m in modes.values())
         self.check("path:after", stayed, self._modes_str(modes))
 
+    def check_gateway(self):
+        """An address beyond the community, through the gateway edge"""
+        gw = self.sc.gateway
+        src = [s for s in self.edges if s != gw][0]
+        gw_ns, src_ns = self.edges[gw]["ns"], self.edges[src]["ns"]
+        # on lo, which a new namespace has down
+        run(["ip", "-n", gw_ns, "link", "set", "lo", "up"])
+        run(["ip", "-n", gw_ns, "addr", "add", GATEWAY_TARGET + "/32",
+             "dev", "lo"])
+        run(["ip", "-n", src_ns, "route", "add", GATEWAY_NET, "dev", "n3n0"])
+        recv = self.lab.spawn(
+            "recv-gateway", gw_ns,
+            [sys.executable, TRAFFIC_PY, "recv", "--bind",
+             "{}:{}".format(GATEWAY_TARGET, TRAFFIC_PORT)],
+            stdout_path=os.path.join(self.workdir, "recv-gateway.json"))
+        time.sleep(0.5)
+        # the first ones may go while the edge asks for the gateway's MAC
+        subprocess.run(["ip", "netns", "exec", src_ns, sys.executable,
+                        TRAFFIC_PY, "send",
+                        "--src", self.edges[src]["overlay"],
+                        "--to", "{}:{}".format(GATEWAY_TARGET, TRAFFIC_PORT),
+                        "--flow", "9", "--count", "20", "--rate", "20"],
+                       capture_output=True, timeout=30)
+        time.sleep(0.5)
+        recv.stop()
+        flows = self._read_json(recv.out.name).get("flows", {})
+        got = flows.get("9", {}).get("unique", 0)
+        self.check("gateway", got >= 15,
+                   "{} of 20 datagrams to {} through {}".format(
+                       got, GATEWAY_TARGET, gw))
+
     # 6. All of it
 
     def execute(self):
@@ -869,6 +910,8 @@ class Run:
                 received = self.stop_receivers()
                 self.evaluate(n, sent, deltas, modes, received)
                 self.check_alive("measurement")
+            if self.sc.gateway and self.check_alive("measurement"):
+                self.check_gateway()
             self._dump_state()
         except LabError as e:
             self.check("setup", False, str(e))

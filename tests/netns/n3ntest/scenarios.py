@@ -251,6 +251,13 @@ SCENARIOS = [
         Site(["easy-changed"]),
         "direct", tags=["quick"]),
     Scenario(
+        "tun-gateway",
+        "a TUN edge with the TAP edge as its tuntap.gateway: an address "
+        "outside the community, through the gateway edge",
+        Site(["easy-kept"], conf={"tuntap": {"type": "tun"}}),
+        Site(["easy-changed"]),
+        "direct", gateway="b", tags=["quick"]),
+    Scenario(
         "tun-tun",
         "two edges with TUN devices, relayed: each finds the other's MAC "
         "from what it announces",

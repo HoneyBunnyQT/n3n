@@ -145,22 +145,31 @@ size_t tun_to_frame (struct n3n_runtime_data *eee, uint8_t *buf, size_t len) {
             // 224.0.0.0/4: 01:00:5e and the low 23 bits
             dst[0] = 0x01; dst[1] = 0x00; dst[2] = 0x5e;
             dst[3] = pkt[17] & 0x7f; dst[4] = pkt[18]; dst[5] = pkt[19];
-        } else if(!arp_find(eee, ip, dst)) {
-            struct n3n_tun_arp *e = arp_slot(eee, ip);
-            time_t now = time(NULL);
+        } else {
+            // the next hop: the address itself within the subnet, the
+            // gateway (tuntap.gateway) for anything outside it
+            uint32_t hop = ip;
 
             if(mask && ((ip & mask) != (own_ip & mask))) {
-                traceEvent(TRACE_DEBUG, "tun: no route for a packet outside the community's subnet");
-                return 0;
+                if(!eee->conf.tap.gateway.net_addr) {
+                    traceEvent(TRACE_DEBUG, "tun: no route for a packet outside the community's subnet");
+                    return 0;
+                }
+                hop = eee->conf.tap.gateway.net_addr;
             }
-            // ask, at most once a second for an address
-            if((e->ip == ip) && (now - e->asked < 1)) {
-                return 0;
+            if(!arp_find(eee, hop, dst)) {
+                struct n3n_tun_arp *e = arp_slot(eee, hop);
+                time_t now = time(NULL);
+
+                // ask, at most once a second for an address
+                if((e->ip == hop) && (now - e->asked < 1)) {
+                    return 0;
+                }
+                e->ip = hop;
+                e->known = false;
+                e->asked = now;
+                return arp_frame(buf, broadcast_mac, 1, own, own_ip, (const uint8_t *)"\0\0\0\0\0\0", hop);
             }
-            e->ip = ip;
-            e->known = false;
-            e->asked = now;
-            return arp_frame(buf, broadcast_mac, 1, own, own_ip, (const uint8_t *)"\0\0\0\0\0\0", ip);
         }
         eth_header(buf, dst, own, ETH_P_IPV4);
         return ETH_HLEN + len;

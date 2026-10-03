@@ -647,6 +647,20 @@ static struct n3n_conf_option section_tuntap[] = {
                 "Linux only.",
     },
     {
+        .name = "gateway",
+        .type = n3n_conf_ip_subnet,
+        .offset = offsetof(n2n_edge_conf_t, tap.gateway),
+        .desc = "TUN: the peer that takes packets for other networks",
+        .help = "With tuntap.type = tun, packets for addresses outside the "
+                "community's subnet go to this peer (its address in the "
+                "community), to be routed on from there - an exit node, "
+                "e.g. for all traffic when the system routes it into the "
+                "device.  That peer needs filter.allow_routing = true, IP "
+                "forwarding and, for the internet, NAT.  Without it, such "
+                "packets are dropped.  A TAP device leaves this to the "
+                "routes of the system (see tools/n3n-route).",
+    },
+    {
         .name = "address_mode",
         .type = n3n_conf_ip_mode,
         .offset = offsetof(n2n_edge_conf_t, tap.tuntap_ip_mode),
