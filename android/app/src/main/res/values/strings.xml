@@ -2,7 +2,15 @@
 <resources>
     <string name="app_name">n3n</string>
     <string name="config_hint">The configuration, as in a .conf file of n3n:\n\n[community]\nname = mynetwork\nkey = mysecret\nsupernode = sn.example.org:7654\n\n[tuntap]\naddress = 10.1.2.3/24</string>
-    <string name="import_file">Import file</string>
+    <string name="import_file">File</string>
+    <string name="scan">QR code</string>
+    <string name="scan_hint">Point the camera at the QR code of the configuration (made with n3n-qr)</string>
+    <string name="scan_no_permission">Scanning needs the camera</string>
+    <string name="scan_no_camera">The camera cannot be used</string>
+    <string name="qr_none">No QR code found in that image</string>
+    <string name="qr_not_n3n">That QR code holds no n3n configuration</string>
+    <string name="qr_replace">Replace the configuration with the one from the QR code?</string>
+    <string name="qr_taken">Configuration taken over; check it, then connect</string>
     <string name="connect">Connect</string>
     <string name="disconnect">Disconnect</string>
     <string name="no_address">The configuration needs tuntap.address (e.g. 10.1.2.3/24): the app sets up the device with it.</string>

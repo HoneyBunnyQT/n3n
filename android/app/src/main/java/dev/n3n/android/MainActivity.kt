@@ -4,6 +4,7 @@
 package dev.n3n.android
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.net.VpnService
 import android.os.Build
@@ -12,10 +13,12 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 
 /**
- * One screen: the configuration (typed, pasted or imported from a .conf
- * file), connect and disconnect, and the edge's log.
+ * One screen: the configuration (typed, pasted, imported from a .conf file
+ * or read from a QR code of tools/n3n-qr), connect and disconnect, and the
+ * edge's log.
  */
 class MainActivity : Activity() {
 
@@ -24,6 +27,7 @@ class MainActivity : Activity() {
         const val KEY_CONFIG = "config"
         const val REQUEST_VPN = 1
         const val REQUEST_FILE = 2
+        const val REQUEST_SCAN = 3
     }
 
     private lateinit var config: EditText
@@ -47,6 +51,9 @@ class MainActivity : Activity() {
                 .addCategory(Intent.CATEGORY_OPENABLE)
                 .setType("*/*")
             startActivityForResult(pick, REQUEST_FILE)
+        }
+        findViewById<Button>(R.id.scan).setOnClickListener {
+            startActivityForResult(Intent(this, ScanActivity::class.java), REQUEST_SCAN)
         }
         connect.setOnClickListener {
             if (N3nVpnService.running) {
@@ -101,11 +108,47 @@ class MainActivity : Activity() {
             }
             REQUEST_FILE -> {
                 val uri = data?.data ?: return
+                if (contentResolver.getType(uri)?.startsWith("image/") == true) {
+                    // a QR code sent to the phone, or a screenshot of one
+                    val text = QrDecode.fromImage(this, uri)
+                    if (text == null) {
+                        Toast.makeText(this, R.string.qr_none, Toast.LENGTH_LONG).show()
+                    } else {
+                        takeFromQr(text)
+                    }
+                    return
+                }
                 contentResolver.openInputStream(uri)?.use {
                     config.setText(it.bufferedReader().readText())
                     save()
                 }
             }
+            REQUEST_SCAN -> {
+                takeFromQr(data?.getStringExtra(ScanActivity.EXTRA_TEXT) ?: return)
+            }
+        }
+    }
+
+    /** The text of a QR code, if it is a configuration; asks before replacing another */
+    private fun takeFromQr(text: String) {
+        if (Config(text).community == null) {
+            Toast.makeText(this, R.string.qr_not_n3n, Toast.LENGTH_LONG).show()
+            return
+        }
+        val take = {
+            config.setText(text)
+            save()
+            Toast.makeText(this, R.string.qr_taken, Toast.LENGTH_SHORT).show()
+        }
+        val current = config.text.toString().trim()
+        if (current.isEmpty() || current == text.trim()) {
+            take()
+        } else {
+            AlertDialog.Builder(this)
+                .setMessage(R.string.qr_replace)
+                .setPositiveButton(android.R.string.ok) { _, _ -> take() }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
         }
     }
 

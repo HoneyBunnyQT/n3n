@@ -41,3 +41,8 @@ android {
         jvmTarget = "17"
     }
 }
+
+dependencies {
+    // reading QR codes, on the phone (Apache-2.0, pure Java, no network)
+    implementation("com.google.zxing:core:3.5.4")
+}
