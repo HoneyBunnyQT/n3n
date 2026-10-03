@@ -6,10 +6,18 @@
  * n3n/embed.h) on the thread that calls it, until nativeStop().  Every socket
  * the edge opens goes to VpnService.protect(), every log line to logcat and
  * to the service's onLog().
+ *
+ * The callbacks do not only come from that thread: the edge's other threads
+ * (the name resolver, packet threads) open sockets and log too.  A JNIEnv
+ * belongs to one thread, and Android ends the app when another one uses it,
+ * so each callback takes the one of the thread it runs on, attaching that
+ * thread to the VM for the call if it is not yet.
  */
 
 #include <jni.h>
 #include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
 #include <n3n/embed.h>
 
 #ifdef __ANDROID__
@@ -17,37 +25,102 @@
 #endif
 
 
-// What the callbacks need, during nativeRun(): they run on its thread
+// What the callbacks need, during nativeRun()
 struct jni_ctx {
-    JNIEnv *env;
-    jobject service;
+    JavaVM *vm;
+    jobject service;        // a global reference: valid on every thread
     jmethodID protect;
     jmethodID on_log;
 };
 
 
+// The JNIEnv of the calling thread; *attached says whether it had to be
+// attached for this, and is to be detached again
+static JNIEnv *thread_env (struct jni_ctx *c, bool *attached) {
+
+    JNIEnv *env = NULL;
+
+    *attached = false;
+    switch((*c->vm)->GetEnv(c->vm, (void **)&env, JNI_VERSION_1_6)) {
+        case JNI_OK:
+            return env;
+        case JNI_EDETACHED:
+            if((*c->vm)->AttachCurrentThread(c->vm, (void *)&env, NULL) != JNI_OK) {
+                return NULL;
+            }
+            *attached = true;
+            return env;
+        default:
+            return NULL;
+    }
+}
+
+
+static void thread_done (struct jni_ctx *c, JNIEnv *env, bool attached) {
+
+    // an exception left pending would end the app at the next JNI call
+    if((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+    }
+    if(attached) {
+        (*c->vm)->DetachCurrentThread(c->vm);
+    }
+}
+
+
 static bool protect (void *ctx, int fd) {
 
     struct jni_ctx *c = ctx;
+    bool attached;
+    JNIEnv *env = thread_env(c, &attached);
+    bool ok;
 
-    return (*c->env)->CallBooleanMethod(c->env, c->service, c->protect, (jint)fd);
+    if(!env) {
+        return false;
+    }
+    ok = (*env)->CallBooleanMethod(env, c->service, c->protect, (jint)fd);
+    thread_done(c, env, attached);
+    return ok;
 }
 
 
 static void log_line (void *ctx, int level, const char *line) {
 
     struct jni_ctx *c = ctx;
+    bool attached;
+    JNIEnv *env;
+    char *text;
+    size_t len;
 
 #ifdef __ANDROID__
     static const int prio[] = {ANDROID_LOG_ERROR, ANDROID_LOG_WARN, ANDROID_LOG_INFO, ANDROID_LOG_DEBUG, ANDROID_LOG_VERBOSE};
     __android_log_write(prio[(level >= 0 && level <= 4) ? level : 4], "n3n", line);
 #endif
 
-    jstring s = (*c->env)->NewStringUTF(c->env, line);
-    if(s) {
-        (*c->env)->CallVoidMethod(c->env, c->service, c->on_log, (jint)level, s);
-        (*c->env)->DeleteLocalRef(c->env, s);
+    // NewStringUTF() takes (modified) UTF-8 only, and ends the app on
+    // anything else; log lines can carry what other peers sent, so they go
+    // over as ASCII, the rest as '?'
+    len = strlen(line);
+    text = malloc(len + 1);
+    if(!text) {
+        return;
     }
+    for(size_t i = 0; i < len; i++) {
+        unsigned char ch = (unsigned char)line[i];
+        text[i] = ((ch >= 0x20 && ch < 0x7f) || ch == '\t') ? (char)ch : '?';
+    }
+    text[len] = 0;
+
+    env = thread_env(c, &attached);
+    if(env) {
+        jstring s = (*env)->NewStringUTF(env, text);
+        if(s) {
+            (*env)->CallVoidMethod(env, c->service, c->on_log, (jint)level, s);
+            (*env)->DeleteLocalRef(env, s);
+        }
+        thread_done(c, env, attached);
+    }
+    free(text);
 }
 
 
@@ -56,11 +129,18 @@ Java_dev_n3n_android_N3nVpnService_nativeRun (JNIEnv *env, jobject service, jstr
 
     jclass cls = (*env)->GetObjectClass(env, service);
     struct jni_ctx c = {
-        .env = env,
-        .service = service,
+        .service = (*env)->NewGlobalRef(env, service),
         .protect = (*env)->GetMethodID(env, cls, "protect", "(I)Z"),
         .on_log = (*env)->GetMethodID(env, cls, "onLog", "(ILjava/lang/String;)V"),
     };
+
+    if(((*env)->GetJavaVM(env, &c.vm) != JNI_OK) || !c.service || !c.protect || !c.on_log) {
+        if(c.service) {
+            (*env)->DeleteGlobalRef(env, c.service);
+        }
+        return -1;
+    }
+
     const char *conf = (*env)->GetStringUTFChars(env, config, NULL);
     const char *dir = (*env)->GetStringUTFChars(env, rundir, NULL);
     struct n3n_embed e = {
@@ -71,10 +151,13 @@ Java_dev_n3n_android_N3nVpnService_nativeRun (JNIEnv *env, jobject service, jstr
         .session = "app",
     };
 
+    // n3n_edge_run() ends all the edge's threads before it returns: no
+    // callback comes after this
     jint rc = n3n_edge_run(conf, tun_fd, &e);
 
     (*env)->ReleaseStringUTFChars(env, config, conf);
     (*env)->ReleaseStringUTFChars(env, rundir, dir);
+    (*env)->DeleteGlobalRef(env, c.service);
     return rc;
 }
 
