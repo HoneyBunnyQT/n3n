@@ -742,6 +742,86 @@ void sn_rx_register_ack (struct n3n_runtime_data *sss, struct pdu_ctx *c) {
 }
 
 
+/* Send a REGISTER_SUPER_ACK, with the header encryption and, with
+ * user/password authentication, the hash of the user */
+static void send_register_super_ack (struct n3n_runtime_data *sss,
+                                     struct sn_community *comm,
+                                     struct sn_user *user,
+                                     n2n_common_t *cmn2,
+                                     n2n_REGISTER_SUPER_ACK_t *ack,
+                                     uint8_t *payload_buf,
+                                     SOCKET socket_fd,
+                                     const struct sockaddr *sender_sock) {
+
+    uint8_t ackbuf[N2N_SN_PKTBUF_SIZE];
+    uint8_t hash_buf[16] = {0};
+    size_t encx = 0;
+
+    encode_REGISTER_SUPER_ACK(ackbuf, &encx, cmn2, ack, payload_buf);
+
+    if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
+        packet_header_encrypt(ackbuf, encx, encx,
+                              comm->header_encryption_ctx_static, comm->header_iv_ctx_static,
+                              time_stamp());
+        // if user-password-auth
+        if(comm->allowed_users) {
+            // append an encrypted packet hash
+            pearson_hash_128(hash_buf, ackbuf, encx);
+            speck_128_encrypt(hash_buf, (speck_context_t*)user->shared_secret_ctx);
+            encode_buf(ackbuf, &encx, hash_buf, N2N_REG_SUP_HASH_CHECK_LEN);
+        }
+    }
+
+    sn_sendto_sock(sss, socket_fd, sender_sock, ackbuf, encx);
+}
+
+
+/* The address of an edge to tell another one (QUERY_PEER): one of a family
+ * both have, IPv6 first - for those the edge registered here from, and the
+ * other family it told (N3N_REG_SUPER_OTHER_FAMILY).  An edge that asks
+ * from elsewhere (another supernode) gets the edge's own. */
+static const n3n_sock_t *edge_sock_for (struct sn_community *comm,
+                                        const struct peer_info *edge,
+                                        const n2n_mac_t asking_mac,
+                                        time_t now) {
+
+    const struct peer_info *asking = NULL;
+    const n3n_sock_t *edge_v6 = NULL, *edge_v4 = NULL;
+    bool asking_v6 = false, asking_v4 = false;
+    bool edge_other = edge->other_seen && ((now - edge->other_seen) < REGISTRATION_TIMEOUT);
+
+    HASH_FIND(hh, comm->edges, asking_mac, sizeof(n2n_mac_t), asking);
+    if(!asking) {
+        return &edge->sock;
+    }
+    asking_v6 = (asking->sock.family == AF_INET6);
+    asking_v4 = (asking->sock.family == AF_INET);
+    if(asking->other_seen && ((now - asking->other_seen) < REGISTRATION_TIMEOUT)) {
+        asking_v6 |= (asking->other_sock.family == AF_INET6);
+        asking_v4 |= (asking->other_sock.family == AF_INET);
+    }
+
+    if(edge->sock.family == AF_INET6) {
+        edge_v6 = &edge->sock;
+    } else if(edge->sock.family == AF_INET) {
+        edge_v4 = &edge->sock;
+    }
+    if(edge_other && (edge->other_sock.family == AF_INET6)) {
+        edge_v6 = &edge->other_sock;
+    } else if(edge_other && (edge->other_sock.family == AF_INET)) {
+        edge_v4 = &edge->other_sock;
+    }
+
+    if(asking_v6 && edge_v6) {
+        return edge_v6;
+    }
+    if(asking_v4 && edge_v4) {
+        return edge_v4;
+    }
+    return &edge->sock;
+}
+
+
 /* MSG_TYPE_REGISTER_SUPER */
 void sn_rx_register_super (struct n3n_runtime_data *sss, struct pdu_ctx *c) {
 
@@ -903,6 +983,29 @@ void sn_rx_register_super (struct n3n_runtime_data *sss, struct pdu_ctx *c) {
 
     ack.cookie = reg.cookie;
     memcpy(ack.srcMac, sss->conf.relay.sn_mac_addr, sizeof(n2n_mac_t));
+    ack.lifetime = reg_lifetime(sss) | N3N_LIFETIME_OTHER_FAMILY;
+    memcpy(&ack.sock, &sender, sizeof(sender));
+
+    if(!comm->is_federation && !from_supernode
+       && (reg.key_time == N3N_REG_SUPER_OTHER_FAMILY)) {
+        // an edge registered here tells its address of the other family:
+        // kept next to its own, see N3N_REG_SUPER_OTHER_FAMILY
+        HASH_FIND_PEER(comm->edges, reg.edgeMac, peer);
+        if(!peer || (sender.family == peer->sock.family)
+           || (auth_edge(&(peer->auth), &(reg.auth), &(ack.auth), comm) != 0)) {
+            traceEvent(TRACE_DEBUG, "Rx REGISTER_SUPER of the other family from %s, not taken",
+                       macaddr_str(mac_buf, reg.edgeMac));
+            return;
+        }
+        peer->other_sock = sender;
+        peer->other_seen = now;
+        traceEvent(TRACE_DEBUG, "edge %s also at %s",
+                   macaddr_str(mac_buf, reg.edgeMac),
+                   sock_to_cstr(sockbuf, &sender));
+        ack.num_sn = 0;
+        send_register_super_ack(sss, comm, user, &cmn2, &ack, payload_buf, socket_fd, sender_sock);
+        return;
+    }
 
     if(!comm->is_federation) { /* alternatively, do not send zero tap ip address in federation REGISTER_SUPER */
         if((reg.dev_addr.net_addr == 0) || (reg.dev_addr.net_addr == 0xFFFFFFFF) || (reg.dev_addr.net_bitlen == 0) ||
@@ -913,10 +1016,6 @@ void sn_rx_register_super (struct n3n_runtime_data *sss, struct pdu_ctx *c) {
             ack.dev_addr.net_bitlen = ipaddr.net_bitlen;
         }
     }
-
-    ack.lifetime = reg_lifetime(sss);
-
-    memcpy(&ack.sock, &sender, sizeof(sender));
 
     /* Add sender's data to federation (or update it) */
     if(comm->is_federation) {
@@ -1049,26 +1148,8 @@ void sn_rx_register_super (struct n3n_runtime_data *sss, struct pdu_ctx *c) {
         }
 
         // send REGISTER_SUPER_ACK
-        encx = 0;
         cmn2.pc = MSG_TYPE_REGISTER_SUPER_ACK;
-
-        encode_REGISTER_SUPER_ACK(ackbuf, &encx, &cmn2, &ack, payload_buf);
-
-        if(comm->header_encryption == HEADER_ENCRYPTION_ENABLED) {
-            packet_header_encrypt(ackbuf, encx, encx,
-                                  comm->header_encryption_ctx_static, comm->header_iv_ctx_static,
-                                  time_stamp());
-            // if user-password-auth
-            if(comm->allowed_users) {
-                // append an encrypted packet hash
-                pearson_hash_128(hash_buf, ackbuf, encx);
-                // same 'user' as above
-                speck_128_encrypt(hash_buf, (speck_context_t*)user->shared_secret_ctx);
-                encode_buf(ackbuf, &encx, hash_buf, N2N_REG_SUP_HASH_CHECK_LEN);
-            }
-        }
-
-        sn_sendto_sock(sss, socket_fd, sender_sock, ackbuf, encx);
+        send_register_super_ack(sss, comm, user, &cmn2, &ack, payload_buf, socket_fd, sender_sock);
 
         traceEvent(TRACE_DEBUG, "Tx REGISTER_SUPER_ACK for %s [%s]",
                    macaddr_str(mac_buf, reg.edgeMac),
@@ -1284,7 +1365,7 @@ void sn_rx_query_peer (struct n3n_runtime_data *sss, struct pdu_ctx *c) {
             pi.aflags = 0;
             memcpy(pi.srcMac, query.srcMac, sizeof(n2n_mac_t));
             memcpy(pi.mac, query.targetMac, sizeof(n2n_mac_t));
-            pi.sock = scan->sock;
+            pi.sock = *edge_sock_for(comm, scan, query.srcMac, now);
             if(scan->preferred_sock.family != (uint8_t)AF_INVALID) {
                 cmn2.flags |= N2N_FLAGS_SOCKET;
                 pi.preferred_sock = scan->preferred_sock;

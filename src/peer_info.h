@@ -34,6 +34,8 @@ struct peer_info {
     n3n_sock_t sock;
     SOCKET socket_fd;
     n3n_sock_t preferred_sock;
+    n3n_sock_t other_sock;  /* an edge at a supernode: its address of the other family */
+    time_t other_seen;      /* when other_sock last registered, 0 for none */
     n2n_cookie_t last_cookie;
     n2n_auth_t auth;
     int timeout;

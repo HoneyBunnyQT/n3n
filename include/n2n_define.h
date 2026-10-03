@@ -160,6 +160,17 @@ enum n3n_event_topic {
  * from, see src/natclass.h. Below all the values above, they leave the ranking
  * of the cookies as it is, and older edges ignore them. */
 #define N2N_REG_COOKIE_HINT_MASK   0x00000fff
+/* An edge's address of its other family (IPv6 next to IPv4, or the other
+ * way round), at the supernode it is registered at.  The edge marks the
+ * REGISTER_SUPER of it with this key_time - which only federated
+ * supernodes use among themselves, older supernodes ignore it from an edge
+ * - and sends it only to a supernode that has N3N_LIFETIME_OTHER_FAMILY in
+ * the lifetime of its REGISTER_SUPER_ACKs: one that keeps such an address
+ * next to the edge's own, instead of taking it as the edge's new one, and
+ * tells it to the edges of that family (QUERY_PEER).  Older edges ignore
+ * the lifetime. */
+#define N3N_REG_SUPER_OTHER_FAMILY 0x6e33616c  /* "n3al" */
+#define N3N_LIFETIME_OTHER_FAMILY  0x8000
 #define N2N_DESC_SIZE              16
 #define N2N_PKT_BUF_SIZE           2048
 #define N3N_SOCKBUF_SIZE           128  /* string representation of INET or INET6 sockets */
