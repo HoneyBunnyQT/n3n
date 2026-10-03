@@ -176,9 +176,38 @@ static int sn_selection_criterion_sort (peer_info_t *a, peer_info_t *b) {
 }
 
 
+/* Registered over IPv6, the edge is known by the address it has itself,
+ * no NAT's: that is the one the supernode tells the other edges, and
+ * between those that have IPv6 too, no NAT then stands in the way.  So
+ * once a supernode answered at an IPv6 address this round, all IPv4
+ * entries go behind the best of those - also the IPv4 address of the same
+ * supernode, and those learned from it, which come as IPv4.  An IPv6
+ * address that does not answer, e.g. behind a firewall, changes nothing. */
+static void sn_selection_prefer_ipv6 (peer_info_t *peer_list) {
+
+    peer_info_t *scan, *tmp;
+    uint64_t best6 = sn_selection_criterion_default();
+
+    HASH_ITER(hh, peer_list, scan, tmp) {
+        if((scan->sock.family == AF_INET6) && (scan->selection_criterion < best6)) {
+            best6 = scan->selection_criterion;
+        }
+    }
+    if(best6 >= sn_selection_criterion_default()) {
+        return;
+    }
+    HASH_ITER(hh, peer_list, scan, tmp) {
+        if((scan->sock.family == AF_INET) && (scan->selection_criterion <= best6)) {
+            scan->selection_criterion = best6 + 1;
+        }
+    }
+}
+
+
 /* Function that sorts peer_list using sn_selection_criterion_sort. */
 int sn_selection_sort (peer_info_t **peer_list) {
 
+    sn_selection_prefer_ipv6(*peer_list);
     HASH_SORT(*peer_list, sn_selection_criterion_sort);
 
     return 0; /* OK */
