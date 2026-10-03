@@ -9,6 +9,7 @@
 
 #include <connslot/connslot.h>  // for conn_t
 #include <connslot/jsonrpc.h>   // for jsonrpc_t, jsonrpc_parse
+#include <n3n/edge.h>           // for edge_is_registered
 #include <n3n/ethernet.h>       // for is_null_mac
 #include <n3n/logging.h> // for traceEvent
 #include <n3n/mainloop.h>       // for mainloop_unregister_fd
@@ -829,7 +830,8 @@ static void jsonrpc_get_info (char *id, struct n3n_runtime_data *eee, conn_t *co
                 "\"sockaddr\":\"%s\","
                 "\"nat4\":\"%s\","
                 "\"nat6\":\"%s\","
-                "\"transport\":\"%s\"}",
+                "\"transport\":\"%s\","
+                "\"registered\":%i}",
                 VERSION,
                 BUILDDATE,
                 eee->conf.is_edge,
@@ -839,7 +841,10 @@ static void jsonrpc_get_info (char *id, struct n3n_runtime_data *eee, conn_t *co
                 sock_to_cstr(sockbuf, eee->conf.is_edge ? &eee->client.advertised_sock : &eee->conf.client.preferred_sock),
                 nat_view_str(nat4, sizeof(nat4), &eee->client.nat[0]),
                 nat_view_str(nat6, sizeof(nat6), &eee->client.nat[1]),
-                !eee->conf.is_edge ? "" : eee->client.tcp ? "tcp" : "udp"
+                !eee->conf.is_edge ? "" : eee->client.tcp ? "tcp" : "udp",
+                // as the page and systemd see it: the periodic re-registration
+                // does not count as gone
+                eee->conf.is_edge ? edge_is_registered(eee, time(NULL)) : 0
     );
 
     jsonrpc_result_tail(conn, 200);
