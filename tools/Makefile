@@ -13,8 +13,9 @@ TOOLS+=n3n-portfwd
 TOOLS+=n3n-decode
 TOOLS+=crypto_helper
 
-# when ./configure found libqrencode and libpng
-ifneq ($(LDLIBS_QR),)
+# when ./configure found libqrencode and libpng (not "@LIBS_QR@", as from
+# a configure script older than this option: ./autogen.sh renews it)
+ifneq ($(filter -lqrencode,$(LDLIBS_QR)),)
 TOOLS+=n3n-qr
 endif
 
