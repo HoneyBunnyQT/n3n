@@ -10,7 +10,7 @@ big-endian also tested under qemu on s390x, mips and aarch64.
 - Benchmarks (x86-64, bench-prs.sh) are in the commit messages of the
   performance relevant commits.  No ARM numbers: the NEON commit and the
   plain C Speck/ChaCha20 commit change no code an x86 build runs.
-- Integration tests: not run here (the container has no IPv6, which
-  upstream's supernode needs by default).
+- Integration tests (integ-prs.sh, on a host with IPv6): upstream main
+  and all nine branches ok.
 
 Next: open the PRs with pr-texts.md.
