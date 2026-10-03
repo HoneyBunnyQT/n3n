@@ -13,6 +13,11 @@ TOOLS+=n3n-portfwd
 TOOLS+=n3n-decode
 TOOLS+=crypto_helper
 
+# when ./configure found libqrencode and libpng
+ifneq ($(LDLIBS_QR),)
+TOOLS+=n3n-qr
+endif
+
 TESTS=tests-compress
 TESTS+=tests-elliptic
 TESTS+=tests-transform
@@ -37,6 +42,11 @@ $(TOOLS) $(TOOLS_OPTIONAL) $(TESTS): ../src/libn3n.a
 %: %.c
 	@echo "  CC      $@"
 	@$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
+
+# not the core, only its libraries
+n3n-qr: n3n-qr.c
+	@echo "  CC      $@"
+	@$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) $< $(LDLIBS_QR) -o $@
 
 # See comments in the topdir Makefile about how to generate coverage
 # data.  Compiled and linked in one step, gcc names the notes of x.c

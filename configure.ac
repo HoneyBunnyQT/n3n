@@ -111,6 +111,24 @@ AS_IF([test "x$enable_cap" != xno],
     )],
 )
 
+# n3n-qr, the QR codes of configurations for the Android app: built when
+# both libraries are there, unless --without-qrencode.  Only that tool
+# links them, so they do not go into LIBS.
+AC_ARG_WITH([qrencode],
+    [AS_HELP_STRING([--without-qrencode],
+        [do not build n3n-qr (needs libqrencode and libpng)])],
+    [], [with_qrencode=check])
+LIBS_QR=""
+AS_IF([test "x$with_qrencode" != xno],
+    [AC_CHECK_HEADERS([qrencode.h png.h])
+     AS_IF([test "x$ac_cv_header_qrencode_h" = xyes && test "x$ac_cv_header_png_h" = xyes],
+        [AC_CHECK_LIB([qrencode], [QRcode_encodeData],
+            [AC_CHECK_LIB([png], [png_create_write_struct],
+                [LIBS_QR="-lqrencode -lpng"])])])
+     AS_IF([test "x$with_qrencode" = xyes && test -z "$LIBS_QR"],
+        [AC_MSG_ERROR([libqrencode or libpng not found])])],
+)
+
 AC_ARG_ENABLE([relay],
     [AS_HELP_STRING([--disable-relay],
         [build the edge only, without the supernode (the relay role)])],
@@ -183,6 +201,7 @@ AC_SUBST(EXE)
 AC_SUBST(WINDRES)
 AC_SUBST(with_openssl)
 AC_SUBST(enable_relay)
+AC_SUBST(LIBS_QR)
 AC_CONFIG_HEADERS(include/config.h)
 AC_CONFIG_FILES(config.mak)
 

@@ -16,6 +16,7 @@ export INSTALL_PROG
 export LDFLAGS
 export LDLIBS_EXTRA
 export LDLIBS_LOCAL
+export LDLIBS_QR
 export MKDIR
 
 

@@ -23,3 +23,5 @@ EXE=@EXE@
 CFLAGS+=@CFLAGS@
 LDFLAGS+=@LDFLAGS@
 LDLIBS_EXTRA+=@LIBS@
+# for n3n-qr only, empty when it is not built
+LDLIBS_QR=@LIBS_QR@
