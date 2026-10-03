@@ -10,5 +10,8 @@ address=10.20.30.40/24
 mtu=1290
 ### the default name of the image
 qr.qr.png
+### sealed with a PIN: opens with it, and not with another
+opened
+n3n-qr: no sealed code, or not the right PIN
 ### read back from the image
 the same

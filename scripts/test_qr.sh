@@ -25,6 +25,11 @@ echo "### the text in the code"
 echo "### the default name of the image"
 (cd "$TMP" && "$QR" "$CONF" 2>/dev/null && ls -- *.png)
 
+echo "### sealed with a PIN: opens with it, and not with another"
+N3N_QR_PIN=4711 "$QR" -P -p "$CONF" >"$TMP/sealed"
+N3N_QR_PIN=4711 "$QR" --open "$(cat "$TMP/sealed")" | cmp -s "$TMP/expected" - && echo "opened"
+N3N_QR_PIN=4712 "$QR" --open "$(cat "$TMP/sealed")" 2>&1 || true
+
 echo "### read back from the image"
 zbarimg -q --raw "$TMP/qr.qr.png" 2>/dev/null >"$TMP/read"
 if cmp -s "$TMP/expected" "$TMP/read"; then

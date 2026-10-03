@@ -17,6 +17,7 @@
 #include <ctype.h>             // for isspace, tolower
 #include <errno.h>             // for errno, ERANGE
 #include <getopt.h>            // for getopt_long
+#include <n3n/qr_seal.h>       // for qr_seal, qr_open
 #include <png.h>               // for png_*
 #include <qrencode.h>          // for QRcode_encodeData, QRcode_free
 #include <stdbool.h>
@@ -24,6 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>           // for strncasecmp
+#include <termios.h>           // for tcgetattr, tcsetattr
 
 #define QUIET_ZONE    4        // modules of white around the code, as the standard asks
 #define CONF_MAX      65536    // far more than a code can hold anyway
@@ -43,11 +45,67 @@ static void usage (void) {
         "  -s, --scale N       pixels per module of the code (default 8)\n"
         "  -t, --terminal      show the code in the terminal, no image\n"
         "  -p, --print         print the text that goes into the code, no image\n"
+        "  -P, --pin           seal the code with a PIN, asked for on the terminal\n"
+        "                      (or taken from $N3N_QR_PIN): the code then shows\n"
+        "                      neither the configuration nor that it is n3n's\n"
+        "      --open CODE     print the configuration of a sealed code\n"
         "  -h, --help          this help\n"
         "\n"
-        "The code holds the configuration as it is, community key included:\n"
-        "share the image like the key itself.\n"
+        "Without a PIN, the code holds the configuration as it is, community key\n"
+        "included: share the image like the key itself.  A PIN keeps a code from\n"
+        "saying what it is at a glance, but a short one can be found by trying\n"
+        "them all.\n"
     );
+}
+
+
+// A PIN from $N3N_QR_PIN, or asked for on the terminal without echo (twice
+// when twice is set): malloc()ed, NULL if there is none
+static char *ask_pin (bool twice) {
+
+    const char *env = getenv("N3N_QR_PIN");
+    char first[80], second[80];
+    struct termios old, quiet;
+    FILE *tty;
+
+    if(env && *env) {
+        return strdup(env);
+    }
+    tty = fopen("/dev/tty", "r+");
+    if(!tty) {
+        return NULL;
+    }
+    for(int round = 0; round < (twice ? 2 : 1); round++) {
+        char *buf = round ? second : first;
+        fputs(round ? "PIN again: " : "PIN: ", tty);
+        fflush(tty);
+        bool echo_off = (tcgetattr(fileno(tty), &old) == 0);
+        if(echo_off) {
+            quiet = old;
+            quiet.c_lflag &= ~ECHO;
+            tcsetattr(fileno(tty), TCSAFLUSH, &quiet);
+        }
+        char *got = fgets(buf, sizeof(first), tty);
+        if(echo_off) {
+            tcsetattr(fileno(tty), TCSAFLUSH, &old);
+        }
+        fputs("\n", tty);
+        if(!got) {
+            fclose(tty);
+            return NULL;
+        }
+        buf[strcspn(buf, "\r\n")] = 0;
+    }
+    fclose(tty);
+    if(twice && strcmp(first, second)) {
+        fprintf(stderr, "n3n-qr: the PINs differ\n");
+        return NULL;
+    }
+    if(!*first) {
+        fprintf(stderr, "n3n-qr: no PIN given\n");
+        return NULL;
+    }
+    return strdup(first);
 }
 
 
@@ -283,6 +341,8 @@ int main (int argc, char **argv) {
         {"scale",    required_argument, NULL, 's'},
         {"terminal", no_argument,       NULL, 't'},
         {"print",    no_argument,       NULL, 'p'},
+        {"pin",      no_argument,       NULL, 'P'},
+        {"open",     required_argument, NULL, 'O'},
         {"help",     no_argument,       NULL, 'h'},
         {NULL,       0,                 NULL, 0}
     };
@@ -290,9 +350,11 @@ int main (int argc, char **argv) {
     int scale = 8;
     bool terminal = false;
     bool print = false;
+    bool sealed = false;
+    const char *open_code = NULL;
     int c;
 
-    while((c = getopt_long(argc, argv, "o:s:tph", long_options, NULL)) != -1) {
+    while((c = getopt_long(argc, argv, "o:s:tpPh", long_options, NULL)) != -1) {
         switch(c) {
             case 'o':
                 output = optarg;
@@ -310,6 +372,12 @@ int main (int argc, char **argv) {
             case 'p':
                 print = true;
                 break;
+            case 'P':
+                sealed = true;
+                break;
+            case 'O':
+                open_code = optarg;
+                break;
             case 'h':
                 usage();
                 return 0;
@@ -317,6 +385,22 @@ int main (int argc, char **argv) {
                 usage();
                 return 2;
         }
+    }
+    if(open_code) {
+        char *pin = ask_pin(false);
+        char *text;
+        if(!pin) {
+            return 1;
+        }
+        int rc = qr_open(open_code, pin, &text);
+        free(pin);
+        if(rc != 0) {
+            fprintf(stderr, "n3n-qr: no sealed code, or not the right PIN\n");
+            return 1;
+        }
+        printf("%s\n", text);
+        free(text);
+        return 0;
     }
     if(optind != argc - 1) {
         usage();
@@ -344,6 +428,23 @@ int main (int argc, char **argv) {
     if(!payload || !*payload) {
         fprintf(stderr, "n3n-qr: %s: nothing in it but comments\n", input);
         return 1;
+    }
+
+    if(sealed) {
+        char *pin = ask_pin(true);
+        char *code = NULL;
+        if(!pin || (qr_seal(payload, pin, &code) != 0)) {
+            if(pin) {
+                fprintf(stderr, "n3n-qr: could not seal the code\n");
+            }
+            free(pin);
+            free(payload);
+            return 1;
+        }
+        free(pin);
+        free(payload);
+        payload = code;
+        has_secret = false;
     }
 
     if(print) {
@@ -387,7 +488,7 @@ int main (int argc, char **argv) {
                     fprintf(stderr, "n3n-qr: %s: %s\n", name, strerror(errno));
                     rc = 1;
                 } else if(!rc) {
-                    fprintf(stderr, "n3n-qr: wrote %s (%zu bytes of configuration)\n", name, strlen(payload));
+                    fprintf(stderr, "n3n-qr: wrote %s (%zu bytes in the code)\n", name, strlen(payload));
                 }
             }
         }

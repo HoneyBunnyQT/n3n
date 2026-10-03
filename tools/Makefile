@@ -44,10 +44,10 @@ $(TOOLS) $(TOOLS_OPTIONAL) $(TESTS): ../src/libn3n.a
 	@echo "  CC      $@"
 	@$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
 
-# not the core, only its libraries
+# the core for sealing codes with a PIN (src/qr_seal.c), and its libraries
 n3n-qr: n3n-qr.c
 	@echo "  CC      $@"
-	@$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) $< $(LDLIBS_QR) -o $@
+	@$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) $< $(LDLIBS_QR) $(LDLIBS) -o $@
 
 # See comments in the topdir Makefile about how to generate coverage
 # data.  The notes are x.gcno or, compiled and linked in one step with

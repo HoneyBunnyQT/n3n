@@ -150,6 +150,7 @@ OBJS=\
 	src/punch.o \
 	src/peer_info.o \
 	src/pktbuf.o \
+	src/qr_seal.o \
 	src/random_numbers.o \
 	src/resolve.o \
 	src/role_client.o \
