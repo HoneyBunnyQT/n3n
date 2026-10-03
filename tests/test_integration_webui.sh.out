@@ -1,0 +1,2 @@
+### test: ./apps/n3n-supernode start ci_sn -Oconnection.bind=0.0.0.0:7654 -v --daemon -Osupernode.macaddr=02:00:00:55:00:00
+
