@@ -53,7 +53,10 @@ the app routes all IPv4 into the device (IPv6 too, where it is dropped, so
 that nothing goes around the exit peer), sets the DNS server given there
 (1.1.1.1 by default), and tells the edge `tuntap.gateway`, see
 [Options](../docs/configure/Options.md).  The edge's own traffic stays
-outside, through `protect()`.
+outside, through `protect()`: every socket the edge opens is bound to the
+phone's real network, so the supernodes - those of the configuration as
+well as those it learns - and the peers it reaches directly need no routes
+of their own.
 
 The exit peer, e.g. a Linux box, needs `filter.allow_routing = true` in its
 n3n configuration, IP forwarding (`sysctl net.ipv4.ip_forward=1`) and NAT
