@@ -103,8 +103,10 @@ class Site:
 
     def __init__(self, nat=(), lan=None, supernodes=("sn1", "sn2"),
                  conf=None, expect_nat=None, on_supernode=None,
-                 block_udp=False, tcp_only=False, sn_family=4):
+                 block_udp=False, tcp_only=False, sn_family=4, no_ipv6=False):
         self.on_supernode = on_supernode
+        # with Scenario(ipv6=True): this site has IPv4 only all the same
+        self.no_ipv6 = no_ipv6
         # the address family the edge knows its supernodes by: 4, 6, or
         # 46 for both, each supernode twice (6 and 46 need
         # Scenario(ipv6=True))
@@ -326,7 +328,7 @@ class Run:
                 wan = [up_net.format(2)]
                 lab.addr(ns, "wan", "{}/24".format(wan[0]))
                 lab.route(ns, "default", up_net.format(1))
-            if self.sc.ipv6:
+            if self.sc.ipv6 and not site.no_ipv6:
                 # IPv6 is routed, not translated: the site's own /64
                 # behind the router's stateful firewall (nat.ruleset)
                 if not up_bridge:
@@ -358,7 +360,7 @@ class Run:
             lab.enslave(up_ns, up_if, "br0")
             ip = INET_NET.format(101 + i)
             lab.addr(ns, "eth0", "{}/{}".format(ip, INET_PREFIX))
-            if self.sc.ipv6:
+            if self.sc.ipv6 and not site.no_ipv6:
                 lab.addr(ns, "eth0", "{}/{}".format(
                     INET6_NET.format(101 + i), INET6_PREFIX), nodad=True)
                 # as a LAN with a default route has: the edges find each
@@ -372,7 +374,7 @@ class Run:
             ip = up_net.format(2)
             lab.addr(ns, "eth0", "{}/24".format(ip))
             lab.route(ns, "default", up_net.format(1))
-            if self.sc.ipv6:
+            if self.sc.ipv6 and not site.no_ipv6:
                 lab.addr(up_ns, up_if, "{}/64".format(
                     SITE6_NET.format(i + 1, "1")), nodad=True)
                 lab.addr(ns, "eth0", "{}/64".format(

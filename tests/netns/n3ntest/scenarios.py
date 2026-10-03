@@ -159,6 +159,16 @@ SCENARIOS = [
         "relayed", ipv6=True, delay6=20, sn_block6=True, tags=["ipv6"],
         conf={"connection": {"supernode_selection": "rtt"}}),
     Scenario(
+        "v6-v4only",
+        "a has IPv4 and IPv6 and registers over IPv6, b has IPv4 only, both "
+        "behind port keeping NATs: the supernode has a's IPv4 address too "
+        "and tells b that one, so they reach each other directly over IPv4",
+        Site(["easy-kept"], supernodes=["sn1"], sn_family=46,
+             expect_nat=".*"),
+        Site(["easy-kept"], supernodes=["sn1"], sn_family=4, no_ipv6=True,
+             expect_nat=".*"),
+        "direct", ipv6=True, tags=["ipv6"]),
+    Scenario(
         "same-lan",
         "both sites use 192.168.1.0/24, the edges at the same address",
         Site(["easy-kept"], lan="192.168.1.0/24"),

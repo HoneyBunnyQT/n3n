@@ -46,7 +46,7 @@ all of them a minute and a half.
 ### IPv6, in a kernel of its own
 
 The scenarios tagged `ipv6` (`dual-stack`, `hard-hard-v6`,
-`hard-hard-v6-blocked`) need a kernel with IPv6, which
+`hard-hard-v6-blocked`, `v6-v4only`) need a kernel with IPv6, which
 many containers lack; without it, the scenario fails at once ("this kernel
 has no IPv6").  `tests/netns/uml.sh` runs the scenarios in User-Mode
 Linux instead: a Linux kernel built as a program, which boots from the
@@ -119,7 +119,8 @@ router behind a carrier NAT.  The block of hard-range ends at a multiple of
 | cgnat-both | easy-changed+easy-kept on both sides | direct |
 | same-lan | both sites 192.168.1.0/24, the edges at the same address | direct |
 | dual-stack | both edges public, with IPv4 and IPv6; a knows the supernode by IPv6, b by IPv4, and they find each other by multicast over both: each may hear the other from either family (needs IPv6, see `uml.sh`) | direct, the peers kept at one address |
-| hard-hard-v6 | hard-range / hard-range, but each site with routed IPv6 behind its router's firewall, 20 ms slower than IPv4; the edges know the supernode by both, select by round trip (needs IPv6) | direct, over IPv6 |
+| hard-hard-v6 | hard-range / hard-range, but each site with routed IPv6 behind its router's firewall, 20 ms slower than IPv4; the edges know the supernode by both, select by round trip (needs IPv6) | direct, over IPv6: registered over IPv4, each edge also tells the supernode its IPv6 address |
+| v6-v4only | easy-kept / easy-kept, a with IPv6 too (registered over it), b with IPv4 only (needs IPv6) | direct, over IPv4: the supernode tells b a's IPv4 address |
 | hard-hard-v6-blocked | as hard-hard-v6, the supernodes' firewalls let nothing in over IPv6 (needs IPv6) | relayed, as hard-hard |
 | tcp-tcp | easy-kept / easy-changed, both edges with connect_tcp | relayed, over TCP both ways |
 | tcp-udp | as tcp-tcp, only a with connect_tcp | relayed, between TCP and UDP |
