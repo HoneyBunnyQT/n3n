@@ -43,6 +43,10 @@ int n3n_edge_run (const char *config, int tun_fd, const struct n3n_embed *e) {
         return -1;
     }
 
+    // from here on, n3n_edge_stop() ends this run: also while it is still
+    // starting, before the main loop looks at the flag
+    __atomic_store_n(&keep_running, true, __ATOMIC_SEQ_CST);
+
     if(e && e->log) {
         setTraceCallback(e->log, e->ctx);
     }
@@ -92,7 +96,6 @@ int n3n_edge_run (const char *config, int tun_fd, const struct n3n_embed *e) {
         traceEvent(TRACE_ERROR, "embed: edge_init failed");
         return -4;
     }
-    __atomic_store_n(&keep_running, true, __ATOMIC_SEQ_CST);
     eee->keep_running = &keep_running;
 
     // n3n_edge_stop() wakes the main loop through this, see mainloop.c

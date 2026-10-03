@@ -1455,7 +1455,8 @@ int run_edge_loop (struct n3n_runtime_data *eee) {
     HANDLE tun_read_thread = startTunReadThread(&arg);
 #endif
 
-    *eee->keep_running = true;
+    // *eee->keep_running is the caller's: true from its start, false
+    // already when it was stopped (a signal, n3n_edge_stop()) meanwhile
     update_supernode_reg(eee, time(NULL));
 
     // more threads for PACKETs, if asked for; from here on the main thread
