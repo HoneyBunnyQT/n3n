@@ -476,8 +476,8 @@ void mgmt_page_render (strbuf_t **b, struct n3n_runtime_data *rt, struct n3n_run
                 "As of %s.</p></section>\n",
                 level, (level <= 0) ? " disabled" : "", (level >= 4) ? " disabled" : "",
                 mgmt_password_is_default(rt) ?
-                "<p class=bad><b>The management password is still the default one</b> "
-                "(\"" N3N_MGMT_PASSWORD "\"): whoever can reach this page can stop n3n. "
+                "<p class=bad><b>The management password is still the default one</b>: "
+                "whoever can reach this page can stop n3n. "
                 "Set <code>management.password</code> in the configuration.</p>\n" : "",
                 clock);
 
