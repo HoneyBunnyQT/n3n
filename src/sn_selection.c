@@ -85,7 +85,13 @@ int sn_selection_criterion_calculate (struct n3n_runtime_data *eee, peer_info_t 
         }
 
         case SN_SELECTION_STRATEGY_RTT: {
+            // about milliseconds
             peer->selection_criterion = (uint64_t)((uint32_t)time_stamp() >> 22) - common_data;
+            // the current one keeps its place unless another is clearly
+            // faster: a quarter off, as moving costs a registration round
+            if(peer == eee->client.curr_sn) {
+                peer->selection_criterion -= peer->selection_criterion / 4;
+            }
             break;
         }
 
@@ -108,6 +114,17 @@ int sn_selection_criterion_calculate (struct n3n_runtime_data *eee, peer_info_t 
             );
             break;
         }
+    }
+
+    /* IPv4 counts half again as much, and loses a tie: registered over
+     * IPv6, the edge is known by its own address, no NAT's - the address
+     * the supernode tells the other edges, through which those with IPv6
+     * too reach it directly.  A far IPv6 supernode still loses to a near
+     * IPv4 one; a supernode that keeps an address of each family (see
+     * N3N_REG_SUPER_OTHER_FAMILY) gets the other one all the same.  An
+     * IPv6 address that does not answer has no say. */
+    if(peer->sock.family == AF_INET) {
+        peer->selection_criterion += peer->selection_criterion / 2 + 1;
     }
 
     return 0; /* OK */
@@ -176,14 +193,16 @@ static int sn_selection_criterion_sort (peer_info_t *a, peer_info_t *b) {
 }
 
 
-/* Registered over IPv6, the edge is known by the address it has itself,
- * no NAT's: that is the one the supernode tells the other edges, and
- * between those that have IPv6 too, no NAT then stands in the way.  So
- * once a supernode answered at an IPv6 address this round, all IPv4
- * entries go behind the best of those - also the IPv4 address of the same
- * supernode, and those learned from it, which come as IPv4.  An IPv6
- * address that does not answer, e.g. behind a firewall, changes nothing. */
-static void sn_selection_prefer_ipv6 (peer_info_t *peer_list) {
+/* With a supernode that keeps no address of the other family (see
+ * N3N_REG_SUPER_OTHER_FAMILY), the family the edge registers over is the
+ * only one the other edges learn.  Registered over IPv6, the edge is known
+ * by the address it has itself, no NAT's, and between those that have IPv6
+ * too, no NAT then stands in the way.  So there, once a supernode answered
+ * at an IPv6 address this round, all IPv4 entries go behind the best of
+ * those - also the IPv4 address of the same supernode, and those learned
+ * from it, which come as IPv4.  An IPv6 address that does not answer, e.g.
+ * behind a firewall, changes nothing. */
+static void sn_selection_ipv6_first (peer_info_t *peer_list) {
 
     peer_info_t *scan, *tmp;
     uint64_t best6 = sn_selection_criterion_default();
@@ -204,10 +223,13 @@ static void sn_selection_prefer_ipv6 (peer_info_t *peer_list) {
 }
 
 
-/* Function that sorts peer_list using sn_selection_criterion_sort. */
-int sn_selection_sort (peer_info_t **peer_list) {
+/* Function that sorts peer_list using sn_selection_criterion_sort; with
+ * ipv6_first, see sn_selection_ipv6_first() */
+int sn_selection_sort (peer_info_t **peer_list, bool ipv6_first) {
 
-    sn_selection_prefer_ipv6(*peer_list);
+    if(ipv6_first) {
+        sn_selection_ipv6_first(*peer_list);
+    }
     HASH_SORT(*peer_list, sn_selection_criterion_sort);
 
     return 0; /* OK */

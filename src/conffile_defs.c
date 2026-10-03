@@ -311,8 +311,8 @@ static struct n3n_conf_option section_connection[] = {
                 "with lowest reported load ('load').  Also "
                 "available are 'rtt' to select the lowest measured round trip "
                 "time and 'mac' to select the lowest MAC address.  Any "
-                "of them takes a supernode that answers over IPv6 first, "
-                "see Federation.md",
+                "of them counts IPv4 half again as much as IPv6, see "
+                "Federation.md",
     },
     {
         .name = "tos",

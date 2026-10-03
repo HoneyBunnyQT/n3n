@@ -63,17 +63,31 @@ Furthermore, `connection.supernode_selection=mac` would switch to a MAC address
 based selection strategy choosing the supernode active with the lowest MAC
 address.
 
-Whatever the strategy, IPv6 comes first: once a supernode answers at an
-IPv6 address the edge knows it by, the edge registers over IPv6, at the
-best of those, and its IPv4 entries - including the IPv4 address of the
-same supernode, and the supernodes learned from the federation, which come
-as IPv4 - only count when none does.  Registered over IPv6, the edge is
-known by its own address, not by its NAT's: the address the supernode
-tells the other edges, so that those with IPv6 too reach it directly, NAT
-or not.  A supernode given by both its addresses
-(`supernode = 198.51.100.1:7654` and `supernode = [2001:db8::1]:7654`) is
-kept as two entries, each with its own round trip.  An IPv6 address that
-does not answer, e.g. behind a firewall, changes nothing.
+### IPv4 and IPv6
+
+An edge registered over IPv6 is known by its own address, not by its
+NAT's - the address the supernode tells the other edges, through which
+those with IPv6 too reach it directly, NAT or not.  Supernodes and edges
+of this version go further: an edge registered over one family also
+registers its address of the other family, where it knows the same
+supernode by an address of that family too (`supernode =
+198.51.100.1:7654` and `supernode = [2001:db8::1]:7654`).  The supernode
+keeps both, and tells each edge that asks for another the address of a
+family both have, IPv6 first: two edges with IPv6 reach each other over
+it, one with IPv4 only still gets the other's IPv4 address.
+
+So the selection is about the supernode, mostly: for any strategy, an
+IPv4 entry counts half again as much as it is (load, round trip), and
+loses a tie; by round trip, the current supernode counts a quarter less,
+so that the edge only moves to one clearly faster.  A far IPv6 supernode
+still loses to a near IPv4 one.  With a supernode that does not keep the
+other address (an older one: it says so in its answers to the
+registration), the edge registers over IPv6 wherever a supernode answers
+there, as the family it registers over is all the others learn.
+
+A supernode given by both its addresses is kept as two entries, each with
+its own round trip.  An IPv6 address that does not answer, e.g. behind a
+firewall, has no say.
 
 Between the edges, the same order holds for the ways to a peer: its LAN
 address (private IPv4, or a unique local IPv6 address) before public

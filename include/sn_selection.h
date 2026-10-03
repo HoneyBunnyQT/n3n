@@ -43,7 +43,7 @@ int sn_selection_criterion_calculate (struct n3n_runtime_data *eee, peer_info_t 
 int sn_selection_criterion_common_data_default (struct n3n_runtime_data *eee);
 
 /* sorting function */
-int sn_selection_sort (peer_info_t **peer_list);
+int sn_selection_sort (peer_info_t **peer_list, bool ipv6_first);
 
 /* gathering data function */
 uint32_t sn_selection_criterion_gather_data (struct n3n_runtime_data *sss);

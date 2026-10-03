@@ -1032,7 +1032,7 @@ int n3n_edge_main (int argc, char* argv[]) {
             if(eee->client.sn_pong) {
                 // first answer
                 eee->client.sn_pong = 0;
-                sn_selection_sort(&(eee->client.supernodes));
+                sn_selection_sort(&(eee->client.supernodes), !eee->client.sn_other_family);
                 eee->client.curr_sn = supernode_first(eee);
                 supernode_connect(eee);
                 traceEvent(
@@ -1064,7 +1064,7 @@ int n3n_edge_main (int argc, char* argv[]) {
             if(eee->client.sn_pong) {
                 eee->client.sn_pong = 0;
                 if(eee->client.curr_sn->hh.next) {
-                    sn_selection_sort((peer_info_t**)&(eee->client.curr_sn->hh.next));
+                    sn_selection_sort((peer_info_t**)&(eee->client.curr_sn->hh.next), !eee->client.sn_other_family);
                     traceEvent(TRACE_DEBUG, "received additional PONG from supernode");
                     // here, it is hard to detemine from which one, so no details to output
                 }
@@ -1146,7 +1146,7 @@ int n3n_edge_main (int argc, char* argv[]) {
         else
             scan->selection_criterion = sn_selection_criterion_default();
     }
-    sn_selection_sort(&(eee->client.supernodes));
+    sn_selection_sort(&(eee->client.supernodes), !eee->client.sn_other_family);
     // do not immediately ping again, allow some time
     eee->client.last_sweep = now - SWEEP_TIME + 2 * BOOTSTRAP_TIMEOUT;
     eee->client.sn_wait = 1;

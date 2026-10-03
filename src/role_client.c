@@ -1202,7 +1202,7 @@ void sort_supernodes (struct n3n_runtime_data *eee, time_t now) {
 
     if(!eee->client.sn_wait) {
         // sort supernodes in ascending order of their selection_criterion fields
-        sn_selection_sort(&(eee->client.supernodes));
+        sn_selection_sort(&(eee->client.supernodes), !eee->client.sn_other_family);
     }
 
     if(eee->client.curr_sn != supernode_first(eee)) {
@@ -1387,7 +1387,7 @@ void update_supernode_reg (struct n3n_runtime_data * eee, time_t now) {
         if(eee->client.curr_sn) {
             eee->client.curr_sn->selection_criterion = sn_selection_criterion_bad();
         }
-        sn_selection_sort(&(eee->client.supernodes));
+        sn_selection_sort(&(eee->client.supernodes), !eee->client.sn_other_family);
         eee->client.curr_sn = supernode_first(eee);
         traceEvent(
             TRACE_WARNING,
