@@ -6,68 +6,73 @@ package dev.n3n.android
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.view.View
 import android.widget.Button
-import android.widget.EditText
-import android.widget.ScrollView
 import android.widget.TextView
-import android.widget.Toast
 
 /**
- * One screen: the configuration (typed, pasted, imported from a .conf file
- * or read from a QR code of tools/n3n-qr), connect and disconnect, and the
- * edge's log.
+ * The network at a glance: connect and disconnect, the state of the
+ * connection as the edge reports it, and the way to the other screens.
  */
 class MainActivity : Activity() {
 
     private companion object {
-        const val PREFS = "n3n"
-        const val KEY_CONFIG = "config"
         const val REQUEST_VPN = 1
-        const val REQUEST_FILE = 2
-        const val REQUEST_SCAN = 3
+        const val POLL_MS = 2000L
     }
 
-    private lateinit var config: EditText
+    private enum class State { OFF, WAIT, ON }
+
     private lateinit var connect: Button
-    private lateinit var log: TextView
-    private lateinit var logScroll: ScrollView
+    private lateinit var dot: View
+    private lateinit var state: TextView
+    private lateinit var network: TextView
+    private lateinit var address: TextView
+    private lateinit var supernode: TextView
+    private lateinit var peers: TextView
+    private lateinit var hint: TextView
+
+    private val main = Handler(Looper.getMainLooper())
+    private var asking = false
+    private val poll = object : Runnable {
+        override fun run() {
+            refresh()
+            main.postDelayed(this, POLL_MS)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        config = findViewById(R.id.config)
         connect = findViewById(R.id.connect)
-        log = findViewById(R.id.log)
-        logScroll = findViewById(R.id.log_scroll)
+        dot = findViewById(R.id.dot)
+        state = findViewById(R.id.state)
+        network = findViewById(R.id.network)
+        address = findViewById(R.id.address)
+        supernode = findViewById(R.id.supernode)
+        peers = findViewById(R.id.peers)
+        hint = findViewById(R.id.hint)
 
-        config.setText(getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_CONFIG, ""))
-
-        findViewById<Button>(R.id.import_file).setOnClickListener {
-            val pick = Intent(Intent.ACTION_OPEN_DOCUMENT)
-                .addCategory(Intent.CATEGORY_OPENABLE)
-                .setType("*/*")
-            startActivityForResult(pick, REQUEST_FILE)
-        }
+        connect.setOnClickListener { toggle() }
         findViewById<Button>(R.id.scan).setOnClickListener {
-            startActivityForResult(Intent(this, ScanActivity::class.java), REQUEST_SCAN)
+            startActivity(Intent(this, EditActivity::class.java).putExtra(EditActivity.EXTRA_SCAN, true))
         }
-        connect.setOnClickListener {
-            if (N3nVpnService.running) {
-                startService(Intent(this, N3nVpnService::class.java).setAction(N3nVpnService.ACTION_STOP))
-            } else {
-                save()
-                // asks the user the first time; null when allowed already
-                val ask = VpnService.prepare(this)
-                if (ask != null) {
-                    startActivityForResult(ask, REQUEST_VPN)
-                } else {
-                    onActivityResult(REQUEST_VPN, RESULT_OK, null)
-                }
-            }
+        findViewById<Button>(R.id.edit).setOnClickListener {
+            startActivity(Intent(this, EditActivity::class.java))
+        }
+        findViewById<Button>(R.id.share).setOnClickListener {
+            startActivity(Intent(this, ShareActivity::class.java))
+        }
+        findViewById<Button>(R.id.log).setOnClickListener {
+            startActivity(Intent(this, LogActivity::class.java))
         }
 
         if (Build.VERSION.SDK_INT >= 33) {
@@ -77,88 +82,127 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        log.text = N3nVpnService.log.joinToString("\n")
-        N3nVpnService.logListener = { line ->
-            log.append(if (log.text.isEmpty()) line else "\n" + line)
-            logScroll.post { logScroll.fullScroll(ScrollView.FOCUS_DOWN) }
-            updateButton()
-        }
-        updateButton()
+        showConfig()
+        main.post(poll)
     }
 
     override fun onPause() {
-        N3nVpnService.logListener = null
-        save()
+        main.removeCallbacks(poll)
         super.onPause()
+    }
+
+    private fun showConfig() {
+        val text = Store.load(this)
+        val config = Config(text)
+        val addr = config.address
+        network.text = config.community ?: getString(R.string.no_network)
+        address.text = if (addr != null) "${addr.first}/${addr.second}" else getString(R.string.none)
+        findViewById<Button>(R.id.share).isEnabled = text.isNotBlank()
+        when {
+            text.isBlank() -> showHint(R.string.no_config_hint)
+            addr == null -> showHint(R.string.no_address)
+            else -> hint.visibility = View.GONE
+        }
+    }
+
+    private fun showHint(text: Int) {
+        hint.setText(text)
+        hint.visibility = View.VISIBLE
+    }
+
+    private fun toggle() {
+        if (N3nVpnService.running) {
+            startService(Intent(this, N3nVpnService::class.java).setAction(N3nVpnService.ACTION_STOP))
+            main.postDelayed({ refresh() }, 300)
+            return
+        }
+        val config = Config(Store.load(this))
+        if (config.community == null || config.address == null) {
+            AlertDialog.Builder(this)
+                .setMessage(if (config.community == null) R.string.no_config_hint else R.string.no_address)
+                .setPositiveButton(R.string.edit) { _, _ ->
+                    startActivity(Intent(this, EditActivity::class.java))
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+            return
+        }
+        // asks the user the first time; null when allowed already
+        val ask = VpnService.prepare(this)
+        if (ask != null) {
+            startActivityForResult(ask, REQUEST_VPN)
+        } else {
+            start()
+        }
+    }
+
+    private fun start() {
+        val intent = Intent(this, N3nVpnService::class.java)
+            .setAction(N3nVpnService.ACTION_START)
+            .putExtra(N3nVpnService.EXTRA_CONFIG, Store.load(this))
+        if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent) else startService(intent)
+        main.postDelayed({ refresh() }, 300)
     }
 
     @Deprecated("the platform's own Activity, no AndroidX")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (resultCode != RESULT_OK) {
+        if (requestCode == REQUEST_VPN && resultCode == RESULT_OK) {
+            start()
+        }
+    }
+
+    /** The state, from the service and what the edge reports */
+    private fun refresh() {
+        if (!N3nVpnService.running) {
+            show(State.OFF, null)
             return
         }
-        when (requestCode) {
-            REQUEST_VPN -> {
-                val start = Intent(this, N3nVpnService::class.java)
-                    .setAction(N3nVpnService.ACTION_START)
-                    .putExtra(N3nVpnService.EXTRA_CONFIG, config.text.toString())
-                if (Build.VERSION.SDK_INT >= 26) startForegroundService(start) else startService(start)
-                connect.postDelayed({ updateButton() }, 500)
-            }
-            REQUEST_FILE -> {
-                val uri = data?.data ?: return
-                if (contentResolver.getType(uri)?.startsWith("image/") == true) {
-                    // a QR code sent to the phone, or a screenshot of one
-                    val text = QrDecode.fromImage(this, uri)
-                    if (text == null) {
-                        Toast.makeText(this, R.string.qr_none, Toast.LENGTH_LONG).show()
-                    } else {
-                        takeFromQr(text)
-                    }
-                    return
-                }
-                contentResolver.openInputStream(uri)?.use {
-                    config.setText(it.bufferedReader().readText())
-                    save()
-                }
-            }
-            REQUEST_SCAN -> {
-                takeFromQr(data?.getStringExtra(ScanActivity.EXTRA_TEXT) ?: return)
-            }
-        }
-    }
-
-    /** The text of a QR code, if it is a configuration; asks before replacing another */
-    private fun takeFromQr(text: String) {
-        if (Config(text).community == null) {
-            Toast.makeText(this, R.string.qr_not_n3n, Toast.LENGTH_LONG).show()
+        if (asking) {
             return
         }
-        val take = {
-            config.setText(text)
-            save()
-            Toast.makeText(this, R.string.qr_taken, Toast.LENGTH_SHORT).show()
-        }
-        val current = config.text.toString().trim()
-        if (current.isEmpty() || current == text.trim()) {
-            take()
-        } else {
-            AlertDialog.Builder(this)
-                .setMessage(R.string.qr_replace)
-                .setPositiveButton(android.R.string.ok) { _, _ -> take() }
-                .setNegativeButton(android.R.string.cancel, null)
-                .show()
-        }
+        asking = true
+        Thread {
+            val info = Status.query(this)
+            main.post {
+                asking = false
+                if (N3nVpnService.running) {
+                    show(if (info?.registered == true) State.ON else State.WAIT, info)
+                } else {
+                    show(State.OFF, null)
+                }
+            }
+        }.start()
     }
 
-    private fun save() {
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-            .putString(KEY_CONFIG, config.text.toString())
-            .apply()
-    }
+    private fun show(s: State, info: Status.Info?) {
+        val color = getColor(
+            when (s) {
+                State.ON -> R.color.state_on
+                State.WAIT -> R.color.state_wait
+                State.OFF -> R.color.state_off
+            }
+        )
+        val ring = (connect.background.mutate() as RippleDrawable).getDrawable(0) as GradientDrawable
+        ring.setStroke((6 * resources.displayMetrics.density).toInt(), color)
+        (dot.background.mutate() as GradientDrawable).setColor(color)
 
-    private fun updateButton() {
-        connect.setText(if (N3nVpnService.running) R.string.disconnect else R.string.connect)
+        connect.setText(if (s == State.OFF) R.string.connect else R.string.disconnect)
+        state.setText(
+            when (s) {
+                State.ON -> R.string.state_on
+                State.WAIT -> R.string.state_wait
+                State.OFF -> R.string.state_off
+            }
+        )
+
+        val sn = info?.supernode
+        val rtt = info?.rttMs
+        supernode.text = when {
+            sn.isNullOrEmpty() -> getString(R.string.none)
+            rtt != null -> getString(R.string.rtt, sn, rtt)
+            else -> sn
+        }
+        peers.text = if (info != null) getString(R.string.peers_count, info.peers, info.direct) else getString(R.string.none)
     }
 }

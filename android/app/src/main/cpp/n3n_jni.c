@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <n3n/embed.h>
+#include <n3n/qr_seal.h>
 
 #ifdef __ANDROID__
 #include <android/log.h>
@@ -166,4 +167,71 @@ JNIEXPORT void JNICALL
 Java_dev_n3n_android_N3nVpnService_nativeStop (JNIEnv *env, jobject service) {
 
     n3n_edge_stop();
+}
+
+
+// Seal: QR codes sealed with a PIN, see src/qr_seal.c
+
+JNIEXPORT jstring JNICALL
+Java_dev_n3n_android_Seal_seal (JNIEnv *env, jobject self, jstring text, jstring pin) {
+
+    const char *t = (*env)->GetStringUTFChars(env, text, NULL);
+    const char *p = (*env)->GetStringUTFChars(env, pin, NULL);
+    char *code = NULL;
+    jstring result = NULL;
+
+    if(t && p && (qr_seal(t, p, &code) == 0)) {
+        // base64url: plain ASCII
+        result = (*env)->NewStringUTF(env, code);
+        free(code);
+    }
+    if(t) {
+        (*env)->ReleaseStringUTFChars(env, text, t);
+    }
+    if(p) {
+        (*env)->ReleaseStringUTFChars(env, pin, p);
+    }
+    return result;
+}
+
+
+// The text as bytes: it can be anything the file held, and NewStringUTF()
+// would end the app on what is no UTF-8
+JNIEXPORT jbyteArray JNICALL
+Java_dev_n3n_android_Seal_open (JNIEnv *env, jobject self, jstring code, jstring pin) {
+
+    const char *c = (*env)->GetStringUTFChars(env, code, NULL);
+    const char *p = (*env)->GetStringUTFChars(env, pin, NULL);
+    char *text = NULL;
+    jbyteArray result = NULL;
+
+    if(c && p && (qr_open(c, p, &text) == 0)) {
+        jsize len = (jsize)strlen(text);
+        result = (*env)->NewByteArray(env, len);
+        if(result) {
+            (*env)->SetByteArrayRegion(env, result, 0, len, (const jbyte *)text);
+        }
+        free(text);
+    }
+    if(c) {
+        (*env)->ReleaseStringUTFChars(env, code, c);
+    }
+    if(p) {
+        (*env)->ReleaseStringUTFChars(env, pin, p);
+    }
+    return result;
+}
+
+
+JNIEXPORT jboolean JNICALL
+Java_dev_n3n_android_Seal_looksSealed (JNIEnv *env, jobject self, jstring code) {
+
+    const char *c = (*env)->GetStringUTFChars(env, code, NULL);
+    jboolean result = JNI_FALSE;
+
+    if(c) {
+        result = qr_looks_sealed(c) ? JNI_TRUE : JNI_FALSE;
+        (*env)->ReleaseStringUTFChars(env, code, c);
+    }
+    return result;
 }

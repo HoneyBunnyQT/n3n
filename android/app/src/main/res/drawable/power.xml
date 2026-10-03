@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The connect button: a ring, whose colour the activity sets for the state -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android" android:color="@color/line">
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="@color/card" />
+            <stroke android:width="6dp" android:color="@color/state_off" />
+        </shape>
+    </item>
+</ripple>

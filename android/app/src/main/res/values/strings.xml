@@ -1,19 +1,63 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">n3n</string>
+    <string name="back">Back</string>
+
+    <!-- main screen -->
+    <string name="connect">Connect</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="state_off">Not connected</string>
+    <string name="state_wait">Connecting…</string>
+    <string name="state_on">Connected</string>
+    <string name="address">Address</string>
+    <string name="supernode">Supernode</string>
+    <string name="peers">Peers</string>
+    <string name="none">–</string>
+    <string name="peers_count">%1$d (%2$d direct)</string>
+    <string name="rtt">%1$s · %2$d ms</string>
+    <string name="scan">Scan QR code</string>
+    <string name="edit">Configuration</string>
+    <string name="share">Share</string>
+    <string name="log">Log</string>
+    <string name="no_network">No network yet</string>
+    <string name="no_config_hint">Scan the QR code of a network, made with n3n-qr or shown by another phone, or write its configuration.</string>
+    <string name="no_address">The configuration needs an address of this phone in the network: address = 10.1.2.3/24 in [tuntap].</string>
+    <string name="channel">VPN</string>
+    <string name="running">n3n is connected</string>
+
+    <!-- configuration -->
     <string name="config_hint">The configuration, as in a .conf file of n3n:\n\n[community]\nname = mynetwork\nkey = mysecret\nsupernode = sn.example.org:7654\n\n[tuntap]\naddress = 10.1.2.3/24</string>
-    <string name="import_file">File</string>
-    <string name="scan">QR code</string>
-    <string name="scan_hint">Point the camera at the QR code of the configuration (made with n3n-qr)</string>
+    <string name="address_hint">Each device needs an address of its own in the network: address = … in [tuntap]. Saved when you leave this screen; a running connection takes it on the next connect.</string>
+    <string name="import_file">Import file</string>
+    <string name="saved_reconnect">Saved: connect again to use it</string>
+
+    <!-- QR codes -->
+    <string name="scan_hint">Point the camera at the QR code of the configuration</string>
     <string name="scan_no_permission">Scanning needs the camera</string>
     <string name="scan_no_camera">The camera cannot be used</string>
     <string name="qr_none">No QR code found in that image</string>
     <string name="qr_not_n3n">That QR code holds no n3n configuration</string>
     <string name="qr_replace">Replace the configuration with the one from the QR code?</string>
-    <string name="qr_taken">Configuration taken over; check it, then connect</string>
-    <string name="connect">Connect</string>
-    <string name="disconnect">Disconnect</string>
-    <string name="no_address">The configuration needs tuntap.address (e.g. 10.1.2.3/24): the app sets up the device with it.</string>
-    <string name="channel">VPN</string>
-    <string name="running">n3n is connected</string>
+    <string name="qr_taken">Configuration taken over: check it</string>
+    <string name="qr_pin_title">A QR code</string>
+    <string name="qr_pin_message">If this is a protected n3n configuration, enter its PIN.</string>
+    <string name="qr_pin_wrong">Not the right PIN, or no n3n code</string>
+    <string name="open">Open</string>
+
+    <!-- share -->
+    <string name="leave_out_address">Leave out this phone\'s address</string>
+    <string name="address_note_with">The code holds this phone\'s address %1$s: the device that scans it has to change it to one of its own.</string>
+    <string name="address_note_without">The device that scans it adds an address of its own (or lets the supernode assign one, where it can).</string>
+    <string name="use_pin">Protect with a PIN</string>
+    <string name="pin">PIN</string>
+    <string name="seal">Make code</string>
+    <string name="pin_note">The code then shows neither the configuration nor that it is n3n\'s. Tell the PIN separately. A short PIN keeps a code from saying what it is at a glance; it is no strong protection.</string>
+    <string name="code_plain">Scan with the n3n app. The code holds the configuration as it is, key included: show it only to who may join.</string>
+    <string name="code_sealed">Protected with a PIN. Scan with the n3n app, then enter the PIN.</string>
+    <string name="code_too_big">The configuration does not fit into a QR code</string>
+    <string name="pin_empty">Enter a PIN first</string>
+
+    <!-- log -->
+    <string name="copy">Copy</string>
+    <string name="copied">Log copied</string>
 </resources>

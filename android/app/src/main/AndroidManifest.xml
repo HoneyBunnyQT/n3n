@@ -16,7 +16,7 @@
         android:allowBackup="false"
         android:icon="@drawable/ic_n3n"
         android:label="@string/app_name"
-        android:theme="@android:style/Theme.Material.Light.DarkActionBar">
+        android:theme="@style/AppTheme">
 
         <activity
             android:name=".MainActivity"
@@ -27,6 +27,19 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".EditActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".ShareActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".LogActivity"
+            android:exported="false" />
 
         <activity
             android:name=".ScanActivity"

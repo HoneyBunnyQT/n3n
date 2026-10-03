@@ -11,6 +11,55 @@ package dev.n3n.android
  */
 class Config(text: String) {
 
+    companion object {
+        /**
+         * The text for a QR code, as tools/n3n-qr makes it: without comments,
+         * "a = b" as "a=b", blank lines in a row as one - and, if asked,
+         * without the address of this phone (tuntap.address)
+         */
+        fun compact(text: String, withoutAddress: Boolean = false): String {
+            val out = StringBuilder()
+            var section = ""
+            var blank = false
+            for (raw in text.lines()) {
+                var line = raw.trim()
+                if (line.isEmpty()) {
+                    blank = out.isNotEmpty()
+                    continue
+                }
+                if (line.startsWith("#") || line.startsWith(";")) {
+                    continue
+                }
+                val hash = line.indexOf('#')
+                if (hash >= 0) {
+                    line = line.substring(0, hash).trim()
+                    if (line.isEmpty()) {
+                        continue
+                    }
+                }
+                if (line.startsWith("[")) {
+                    section = line.removePrefix("[").substringBefore("]").trim()
+                        .split(Regex("\\s+"))[0].lowercase()
+                } else {
+                    val eq = line.indexOf('=')
+                    if (eq >= 0) {
+                        val key = line.substring(0, eq).trim()
+                        if (withoutAddress && section == "tuntap" && key.equals("address", ignoreCase = true)) {
+                            continue
+                        }
+                        line = key + "=" + line.substring(eq + 1).trim()
+                    }
+                }
+                if (blank) {
+                    out.append('\n')
+                    blank = false
+                }
+                out.append(line).append('\n')
+            }
+            return out.toString().trimEnd('\n')
+        }
+    }
+
     private val values = HashMap<String, String>()
 
     init {
