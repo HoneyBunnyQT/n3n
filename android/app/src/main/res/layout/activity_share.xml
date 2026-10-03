@@ -81,37 +81,18 @@
                     android:text="@string/use_pin"
                     android:textColor="@color/text" />
 
-                <LinearLayout
-                    android:id="@+id/pin_row"
-                    android:layout_width="match_parent"
+                <!-- the PIN is asked in a dialog: a field of its own here
+                     brought up the keyboard, which shifted the screen away
+                     from the code -->
+                <Button
+                    android:id="@+id/change_pin"
+                    style="?android:attr/borderlessButtonStyle"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:visibility="gone">
-
-                    <EditText
-                        android:id="@+id/pin"
-                        android:layout_width="0dp"
-                        android:layout_height="48dp"
-                        android:layout_weight="1"
-                        android:background="@drawable/field"
-                        android:hint="@string/pin"
-                        android:importantForAutofill="no"
-                        android:inputType="numberPassword"
-                        android:paddingStart="14dp"
-                        android:paddingEnd="14dp"
-                        android:textColor="@color/text"
-                        android:textColorHint="@color/text_dim" />
-
-                    <Button
-                        android:id="@+id/seal"
-                        style="@style/Filled"
-                        android:layout_width="wrap_content"
-                        android:layout_height="48dp"
-                        android:layout_marginStart="10dp"
-                        android:text="@string/seal" />
-                </LinearLayout>
+                    android:layout_marginStart="20dp"
+                    android:text="@string/change_pin"
+                    android:textColor="@color/accent"
+                    android:visibility="gone" />
 
                 <TextView
                     android:id="@+id/pin_note"

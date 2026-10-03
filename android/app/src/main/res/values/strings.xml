@@ -62,6 +62,8 @@
     <string name="use_pin">Protect with a PIN</string>
     <string name="pin">PIN</string>
     <string name="seal">Make code</string>
+    <string name="change_pin">Change PIN</string>
+    <string name="pin_title">PIN for the code</string>
     <string name="pin_note">The code then shows neither the configuration nor that it is n3n\'s. Tell the PIN separately. A short PIN keeps a code from saying what it is at a glance; it is no strong protection.</string>
     <string name="code_plain">Scan with the n3n app. The code holds the configuration as it is, key included: show it only to who may join.</string>
     <string name="code_sealed">Protected with a PIN. Scan with the n3n app, then enter the PIN.</string>
