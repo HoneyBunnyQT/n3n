@@ -138,7 +138,7 @@ tests and `make lint` pass after each.
       half again, the current supernode by round trip a quarter less.
       netns scenarios `dual-stack`, `hard-hard-v6`, `v6-v4only`, in
       User-Mode Linux (`tests/netns/uml.sh`), which runs the integration
-      tests too.  Open: the other address on the management page
+      tests too; the page and get_edges show the other address
 - [ ] Ideas to pick from (all v3 compatible): react to network changes and
       wake-up (netlink, clock jumps); keep learned supernodes on disk;
       names for peers (DNS); IPv6 on the TAP device from a prefix derived
