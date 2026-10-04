@@ -62,6 +62,12 @@ jobs:
 
       - name: netns scenarios
         run: |
+          # the daemons drop their privileges (daemon.userid): their reports
+          # need a directory that user can write to, and the leak check at
+          # their exit (which stops the threads by ptrace) a ptrace_scope
+          # that lets it, as they are not dumpable any more
+          sudo chmod 1777 /tmp/san
+          sudo sysctl kernel.yama.ptrace_scope=0
           # all but those tagged "limits", which fail on purpose; two at a
           # time, the sanitized daemons are slower
           sudo -E python3 tests/netns/run.py --skip-missing -j 2
@@ -123,6 +129,8 @@ jobs:
 
       - name: netns scenarios with threads
         run: |
+          # the daemons drop their privileges: a directory they can write to
+          sudo chmod 1777 /tmp/san
           # the packet threads (daemon.threads), and the resolver thread
           # that every daemon has
           sudo -E python3 tests/netns/run.py --skip-missing -j 2 \
