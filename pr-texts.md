@@ -1,131 +1,133 @@
-# PR texts for n42n/n3n
+# PR texts for n42n/n3n - round 2 (after Hamish's review)
 
-Each one: open the compare link, check that the base is `n42n/n3n` `main`,
-paste the title and the text, create.  The commits carry the details; the
-texts are kept short on purpose.
+All branches are rebased on upstream main 6d837f2, each verified alone
+(build, unit and builtin tests, lint with uncrustify 0.78.1), and all of
+them merge together without conflict.  The new test programs are
+GPL-3.0-only now, as upstream's tools/tests-*.c since c280535;
+scripts/test_qemu.sh stays GPL-2.0-only.
 
----
-
-## 1. `pr/build-housekeeping`
-
-https://github.com/n42n/n3n/compare/main...HoneyBunnyQT:n3n:pr/build-housekeeping
-
-**Title:** Build fixes: relink the tools, survive removed headers, build without bridging
-
-Small build fixes, one commit each:
-
-- The tools did not depend on `libn3n.a`, so after a library change `make test` ran test binaries built from the old code.
-- A removed header broke the build until the `.d` files were deleted by hand (`-MP`).
-- A build without `HAVE_BRIDGING_SUPPORT` failed to compile.
-- `.gitignore` hid everything under `docs/configure/`, and `indent.sh -i` left backup files behind.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+C = compare link to open a new PR.  E = edit title/description of an open PR.
 
 ---
 
-## 2. `pr/edge-runtime`
+## 1. PR 164 - reply, title and description
 
-https://github.com/n42n/n3n/compare/main...HoneyBunnyQT:n3n:pr/edge-runtime
+Reply (to the review):
 
-**Title:** Edge: purge small peer tables, resolve names as a daemon, start without an answering supernode
+> Thanks for the review. I've dropped the indent.sh change, taken the TODO
+> comment from apps/Makefile, made the tools compile to objects and then
+> link (so `make gcov` finds the expected names without a wildcard), and
+> reduced the .gitignore change to `/configure`.
 
-- Peer tables of fewer than 16 entries were never purged, so edges that had gone stayed for good (#142). New unit test `tests-peers`.
-- With `--daemon`, the resolver thread stayed behind in the parent: supernode names were never resolved again.
-- With several supernodes of which none answered, the edge never got past its startup; it now carries on after three rounds of pings, as with a single supernode.
-- Frees the `connection.bind` addresses on exit (valgrind).
+E - Title: **Build fixes: relink the tools, coverage names, removed headers, no bridging**
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+E - Description:
+
+> Small build fixes, one commit each:
+>
+> - The tools did not depend on `libn3n.a`, so after a library change `make test` ran test binaries built from the old code.
+> - The tools are compiled to objects and then linked, so their coverage notes have the names `make gcov` expects.
+> - `.gitignore` hid everything under `docs/configure/`, so new pages there could not be added.
+> - A removed header broke the build until the `.d` files were deleted by hand (`-MP`).
+> - A build without `HAVE_BRIDGING_SUPPORT` failed to compile.
+
+## 2. PR 165 - comment, then close
+
+> Fair point. I'll close this one and split it into three PRs with one
+> topic each: the peer table purge (#142), the edge startup issues, and a
+> small leak fix.
+
+## 3. New: purge small peer tables
+
+C: https://github.com/n42n/n3n/compare/main...HoneyBunnyQT:n3n:pr/peer-purge
+
+Title: **Purge expired peers also from tables of fewer than 16**
+
+> `purge_peer_list()` returned straight away for fewer than 16 peers, so a
+> supernode with a small community never forgot an edge that had gone, and
+> kept sending it the community's broadcasts; edges kept gone peers just the
+> same (#142). New unit test `tests-peers`.
+
+## 4. New: edge startup
+
+C: https://github.com/n42n/n3n/compare/main...HoneyBunnyQT:n3n:pr/edge-startup
+
+Title: **Edge startup: resolve names after daemonizing, do not wait forever for a supernode**
+
+> - With `--daemon`, the resolver thread stayed behind in the parent: the edge never resolved its supernodes' names again.
+> - With several supernodes of which none answered, the edge never got past its startup; it now carries on after three rounds of pings, as with a single supernode.
+
+## 5. New: leak
+
+C: https://github.com/n42n/n3n/compare/main...HoneyBunnyQT:n3n:pr/bind-leak
+
+Title: **Free the connection.bind addresses when the edge ends**
+
+> Loading the config allocates them, and nothing freed them (valgrind).
+
+## 6. PR 167 - description (title stays)
+
+E - Description:
+
+> The decoders skipped fields the buffer had no room for, and their callers
+> then used what was left in the struct from before - e.g. a short
+> `REGISTER_SUPER_ACK` made the edge add backup supernodes built from stale
+> bytes. The decoders now report short input, and edge and supernode drop
+> PDUs with missing or extra bytes (the hash of user/password auth is allowed
+> for). New unit test `tests-wire-fuzz` feeds every truncation of every PDU
+> type to its decoder.
+
+## 7. New: uninitialised bytes
+
+C: https://github.com/n42n/n3n/compare/main...HoneyBunnyQT:n3n:pr/uninit-bytes
+
+Title: **Send no uninitialised bytes in PEER_INFO and REGISTER_SUPER**
+
+> The supernode's `PEER_INFO` (answering `QUERY_PEER`) left load, uptime and
+> version unset, and its `REGISTER_SUPER` to the federation some fields:
+> stack contents went out on the wire. Found with valgrind.
+
+## 8. PR 168 - title and description
+
+E - Title: **Management: escape what peers send**
+
+E - Description:
+
+> Descriptions and versions come from other peers, and went into the page as
+> HTML and into the JSON unescaped: a peer could run script in the page that
+> has the stop button, or break the JSON.
+
+## 9. New: management HTTP handling
+
+C: https://github.com/n42n/n3n/compare/main...HoneyBunnyQT:n3n:pr/mgmt-http
+
+Title: **Management HTTP: close HTTP/1.0 replies, no crash on an empty Authorization header**
+
+> - An `Authorization` header without credentials crashed n3n before the password was checked.
+> - HTTP/1.0 clients such as lynx never saw the end of a reply: the connection is closed after it now, unless the client asks to keep it alive.
+
+## 10. PR 170 - title and description
+
+E - Title: **Speck: no maybe-uninitialized warnings**
+
+E - Description:
+
+> The SSE2, AVX2 and NEON CTR code stored its blocks after the branches that
+> computed them, which GCC warns about; each branch now stores its own
+> blocks, and the Makefile's `-Wno-maybe-uninitialized` goes. Same output,
+> benchmarks in the commit message.
+
+## 11. New: remove speck.c
+
+C: https://github.com/n42n/n3n/compare/main...HoneyBunnyQT:n3n:pr/speck-unbuilt
+
+Title: **Remove src/crypto/speck.c, which is not built**
+
+> The all-platforms Speck from before the split into speck_plainc.c,
+> speck_sse2.c, speck_avx2.c, speck_avx512.c and speck_neon.c; the Makefile
+> builds only those.
 
 ---
 
-## 3. `pr/community-file`
-
-https://github.com/n42n/n3n/compare/main...HoneyBunnyQT:n3n:pr/community-file
-
-**Title:** Community file: keep regex character classes, no leaks on reload, read user lines as users
-
-- Compiling the next rule overwrote the character classes of the rules before it, so with two rules `net[0-9]+` no longer matched `net4`. New unit test `tests-regex`.
-- Reloading the file leaked the compiled rules and each user's cipher context.
-- A malformed user line could be read as the community regex `*`.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
----
-
-## 4. `pr/pdu-length-checks`
-
-https://github.com/n42n/n3n/compare/main...HoneyBunnyQT:n3n:pr/pdu-length-checks
-
-**Title:** Drop PDUs that are too short or too long for their fields
-
-The decoders skipped fields the buffer had no room for, and their callers then used what was left in the struct from before - e.g. a short `REGISTER_SUPER_ACK` made the edge add backup supernodes built from stale bytes. The decoders now report short input, and edge and supernode drop PDUs with missing or extra bytes (the hash of user/password auth is allowed for).
-
-Also: `PEER_INFO` and `REGISTER_SUPER` no longer send uninitialised stack bytes. New unit test `tests-wire-fuzz` feeds every truncation of every PDU type to its decoder.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
----
-
-## 5. `pr/management`
-
-https://github.com/n42n/n3n/compare/main...HoneyBunnyQT:n3n:pr/management
-
-**Title:** Management: escape what peers send, close HTTP/1.0 replies, no crash on an empty Authorization header
-
-- Descriptions and versions come from other peers, and went into the page as HTML and into the JSON unescaped: a peer could run script in the page that has the stop button, or break the JSON.
-- An `Authorization` header without credentials crashed n3n before the password was checked.
-- HTTP/1.0 clients such as lynx never saw the end of a reply.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
----
-
-## 6. `pr/big-endian`
-
-https://github.com/n42n/n3n/compare/main...HoneyBunnyQT:n3n:pr/big-endian
-
-**Title:** Ciphers on big endian and strict alignment hosts, tested under qemu
-
-On big endian hosts, the plain C Speck and ChaCha20 and the Twofish decryption gave wrong results, so such an edge could not talk to a little endian one. Unaligned word access in AES, Pearson, Twofish and the edge traps on MIPS (a bus error under qemu). Also libatomic for 32 bit MIPS/PowerPC, and the same test outputs on every host.
-
-CI now runs the unit and builtin tests on s390x, mips and aarch64 under qemu-user. Benchmarks are in the commit messages.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
----
-
-## 7. `pr/arm-speck`
-
-https://github.com/n42n/n3n/compare/main...HoneyBunnyQT:n3n:pr/arm-speck
-
-**Title:** Speck: no maybe-uninitialized warnings, remove the unbuilt speck.c
-
-The SSE2, AVX2 and NEON CTR code stored its blocks after the branches that computed them, which GCC warns about; each branch now stores its own blocks, and the Makefile's `-Wno-maybe-uninitialized` goes. Same output, benchmarks in the commit message. `src/crypto/speck.c` was not built any more.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
----
-
-## 8. `pr/crypto-tests`
-
-https://github.com/n42n/n3n/compare/main...HoneyBunnyQT:n3n:pr/crypto-tests
-
-**Title:** Known-answer tests for AES and ChaCha20
-
-New unit tests: FIPS-197 vectors for AES-128/192/256 and CBC (also in place), the RFC 8439 vector for ChaCha20 and every length from 0 to 1100 bytes (also unaligned and in place). So far only 128 bit AES keys were tested.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
----
-
-## 9. `pr/sn-load-wire`
-
-https://github.com/n42n/n3n/compare/main...HoneyBunnyQT:n3n:pr/sn-load-wire
-
-**Title:** Send the supernode's load as the 32 bit number it is on the wire
-
-The load went out as a 64 bit big endian number cut to its 32 bit field - 0 from every little endian supernode - and the edge swapped what it read once more, so an n2n supernode's load of 5 read as 83886080. Selection by load (the default) never had the real load. Now 32 bit, network order, as n2n has it.
-
-This changes what goes on the wire: older n3n edges will misread a fixed supernode's load, as they already misread n2n supernodes; a fixed edge reads 0 from an older supernode, as all edges do today.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+Unchanged in content (only rebased, test headers GPL-3.0-only): 166, 169,
+171, 172.
