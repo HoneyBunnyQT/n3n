@@ -2495,6 +2495,8 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
                 if(peer->sock.family == (uint8_t)AF_INVALID)
                     continue; /* do not add unresolved supernodes to payload */
                 if(memcmp(&(peer->sock), &(ack.sock), sizeof(n3n_sock_t)) == 0) continue; /* a supernode doesn't add itself to the payload */
+                // nor the one asking at another of its addresses: by its MAC
+                if(!is_null_mac(peer->mac_addr) && !memcmp(peer->mac_addr, reg.edgeMac, sizeof(n2n_mac_t))) continue;
                 if((now - peer->last_seen) >= LAST_SEEN_SN_NEW) continue;  /* skip long-time-not-seen supernodes.
                                                                             * We need to allow for a little extra time because supernodes sometimes exceed
                                                                             * their SN_ACTIVE time before they get re-registred to. */
@@ -2757,6 +2759,14 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
                     idx = 0;
                     rem = sizeof(payload->sock);
                     decode_sock_payload(&payload_sock, payload->sock, &rem, &idx);
+
+                    // this very supernode, at another of its addresses: as a
+                    // member of its own federation, it would send itself what it
+                    // sends the others, and take its edges for the other's
+                    if(!memcmp(payload->mac, sss->conf.sn_mac_addr, sizeof(n2n_mac_t))) {
+                        payload++;
+                        continue;
+                    }
 
                     tmp = add_sn_to_list_by_mac_or_sock(&(sss->federation->edges), &(payload_sock), payload->mac, &skip_add);
                     // not come in yet: reached from an address fit for its family
