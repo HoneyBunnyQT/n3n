@@ -34,6 +34,7 @@
 #include "n2n_typedefs.h"
 #include "natclass.h"    // for nat_view_str
 #include "peer_info.h"   // for peer_info
+#include "reload.h"      // for n3n_reload
 #include "counter.h"     // for SHARED_LOAD
 #include "stats.h"       // for n3n_stats_sum
 #include "uthash.h"
@@ -1046,6 +1047,18 @@ static void jsonrpc_reload_communities (char *id, struct n3n_runtime_data *eee, 
     jsonrpc_result_tail(conn, 200);
 }
 
+// The configuration again: what came of it, see reload.c
+static void jsonrpc_reload (char *id, struct n3n_runtime_data *eee, conn_t *conn, const char *params) {
+    if(!auth_check(eee, conn)) {
+        auth_request(conn);
+        return;
+    }
+
+    jsonrpc_result_head(id, conn);
+    n3n_reload(&conn->request);
+    jsonrpc_result_tail(conn, 200);
+}
+
 static void jsonrpc_help_events (char *id, struct n3n_runtime_data *eee, conn_t *conn, const char *params) {
     int nr_handlers = sizeof(mgmt_events) / sizeof(mgmt_events[0]);
 
@@ -1105,6 +1118,7 @@ static const struct mgmt_jsonrpc_method jsonrpc_methods[] = {
     { "help", jsonrpc_help, "Show JsonRPC methods" },
     { "help.events", jsonrpc_help_events, "Show available event topics" },
     { "post.test", jsonrpc_post_test, "Send a test event" },
+    { "reload", jsonrpc_reload, "Reads the configuration again, applies what can change while running" },
     { "reload_communities", jsonrpc_reload_communities, "Reloads communities and user's public keys" },
     { "set_verbose", jsonrpc_set_verbose, "Set logging verbosity" },
     { "stop", jsonrpc_stop, "Stop the daemon" },

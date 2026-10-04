@@ -62,6 +62,7 @@
 #include "../src/management.h"       // for mgmt_password_warn
 #include "../src/notify.h"           // for n3n_notify_ready
 #include "../src/peer_info.h"        // for peer_info, peer_info_t
+#include "../src/reload.h"           // for n3n_reload_setup, n3n_reload_request
 #include "../src/resolve.h"          // for resolve_check, resolve_forked
 
 #ifdef HAVE_LIBCRYPTO
@@ -668,6 +669,50 @@ static struct n3n_subcmd_def cmd_top[] = {
     { .name = NULL }
 };
 
+// How the configuration was loaded, to load it again for a reload
+static int reload_argc;
+static char **reload_argv;
+static char *reload_session;
+static bool reload_file;        // whether there was a config file
+
+// The configuration as at the start, see reload.h
+static int reload_load (void *_conf) {
+
+    n2n_edge_conf_t *conf = _conf;
+    // loading turns a path into the session name, so a copy each time
+    char *session = strdup(reload_session);
+
+    if(!session) {
+        return -1;
+    }
+    edge_init_conf_defaults(conf, session);
+    // the file it had: not there or not readable (the daemon runs as
+    // daemon.userid by now) is no reason to go back to the defaults
+    switch(n3n_config_load_file(conf, session)) {
+        case 0:
+            break;
+        case -2:
+            if(!reload_file) {
+                break;
+            }
+            traceEvent(TRACE_WARNING, "reload: no config file for '%s' (any more), or it cannot be read as uid %d",
+                       reload_session, (int)getuid());
+            return -1;
+        default:
+            return -1;
+    }
+    if(n3n_config_load_env(conf) != 0) {
+        return -1;
+    }
+    optind = 1;
+    loadFromCLI(reload_argc, reload_argv, conf);
+    if(edge_conf_one_community(conf) != 0) {
+        return -1;
+    }
+    edge_conf_prepare(conf);
+    return 0;
+}
+
 static void n3n_config (int argc, char **argv, char *defname, n2n_edge_conf_t *conf) {
     struct n3n_subcmd_result cmd = n3n_subcmd_parse(
         argc,
@@ -700,6 +745,15 @@ static void n3n_config (int argc, char **argv, char *defname, n2n_edge_conf_t *c
     if(cmd.subcmd->session_arg) {
         // the cmd structure can request the normal loading of config
 
+        // for a reload: loading turns a path into the session name, and a
+        // relative one would not stay one after the daemon moved to "/"
+#ifndef _WIN32
+        reload_session = strchr(cmd.sessionname, '/') ? realpath(cmd.sessionname, NULL) : NULL;
+#endif
+        if(!reload_session) {
+            reload_session = strdup(cmd.sessionname);
+        }
+
         int r = n3n_config_load_file(conf, cmd.sessionname);
         if(r == -1) {
             printf("Error loading config file\n");
@@ -712,6 +766,7 @@ static void n3n_config (int argc, char **argv, char *defname, n2n_edge_conf_t *c
                 cmd.sessionname
             );
         }
+        reload_file = (r == 0);
 
         // Update the loaded conf with the current environment
         if(n3n_config_load_env(conf)!=0) {
@@ -722,6 +777,9 @@ static void n3n_config (int argc, char **argv, char *defname, n2n_edge_conf_t *c
         // Update the loaded conf with any option args
         optind = 1;
         loadFromCLI(argc, argv, conf);
+
+        reload_argc = argc;
+        reload_argv = argv;
     }
 
     // Do the selected subcmd
@@ -865,6 +923,10 @@ static void term_handler (int sig) {
 
     keep_on_running = false;
 }
+
+static void hup_handler (int sig) {
+    n3n_reload_request();
+}
 #endif
 
 #ifdef _WIN32
@@ -977,10 +1039,16 @@ int n3n_edge_main (int argc, char* argv[]) {
     signal(SIGPIPE, SIG_IGN);
     signal(SIGTERM, term_handler);
     signal(SIGINT,  term_handler);
+    // SIGHUP reloads the configuration - but not in a terminal, where it
+    // says the terminal is gone, and the edge goes too
+    if(!isatty(STDIN_FILENO)) {
+        signal(SIGHUP, hup_handler);
+    }
 #endif
 #ifdef _WIN32
     SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
 #endif
+    n3n_reload_setup(eee, &conf, reload_load);
 
     switch(eee->conf.tap.tuntap_ip_mode) {
         case TUNTAP_IP_MODE_SN_ASSIGN:
@@ -1172,6 +1240,8 @@ int n3n_edge_main (int argc, char* argv[]) {
         daemonize();
         // the resolver thread stayed with the parent
         resolve_forked(eee->resolve_parameter);
+        // without a terminal now: SIGHUP reloads
+        signal(SIGHUP, hup_handler);
     }
 
 #ifdef HAVE_LIBCAP

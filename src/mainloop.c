@@ -37,6 +37,7 @@
 #include "management.h"         // for readFromMgmtSocket
 #include "netwatch.h"           // for netwatch_read
 #include "notify.h"             // for n3n_notify_tick
+#include "reload.h"             // for n3n_reload_pending
 #include "role_client.h"        // for edge_network_change
 #include "minmax.h"             // for min, max
 #include "portable_endian.h"    // for htobe16
@@ -932,6 +933,10 @@ int mainloop_runonce (struct n3n_runtime_data *eee) {
     // One timestamp to use for this entire loop iteration
     time_t now = time(NULL);
 
+    if((ready == -1) && (errno == EINTR)) {
+        // a signal: SIGHUP for a reload, or one to stop
+        return 0;
+    }
     if(ready == -1) {
         traceEvent(TRACE_ERROR, "select errno=%i", errno);
         fdlist_closeidle(now, eee);
@@ -1108,6 +1113,9 @@ void mainloop_run (struct n3n_runtime_data *rt) {
         }
 
         run_ticks(rt, time(NULL));
+
+        // the configuration again, if SIGHUP asked for it
+        n3n_reload_pending();
 
         // systemd's watchdog and status, if it asked for them
         n3n_notify_tick(rt);

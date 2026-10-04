@@ -59,5 +59,7 @@ int maybe_supernode2sock (n3n_sock_t * sn, const char *addrIn);
 const char *resolve_hostnames_str_get (int, int);
 void resolve_log_hostnames (int);
 int resolve_hostnames_str_to_peer_info (int, struct peer_info **);
+int resolve_hostname_str_to_peer_info (struct peer_info **peers, const char *s);
+void resolve_hostnames_free (int listnr);
 
 #endif

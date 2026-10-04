@@ -107,7 +107,9 @@ community_regex = myCommunity[0-9][0-9]
 .fi
 .PP
 With any allowed communities given, the supernode takes no others.  A reload
-(\fBn3nctl reload_communities\fR) reads the community file again.
+(\fBn3nctl reload_communities\fR) reads the community file again; a
+reload of the whole configuration (\fBn3nctl reload\fR, SIGHUP) takes in
+changed \fB[community\fR \fIname\fR\fB]\fR sections too, see RELOAD.
 .SH FEDERATION
 Supernodes with the same \fBsupernode.federation\fR name form a federation:
 each \fBsupernode.peer\fR is another one to register with.  Edges can use
@@ -143,6 +145,12 @@ verbose output.
 Also listen on port 7655.  With two ports, an edge can see that its NAT maps
 every destination to a port of its own, even with just this supernode.
 .PP
+.SH RELOAD
+\fBn3nctl reload\fR, \fBsystemctl reload\fR or SIGHUP (not while it runs
+in a terminal, where SIGHUP stops it) has the supernode read its
+configuration again.  The communities, \fBlogging.verbose\fR and
+\fBmanagement.password\fR change at once; other changes are logged as
+waiting for a restart.  See docs/configure/ConfigurationFiles.md.
 .SH RESTART
 When supernode restarts it loses all registration information from associated
 edge nodes.  The edges register again within their

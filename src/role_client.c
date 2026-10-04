@@ -131,6 +131,26 @@ static const n3n_sock_t *sn_tcp_sock (const struct peer_info *sn) {
 }
 
 
+// The supernodes given changed (a reload, see reload.c): their names get
+// resolved; if the current one is gone, the edge registers with the best
+// of the others at once
+void edge_supernodes_changed (struct n3n_runtime_data *eee, bool curr_gone) {
+
+    eee->client.resolution_request = true;
+    if(!curr_gone && eee->client.curr_sn) {
+        return;
+    }
+    sn_selection_sort(&(eee->client.supernodes), !eee->client.sn_other_family);
+    eee->client.curr_sn = supernode_first(eee);
+    traceEvent(TRACE_NORMAL, "now registering with supernode [%s]",
+               peer_info_get_hostname(eee->client.curr_sn));
+    reset_sup_attempts(eee);
+    supernode_connect(eee);
+    eee->client.sn_wait = 1;
+    eee->client.last_register_req = 0;
+}
+
+
 bool edge_is_registered (const struct n3n_runtime_data *eee, time_t now) {
 
     time_t last = SHARED_LOAD(eee->client.last_sup);

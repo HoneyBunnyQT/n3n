@@ -48,6 +48,7 @@
 #include "../src/management.h"        // for mgmt_password_warn
 #include "../src/notify.h"            // for n3n_notify_ready
 #include "../src/peer_info.h"         // for peer_info
+#include "../src/reload.h"            // for n3n_reload_setup, n3n_reload_request
 #include "../src/resolve.h"           // for resolve_hostnames_str_to_peer_info
 
 #ifdef _WIN32
@@ -293,6 +294,57 @@ static struct n3n_subcmd_def cmd_top[] = {
 
 // Almost, but not quite, the same as the edge version
 // TODO: refactor them to be the same, and then reuse the implementation
+// How the configuration was loaded, to load it again for a reload
+static int reload_argc;
+static char **reload_argv;
+static char *reload_session;
+static bool reload_file;        // whether there was a config file
+static struct n3n_runtime_data *reload_sss;
+
+// The configuration as at the start, see reload.h
+static int reload_load (void *conf) {
+
+    // the defaults go into a whole runtime, of which only the conf is kept
+    struct n3n_runtime_data *tmp = calloc(1, sizeof(*tmp));
+    // loading turns a path into the session name, so a copy each time
+    char *session = strdup(reload_session);
+
+    if(!tmp || !session) {
+        free(tmp);
+        free(session);
+        return -1;
+    }
+    sn_init_conf_defaults(tmp, session);
+    // not drawn anew: the default MAC address is a random one
+    memcpy(tmp->conf.relay.sn_mac_addr, reload_sss->conf.relay.sn_mac_addr, N2N_MAC_SIZE);
+    // the file it had: not there or not readable (the daemon runs as
+    // daemon.userid by now) is no reason to go back to the defaults
+    switch(n3n_config_load_file(&tmp->conf, session)) {
+        case 0:
+            break;
+        case -2:
+            if(!reload_file) {
+                break;
+            }
+            traceEvent(TRACE_WARNING, "reload: no config file for '%s' (any more), or it cannot be read as uid %d",
+                       reload_session, (int)getuid());
+            free(tmp);
+            return -1;
+        default:
+            free(tmp);
+            return -1;
+    }
+    if(n3n_config_load_env(&tmp->conf) != 0) {
+        free(tmp);
+        return -1;
+    }
+    optind = 1;
+    loadFromCLI(reload_argc, reload_argv, tmp);
+    memcpy(conf, &tmp->conf, sizeof(tmp->conf));
+    free(tmp);
+    return 0;
+}
+
 static void n3n_sn_config (int argc, char **argv, char *defname, struct n3n_runtime_data *sss) {
     n2n_edge_conf_t *conf = &sss->conf;
 
@@ -327,6 +379,15 @@ static void n3n_sn_config (int argc, char **argv, char *defname, struct n3n_runt
     if(cmd.subcmd->session_arg) {
         // the cmd structure can request the normal loading of config
 
+        // for a reload: loading turns a path into the session name, and a
+        // relative one would not stay one after the daemon moved to "/"
+#ifndef _WIN32
+        reload_session = strchr(cmd.sessionname, '/') ? realpath(cmd.sessionname, NULL) : NULL;
+#endif
+        if(!reload_session) {
+            reload_session = strdup(cmd.sessionname);
+        }
+
         int r = n3n_config_load_file(conf, cmd.sessionname);
         if(r == -1) {
             printf("Error loading config file\n");
@@ -338,6 +399,7 @@ static void n3n_sn_config (int argc, char **argv, char *defname, struct n3n_runt
                 cmd.sessionname
             );
         }
+        reload_file = (r == 0);
 
         // Update the loaded conf with the current environment
         if(n3n_config_load_env(conf)!=0) {
@@ -348,6 +410,8 @@ static void n3n_sn_config (int argc, char **argv, char *defname, struct n3n_runt
         // Update the loaded conf with any option args
         optind = 1;
         loadFromCLI(argc, argv, sss);
+        reload_argc = argc;
+        reload_argv = argv;
     }
 
     // Do the selected subcmd
@@ -373,6 +437,10 @@ static void term_handler (int sig) {
     }
 
     keep_on_running = false;
+}
+
+static void hup_handler (int sig) {
+    n3n_reload_request();
 }
 #endif
 
@@ -421,6 +489,8 @@ int n3n_supernode_main (int argc, char * argv[]) {
     n3n_initfuncs();
 
     n3n_sn_config(argc, argv, "supernode", &sss_node);
+    reload_sss = &sss_node;
+    n3n_reload_setup(&sss_node, &sss_node.conf, reload_load);
 
     if(sss_node.conf.relay.community_file || sss_node.conf.communities
        || sss_node.conf.relay.community_regex)
@@ -650,6 +720,11 @@ int n3n_supernode_main (int argc, char * argv[]) {
     signal(SIGPIPE, SIG_IGN);
     signal(SIGTERM, term_handler);
     signal(SIGINT,  term_handler);
+    // SIGHUP reloads the configuration - but not in a terminal, where it
+    // says the terminal is gone, and the supernode goes too
+    if(!isatty(STDIN_FILENO)) {
+        signal(SIGHUP, hup_handler);
+    }
 #endif
 #ifdef _WIN32
     SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);

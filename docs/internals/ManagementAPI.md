@@ -140,6 +140,7 @@ Those marked with a key need the password (see Authentication below):
 | `get_mac` | yes | | the MAC addresses the edge has seen behind its peers (with routing and bridging) |
 | `get_verbose` | yes | yes | the log level |
 | `set_verbose` (key) | yes | yes | set the log level: `n3nctl -k n3n set_verbose 3` |
+| `reload` (key) | yes | yes | read the configuration again and apply what can change while running: `{"loaded": true, "applied": [...], "restart": [...]}`, the options changed and those waiting for a restart, see [Configuration Files](../configure/ConfigurationFiles.md#reloading) |
 | `reload_communities` (key) | | yes | read the community file again, see [Communities](../configure/Communities.md) |
 | `stop` (key) | yes | yes | stop the daemon |
 | `post.test` | yes | yes | send an event on the topic `test` |

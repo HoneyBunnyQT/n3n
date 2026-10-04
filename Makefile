@@ -152,6 +152,7 @@ OBJS=\
 	src/pktbuf.o \
 	src/qr_seal.o \
 	src/random_numbers.o \
+	src/reload.o \
 	src/resolve.o \
 	src/netwatch.o \
 	src/role_client.o \

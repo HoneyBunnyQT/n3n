@@ -551,6 +551,7 @@ void resolve_hostnames_free (int listnr) {
         free(p);
         p = p_next;
     }
+    hostname_lists[listnr] = NULL;
 }
 
 /*
@@ -768,6 +769,11 @@ static int resolve_hostnames_str_to_peer_info_one (
  * - support multiple hostname results (both A and AAAA as well)
  * - eventually, support SRV
  */
+// One string of such a list, added to peers
+int resolve_hostname_str_to_peer_info (struct peer_info **peers, const char *s) {
+    return resolve_hostnames_str_to_peer_info_one(peers, s);
+}
+
 int resolve_hostnames_str_to_peer_info (int listnr, struct peer_info **peers) {
     if(!peers) {
         return 1;

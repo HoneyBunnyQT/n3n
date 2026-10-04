@@ -321,6 +321,15 @@ Without \fBNOTIFY_SOCKET\fR in its environment it does none of this, so it
 runs the same under any other service manager.  See
 docs/configure/Systemd.md.
 
+.SH RELOAD
+\fBn3nctl reload\fR, \fBsystemctl reload\fR or SIGHUP (not while it runs
+in a terminal, where SIGHUP stops it, as Ctrl-C does) has the edge read its
+configuration again.  What can change while running - the supernodes, the
+register interval, \fBlogging.verbose\fR, \fBmanagement.password\fR and
+more - changes at once; the rest is logged as waiting for a restart.  The
+configuration file has to be readable for \fBdaemon.userid\fR then.  See
+docs/configure/ConfigurationFiles.md.
+
 .SH THREADS
 With \fBdaemon.threads\fR the edge encrypts and decrypts packets on several
 threads.  This needs Linux and a build with \fB--enable-pthread\fR, see

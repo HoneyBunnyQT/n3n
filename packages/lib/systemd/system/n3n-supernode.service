@@ -14,6 +14,9 @@ User=n3n
 Group=n3n
 RuntimeDirectory=n3n
 ExecStart=/usr/sbin/n3n-supernode start
+# reads the configuration again: what can change while running changes,
+# see docs/configure/ConfigurationFiles.md
+ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-abnormal
 RestartSec=5
 

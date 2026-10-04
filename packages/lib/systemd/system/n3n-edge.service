@@ -12,6 +12,9 @@ NotifyAccess=main
 WatchdogSec=60
 ExecStartPre=
 ExecStart=/usr/sbin/n3n-edge start
+# reads the configuration again: what can change while running changes,
+# see docs/configure/ConfigurationFiles.md
+ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-abnormal
 RestartSec=5
 

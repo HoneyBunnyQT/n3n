@@ -97,3 +97,51 @@ Some options make a list: each line adds to it, for example
 `community.supernode`, `supernode.peer`, `supernode.community_regex` and
 `community.user`.  `connection.bind` takes several addresses in one line,
 separated by spaces.
+
+## Reloading
+
+A running edge or supernode reads its configuration again on `n3nctl -k
+PASSWORD reload`, on `systemctl reload` of the packaged units, or on SIGHUP
+- but not while it runs in a terminal: there SIGHUP says that the terminal
+is gone, and n3n stops, as before.  Ctrl-C (SIGINT) and SIGTERM stop it as
+always.
+
+It loads the configuration as at its start - the file, the environment,
+the same command line - and compares it, option by option, with what runs.
+What differs and can change while running is applied at once:
+
+- `community.supernode` (an edge): new supernodes are tried, those given no
+  more are dropped; the edge moves on if its current one is gone
+- `connection.allow_p2p`, `connection.description` (not with user/password
+  authentication, where it is the user name), `connection.local_discovery`,
+  `connection.punch_ports`, `connection.punch_ttl`,
+  `connection.register_interval`, `connection.register_pkt_ttl`,
+  `connection.supernode_selection`, `connection.tcp_fallback`,
+  `connection.watch_network`
+- `filter.allow_multicast`, `filter.allow_routing`
+- `logging.verbose`, `management.password`
+- a supernode's communities: `[community NAME]` sections,
+  `supernode.community_file` and `supernode.community_regex`; the
+  community file is read again in any case, as `reload_communities` does
+
+Everything else - the community, its key and cipher, `connection.bind`, the
+TAP device and its address, `daemon.*` and so on - waits for a restart: the
+log, and the answer of `n3nctl reload`, name those options, and the next
+reload names them again until then:
+
+```
+$ n3nctl -k PASSWORD reload
+{
+    "applied": ["connection.register_interval"],
+    "loaded": true,
+    "restart": ["tuntap.address"]
+}
+```
+
+Filter rules (`filter.rule`) are not compared yet: changing them needs a
+restart, and a reload does not say so.
+
+If the configuration cannot be loaded, nothing changes (`"loaded": false`).
+Note that n3n drops its privileges after the start (`daemon.userid`, 65534
+by default): the configuration file has to be readable for that user then,
+or a reload finds none.

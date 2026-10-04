@@ -1442,6 +1442,24 @@ static void edge_tick_supernodes (struct n3n_runtime_data *eee, time_t now) {
 }
 
 
+// Watch the host's network, or not, as connection.watch_network says now
+void edge_netwatch_update (struct n3n_runtime_data *eee) {
+
+    bool watch = eee->conf.client.watch_network && !eee->conf.client.local_link;
+
+    if(watch && (eee->client.netwatch_fd < 0)) {
+        eee->client.netwatch_fd = netwatch_open(eee->tap.device.dev_name);
+        if(eee->client.netwatch_fd >= 0) {
+            mainloop_register_fd(eee->client.netwatch_fd, fd_info_proto_netwatch);
+        }
+    } else if(!watch && (eee->client.netwatch_fd >= 0)) {
+        mainloop_unregister_fd(eee->client.netwatch_fd);
+        netwatch_close(eee->client.netwatch_fd);
+        eee->client.netwatch_fd = -1;
+    }
+}
+
+
 // The regular work of an edge; rt NULL for the runtime of mainloop_run()
 static void edge_register_ticks (struct n3n_runtime_data *rt) {
 
@@ -1482,12 +1500,7 @@ int run_edge_loop (struct n3n_runtime_data *eee) {
 
     // changes of the host's network, but not of the edge's own device
     eee->client.netwatch_fd = -1;
-    if(eee->conf.client.watch_network && !eee->conf.client.local_link) {
-        eee->client.netwatch_fd = netwatch_open(eee->tap.device.dev_name);
-        if(eee->client.netwatch_fd >= 0) {
-            mainloop_register_fd(eee->client.netwatch_fd, fd_info_proto_netwatch);
-        }
-    }
+    edge_netwatch_update(eee);
 
     /* Main loop
      *

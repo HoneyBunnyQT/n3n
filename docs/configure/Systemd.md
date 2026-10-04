@@ -29,6 +29,11 @@ The units are of `Type=notify`: n3n tells systemd
   `WatchdogSec` below 30 seconds is too short.
 - when it is stopping.
 
+`systemctl reload` sends SIGHUP (`ExecReload`): n3n reads its configuration
+again and applies what can change while running, see [Configuration
+Files](ConfigurationFiles.md#reloading); it tells systemd so (`RELOADING=1`,
+then `READY=1`).
+
 This is systemd's notification protocol: a datagram to the socket that
 systemd names in `NOTIFY_SOCKET`.  n3n does it itself, without libsystemd.
 Run n3n in the foreground under systemd (the default, `daemon.background =

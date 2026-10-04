@@ -28,6 +28,8 @@ Example:
 - `scripts/n3nctl -s supernode edges`
 - `scripts/n3nctl -s supernode -r edge edges`: the peers of the supernode's
   own edge (`supernode.tap`)
+- `scripts/n3nctl -k PASSWORD reload`: read the configuration again, see
+  [Configuration Files](configure/ConfigurationFiles.md#reloading)
 
 The methods it can call are described in the
 [Management API](internals/ManagementAPI.md).
