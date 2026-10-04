@@ -158,7 +158,8 @@ class Scenario:
                  ipv6=False, max_moves=None, delay6=None, sn_block6=False,
                  roam=None, roam_max_gap=None, roam_direct=True,
                  size=None, outage=False, outage_then=None,
-                 outage_max_gap=None, reload=None, sn_versions=None):
+                 outage_max_gap=None, reload=None, sn_versions=None,
+                 direct_ok=None):
         self.name = name
         self.desc = desc
         self.sites = {"a": a, "b": b}
@@ -231,6 +232,9 @@ class Scenario:
         # as tests/netns/versions.sh built it (interop); the edges' NAT
         # class is not checked then, older supernodes do not tell it
         self.sn_versions = sn_versions or {}
+        # expected relayed, but direct by luck is fine too (why, as a
+        # string): the rest of the checks then go for direct
+        self.direct_ok = direct_ok
 
     def directions(self):
         return {
@@ -301,6 +305,9 @@ class Check:
 class Run:
     def __init__(self, scenario, settings, prefix, log=None):
         self.sc = scenario
+        # what the checks go for: the scenario's, or direct after all, see
+        # Scenario.direct_ok
+        self.expect = scenario.expect
         self.st = settings
         self.prefix = prefix
         self.workdir = os.path.join(settings.workdir, scenario.name)
@@ -943,7 +950,7 @@ class Run:
         warm = [self.sender(s, d, FLOW_WARM, 0, 10)
                 for s, d in self.sc.directions()]
         t = time.monotonic()
-        if self.sc.expect == "direct":
+        if self.expect == "direct":
             timeout = self.sc.connect_timeout or self.st.connect_timeout
             reached = wait_for(
                 lambda: all(m == "p2p" for m in self.modes().values())
@@ -973,10 +980,18 @@ class Run:
                 if not self.check_alive_quiet():
                     break
                 time.sleep(0.5)
-            self.check("path", went_direct is None,
-                       "relayed for {}s".format(self.st.relay_observe)
-                       if went_direct is None else
-                       "went direct after {}s".format(went_direct))
+            if went_direct is not None and self.sc.direct_ok:
+                # lucky: from here on, the checks are those of direct
+                self.expect = "direct"
+                self.check("path", True,
+                           "went direct after {}s, which may happen: {}"
+                           .format(went_direct, self.sc.direct_ok))
+                time.sleep(1)
+            else:
+                self.check("path", went_direct is None,
+                           "relayed for {}s".format(self.st.relay_observe)
+                           if went_direct is None else
+                           "went direct after {}s".format(went_direct))
         for p in warm:
             p.stop()
 
@@ -1231,7 +1246,7 @@ class Run:
                 rx_p2p, rx_sup = tx_p2p, tx_sup
             counts = "{} tx p2p/super {}/{}, {} rx p2p/super {}/{}".format(
                 src, tx_p2p, tx_sup, dst, rx_p2p, rx_sup)
-            if self.sc.expect == "direct":
+            if self.expect == "direct":
                 ok = (tx_p2p >= n - slack and tx_sup <= slack and
                       rx_p2p >= got - slack and rx_sup <= slack)
             else:
@@ -1241,14 +1256,14 @@ class Run:
         self.result["frames"] = frames
 
         total = n * len(self.sc.directions())
-        if self.sc.expect == "direct":
+        if self.expect == "direct":
             ok = sn_fwd <= slack
         else:
             ok = sn_fwd >= total - slack
         self.check("relay:supernodes", ok,
                    "sn_fwd {} for {} frames sent".format(sn_fwd, total))
 
-        want = "p2p" if self.sc.expect == "direct" else "pSp"
+        want = "p2p" if self.expect == "direct" else "pSp"
         stayed = all((m == "p2p") == (want == "p2p") for m in modes.values())
         self.check("path:after", stayed, self._modes_str(modes))
 

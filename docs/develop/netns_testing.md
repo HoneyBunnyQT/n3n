@@ -146,7 +146,7 @@ router behind a carrier NAT.  The block of hard-range ends at a multiple of
 | cgnat-hard-ttl | as easy-hard-pool, b behind easy-kept and hard-range, punch_ttl=3 | direct |
 | hard-hard | hard-range / hard-range | relayed |
 | easy-wide | easy-kept / hard-wide | relayed |
-| no-punch | as easy-hard, with punch_ports=0 | relayed |
+| no-punch | as easy-hard, with punch_ports=0 | relayed - or direct by luck, which passes too (`direct_ok`): the hard side's own REGISTERs may hit the port the easy NAT keeps for it |
 | several | several / easy-kept | relayed |
 | failover-relayed | hard-range / hard-range, a's supernode killed | relayed, through the other one |
 | failover-direct | easy-kept / easy-changed, a's supernode killed | direct |
@@ -197,6 +197,9 @@ a `Site`).  A `Site(block_udp=True)` drops the UDP its edge sends out of
 `eth0` (but DNS), as some airport networks do: the scenario then checks that
 the edge is on TCP (`transport` of `get_info`), and with `unblock_udp` of
 the `Scenario` lets UDP through again and waits for the edge to go back.
+`direct_ok` of a `Scenario` that expects relayed lets it go direct by luck
+all the same: the reason is logged, and the rest of the checks go for
+direct then.
 `reload` of a `Scenario` names the site whose edge gets a changed
 configuration file and SIGHUP after the warm-up (the check `reload:`).
 `Site(link_mtu=1280)` gives the site's lan link (the edge's `eth0` and its

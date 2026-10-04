@@ -85,7 +85,9 @@ SCENARIOS = [
         "easy and hard NAT with port guessing turned off stays relayed",
         Site(["easy-kept"], conf={"connection": {"punch_ports": 0}}),
         Site(["hard-range"]),
-        "relayed"),
+        "relayed",
+        direct_ok="the hard side's own REGISTERs may hit the port the "
+        "easy NAT keeps for it"),
     Scenario(
         "several",
         "three uplinks, neither supernode sees the address peers see",
