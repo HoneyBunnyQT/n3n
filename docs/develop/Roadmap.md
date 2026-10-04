@@ -147,6 +147,28 @@ tests and `make lint` pass after each.
       frame instead of ~10s.  Open: `dual-stack` fails in UML now and then
       (a few frames relayed when the measured flow starts, before this
       work too: 3 of 6)
+- [x] Supernode outage and path MTU: netns scenarios `sn-outage`,
+      `sn-outage-idle`, `mtu-1280`, and (tagged `limits`, failing on
+      purpose) `sn-outage-roam`, `sn-outage-restart`, `mtu-1280-nofrag`,
+      `mtu-1280-df`.  Found and fixed: with all supernodes gone, the TCP
+      fallback took the edge off UDP and so off its peers, for good (direct
+      traffic stopped ~10s into the outage) - it now stays on UDP while a
+      peer is heard directly; a peer idle for half its timeout was dropped
+      and looked up through the supernode - kept at its address while the
+      supernode misses a re-registration; start-up without an answering
+      supernode took ~33s (each PING round waited the main loop's 10s)
+- [ ] Open from the outage scenarios: a (re)started edge drops every
+      PACKET until a supernode has answered it (`last_sup` check in
+      `role_tap.c`), so it cannot rejoin its peers in an outage although
+      they know it; a peer that moves during an outage stays out behind
+      the other's NAT (inherent without a third party)
+- [ ] Open from the MTU scenarios: on a 1280 byte path, frames that do not
+      fit get fragmented (works) - lost where fragments are dropped, and
+      refused with `connection.pmtu_discovery` ("Message too long", no
+      ICMP back into the TAP).  Candidates: ICMP "fragmentation needed" /
+      "packet too big" into the TAP for the inner sender, as kernel
+      tunnels do; TCP MSS clamping per peer; a TAP MTU derived from the
+      path
 - [ ] Ideas to pick from (all v3 compatible): keep learned supernodes on disk;
       names for peers (DNS); IPv6 on the TAP device from a prefix derived
       from the community; reload on SIGHUP; interop tests against n2n 3.x
@@ -378,6 +400,9 @@ Seen once each in a few full runs, passing on re-runs:
 
 - `no-punch` went direct although port guessing is off on the easy side: the
   hard side's own REGISTERs may get through the easy NAT
+- `roam-nowatch` (a few frames relayed as the burst starts) and
+  `sn-tap-failover` (the check ran before the failover settled), in a full
+  run with the outage scenarios (100s each) four at a time
 - `easy-hard-pool`, `hard-hard-threads`, `failover-relayed`, `hard-easy`: an edge behind `hard-range` took its
   NAT for "easy (port changed)" - perhaps both supernodes saw the same port
   drawn from the range of 240
