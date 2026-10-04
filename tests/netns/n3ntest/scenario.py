@@ -66,6 +66,9 @@ PASSWORD = "nettest-password"
 FLOW_WARM = 1
 FLOW_MEAS = 2
 FLOW_HOLD = 3
+FLOW_ROAM = 4
+# seconds of frames after the move, see Scenario.roam
+ROAM_WATCH = 30
 
 TRAFFIC_PY = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                           "traffic.py")
@@ -128,7 +131,8 @@ class Scenario:
                  tags=(), conf=None, connect_timeout=None, failover=None,
                  sn_conf=None, auth=None, community_conf=False,
                  unblock_udp=False, sn_tcp_port=None, gateway=None,
-                 ipv6=False, max_moves=None, delay6=None, sn_block6=False):
+                 ipv6=False, max_moves=None, delay6=None, sn_block6=False,
+                 roam=None, roam_max_gap=None, roam_direct=True):
         self.name = name
         self.desc = desc
         self.sites = {"a": a, "b": b}
@@ -170,6 +174,15 @@ class Scenario:
         self.delay6 = delay6
         # The supernodes' firewalls drop what comes to them over IPv6
         self.sn_block6 = sn_block6
+        # The site whose edge moves to another network while frames flow
+        # both ways, as a laptop from one WiFi to another: its eth0 goes
+        # down, eth1 up, behind a router of its own (a NAT of the kind of
+        # the site's first one).  Then the longest time without a frame,
+        # each way, should be at most roam_max_gap seconds.
+        self.roam = roam
+        self.roam_max_gap = roam_max_gap
+        # whether the edges have to be direct again within ROAM_WATCH
+        self.roam_direct = roam_direct
 
     def directions(self):
         return {
@@ -286,6 +299,8 @@ class Run:
 
         for i, (sname, site) in enumerate(sorted(self.sc.sites.items())):
             self._build_site(i, sname, site)
+            if self.sc.roam == sname:
+                self._build_roam(i, sname, site)
 
     def _build_site(self, i, sname, site):
         lab = self.lab
@@ -395,6 +410,76 @@ class Run:
             "expect_nat": (site.expect_nat if site.expect_nat is not None
                            else nat.expected_class(layers)),
         }
+
+    def _build_roam(self, i, sname, site):
+        """The other network the edge of the site moves to, see roam"""
+        lab = self.lab
+        if len(site.nat) != 1:
+            raise LabError("roam takes a site behind one NAT")
+        kind = nat.KINDS[site.nat[0]]
+        ns = lab.netns("{}-alt".format(sname))
+        lab.sysctl(ns, "net.ipv4.ip_forward", 1)
+        lab.veth(self.inet, "x-{}-alt".format(sname), ns, "wan")
+        lab.enslave(self.inet, "x-{}-alt".format(sname), "br0")
+        wan = [INET_NET.format(41 + i + 20 * k) for k in range(kind.wan_addrs)]
+        for w in wan:
+            lab.addr(ns, "wan", "{}/{}".format(w, INET_PREFIX))
+        ctx = {sn: v["ip"] for sn, v in self.supernodes.items()}
+        lab.nft(ns, nat.ruleset(kind, wan, ctx), sname + "-alt")
+        self.routers[sname + "-alt"] = ns
+        net = "10.{}.9.{{}}".format(i + 1)
+        e = self.edges[sname]
+        lab.veth(ns, "lan", e["ns"], "eth1")
+        lab.addr(ns, "lan", net.format(1) + "/24")
+        lab.addr(e["ns"], "eth1", net.format(2) + "/24")
+        run(["ip", "-n", e["ns"], "link", "set", "eth1", "down"])
+        e["roam_gw"] = net.format(1)
+
+    def roam_switch(self, sname):
+        """The edge's network goes, another one comes"""
+        e = self.edges[sname]
+        run(["ip", "-n", e["ns"], "link", "set", "eth0", "down"])
+        run(["ip", "-n", e["ns"], "link", "set", "eth1", "up"])
+        run(["ip", "-n", e["ns"], "route", "replace", "default",
+             "via", e["roam_gw"]])
+
+    def roam_phase(self):
+        """Frames both ways while an edge moves to another network: how
+        long each way goes without, and whether the edges are direct again
+        after"""
+        self.roam_flows = {(s, d): self.sender(s, d, FLOW_ROAM, 0, 20)
+                           for s, d in self.sc.directions()}
+        time.sleep(4)
+        self.log("moving the edge of {} to another network".format(
+            self.sc.roam))
+        self.roam_switch(self.sc.roam)
+        # long enough for a round of registration (20s by default) and
+        # more: what goes missing shows as the longest gap
+        time.sleep(ROAM_WATCH)
+        for p in self.roam_flows.values():
+            p.stop()
+        direct = all(m == "p2p" for m in self.modes().values())
+        self.check("roam:path", direct or not self.sc.roam_direct,
+                   "{} {}s after the move".format(
+                       self._modes_str(self.modes()), ROAM_WATCH))
+
+    def check_roam(self, received):
+        gaps = {}
+        for (src, dst) in self.sc.directions():
+            f = received.get(dst, {}).get(str(FLOW_ROAM), {})
+            sent = self._read_json(self.roam_flows[(src, dst)].out.name)
+            # between two frames, or from the last one to the end of the
+            # flow, when none came any more
+            gap = max(f.get("gap_max_ms", 0) / 1000.0,
+                      sent.get("last", 0) - f.get("last", 0))
+            gaps["{}->{}".format(src, dst)] = round(gap, 1)
+            ok = bool(f) and gap <= self.sc.roam_max_gap
+            self.check("roam:{}->{}".format(src, dst), ok,
+                       "{} frames, longest gap {:.1f}s{}".format(
+                           f.get("unique", 0), gap,
+                           "" if ok else " (more than {}s)".format(
+                               self.sc.roam_max_gap)))
+        self.result["roam_gaps"] = gaps
 
     def _delay6(self, ns, dev, ms):
         """Delay the IPv6 packets leaving through dev by ms milliseconds"""
@@ -1002,12 +1087,16 @@ class Run:
             self.wait_nat_classes(timeout=45)
             if self.check_alive("nat classification"):
                 self.warm_up()
+            if self.sc.roam and self.check_alive("warm-up"):
+                self.roam_phase()
             if self.sc.failover and self.check_alive("warm-up"):
                 self.failover()
             if self.check_alive("warm-up"):
                 n, sent, deltas, modes = self.measure()
                 received = self.stop_receivers()
                 self.evaluate(n, sent, deltas, modes, received)
+                if self.sc.roam:
+                    self.check_roam(received)
                 self.check_alive("measurement")
             if self.sc.gateway and self.check_alive("measurement"):
                 self.check_gateway()

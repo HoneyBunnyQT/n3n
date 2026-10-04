@@ -71,8 +71,14 @@ def cmd_recv(args):
                     "rx": 0, "dup": 0, "reordered": 0, "max_seq": -1,
                     "first": now, "last": now, "lat_sum": 0.0,
                     "lat_max": 0.0, "seen": set(),
+                    "gap_max": 0.0, "gap_at": now,
                 }
             f["rx"] += 1
+            # the longest time without a frame of the flow, and when it
+            # ended
+            if now - f["last"] > f["gap_max"]:
+                f["gap_max"] = now - f["last"]
+                f["gap_at"] = now
             f["last"] = now
             if seq in f["seen"]:
                 f["dup"] += 1
@@ -102,6 +108,8 @@ def cmd_recv(args):
             "last": f["last"],
             "lat_avg_ms": round(1000 * f["lat_sum"] / unique, 3),
             "lat_max_ms": round(1000 * f["lat_max"], 3),
+            "gap_max_ms": round(1000 * f["gap_max"], 1),
+            "gap_at": f["gap_at"],
         }
     json.dump(out, sys.stdout)
     sys.stdout.write("\n")

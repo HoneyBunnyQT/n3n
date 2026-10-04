@@ -19,7 +19,8 @@
 #                                      needs IPv6 too
 #
 # The kernel is SRC/linux; run takes it from $UML_KERNEL, or from
-# tests/netns/out/linux, where "kernel" puts a link to it.
+# tests/netns/uml-linux, where "kernel" puts a link to it (not in out/,
+# which each run of run.py empties).
 
 set -e
 
@@ -48,8 +49,7 @@ kernel() {
         -e INOTIFY_USER -e FHANDLE -e SYSVIPC
     make -s ARCH=um olddefconfig
     make ARCH=um -j"$(nproc)" linux
-    mkdir -p "$OUT"
-    ln -sf "$src/linux" "$OUT/linux"
+    ln -sf "$src/linux" "$HERE/uml-linux"
     echo "UML kernel: $src/linux"
 }
 
@@ -64,7 +64,7 @@ run() {
 }
 
 in_uml() {
-    uml=${UML_KERNEL:-$OUT/linux}
+    uml=${UML_KERNEL:-$HERE/uml-linux}
     [ -x "$uml" ] || { echo "no UML kernel at $uml: see '$0 kernel'" >&2; exit 1; }
     mkdir -p "$OUT"
     status=$OUT/uml-status

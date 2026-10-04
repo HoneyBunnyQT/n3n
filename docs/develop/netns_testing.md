@@ -68,7 +68,7 @@ The UML kernel runs on one CPU and slower than the host, so `uml.sh`
 passes `-j 1` and `--register-interval 10` unless given: with 5 seconds,
 the peers' idle timeout (half of it) can pass while the senders of the
 next flow start, and their first frames then go through the supernode.
-The kernel is at `tests/netns/out/linux`, or where `UML_KERNEL` says.
+The kernel is at `tests/netns/uml-linux`, or where `UML_KERNEL` says.
 Even so, `fed-split` sometimes sends a few frames too many through the
 supernodes there (base and changed builds alike, 0 to 28 of 1000).
 
@@ -120,6 +120,8 @@ router behind a carrier NAT.  The block of hard-range ends at a multiple of
 | failover-tcp | easy-kept with connect_tcp / easy-changed, a's supernode killed | relayed, a over TCP to the other one |
 | cgnat-both | easy-changed+easy-kept on both sides | direct |
 | same-lan | both sites 192.168.1.0/24, the edges at the same address | direct |
+| roam | easy-kept / easy-kept, register_interval 20; b moves to another network (its link down, another link and NAT up) while frames flow both ways | direct again; the longest gap each way at most 5s |
+| roam-nowatch | as roam, with connection.watch_network = false: for comparison | direct again, after up to half the peers' timeout (gap at most 60s) |
 | dual-stack | both edges public, with IPv4 and IPv6; a knows the supernode by IPv6, b by IPv4, and they find each other by multicast over both: each may hear the other from either family (needs IPv6, see `uml.sh`) | direct, the peers kept at one address |
 | hard-hard-v6 | hard-range / hard-range, but each site with routed IPv6 behind its router's firewall, 20 ms slower than IPv4; the edges know the supernode by both, select by round trip (needs IPv6) | direct, over IPv6: registered over IPv4, each edge also tells the supernode its IPv6 address |
 | v6-v4only | easy-kept / easy-kept, a with IPv6 too (registered over it), b with IPv4 only (needs IPv6) | direct, over IPv4: the supernode tells b a's IPv4 address |
@@ -187,6 +189,9 @@ To keep runs short, the edges use `connection.register_interval=5` and
    - `relay:supernodes:` the supernodes' `sn_fwd` counted next to none
      of them (direct), or all of them (relayed)
    - `path:after:` the edges are still on the path they should be
+   - `roam:` (roam) whether the edges are direct again after the move,
+     and each way the longest time without a frame of the flow that ran
+     across it
    - `moves:` (dual-stack) with a trickle of frames each way for 4 more
      rounds of registration, how often each edge moved its peer to
      another address ("peer ... changed" in its log): at most once

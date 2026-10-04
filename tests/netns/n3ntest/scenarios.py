@@ -169,6 +169,26 @@ SCENARIOS = [
              expect_nat=".*"),
         "direct", ipv6=True, tags=["ipv6"]),
     Scenario(
+        "roam",
+        "b moves to another network (another NAT, its link and address "
+        "gone) while frames flow both ways: the edge notices, registers "
+        "again at once, and the edges are direct again within seconds",
+        Site(["easy-kept"]),
+        Site(["easy-kept"]),
+        "direct", roam="b", roam_max_gap=5.0,
+        # n3n's default: the edges' next round of registration is up to
+        # 20s away, not the harness's 5s
+        conf={"connection": {"register_interval": 20}}),
+    Scenario(
+        "roam-nowatch",
+        "as roam, with connection.watch_network = false: the edges find "
+        "each other again only with the next rounds of registration",
+        Site(["easy-kept"]),
+        Site(["easy-kept"]),
+        "direct", roam="b", roam_max_gap=60.0, roam_direct=False,
+        conf={"connection": {"register_interval": 20,
+                             "watch_network": False}}),
+    Scenario(
         "same-lan",
         "both sites use 192.168.1.0/24, the edges at the same address",
         Site(["easy-kept"], lan="192.168.1.0/24"),
