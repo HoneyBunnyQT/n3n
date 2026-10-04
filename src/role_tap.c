@@ -403,6 +403,15 @@ static char *get_ip_from_arp (dec_ip_str_t buf, const n2n_mac_t req_mac) {
 #endif
 
 
+// Whether the supernode answers: the last re-registration got its answer
+static bool supernode_answers (struct n3n_runtime_data *eee, time_t now) {
+
+    time_t last = SHARED_LOAD(eee->client.last_sup);
+
+    return last && (now - last <= (time_t)eee->conf.client.register_interval * 3 / 2);
+}
+
+
 /* @return 1 if destination is a peer, 0 if destination is supernode */
 static int find_peer_destination (struct n3n_runtime_data * eee,
                                   n2n_mac_t mac_address,
@@ -426,7 +435,8 @@ static int find_peer_destination (struct n3n_runtime_data * eee,
     HASH_FIND_PEER(eee->client.known_peers, mac_address, scan);
 
     if(scan && (scan->last_seen > 0)) {
-        if((now - SHARED_LOAD(scan->last_p2p)) >= (scan->timeout / 2)) {
+        if(((now - SHARED_LOAD(scan->last_p2p)) >= (scan->timeout / 2))
+           && supernode_answers(eee, now)) {
             /* Too much time passed since we saw the peer, need to register again
              * since the peer address may have changed. */
             struct edge_event ev = { .type = EDGE_EVENT_PEER_EXPIRE, .now = now };
@@ -436,7 +446,10 @@ static int find_peer_destination (struct n3n_runtime_data * eee,
             edge_event_post(eee, &ev);
             /* NOTE: registration will be performed upon the receival of the next response packet */
         } else {
-            /* Valid known peer found */
+            /* Valid known peer found - or one not heard of late, while no
+             * supernode answers: it would not find the peer again, so on
+             * at its last address (update_supernode_reg() sends it
+             * REGISTERs meanwhile) */
             memcpy(destination, &scan->sock, sizeof(n3n_sock_t));
             retval = 1;
         }
