@@ -204,7 +204,14 @@ tests and `make lint` pass after each.
 - [ ] Integration test: a supernode with a TAP device next to plain edges
 - [ ] Run the netns NAT scenarios in CI (`make test.netns`)
 - [ ] Fuzzing of the PDU decoders (`wire.c`) and of header decryption
-- [ ] ASan/UBSan builds in CI, TSan for the threads
+- [x] ASan/UBSan in CI on every push (`sanitizers.yml`): unit, builtin,
+      integration and netns tests, findings fatal.  Found and fixed:
+      unaligned loads and stores (Speck SIMD, header encryption, memxor,
+      connslot, ...), signed shifts (Twofish, bitlen2mask, wire), the
+      PEER_INFO uptime decoded into half a time_t, the benchmarks'
+      contexts not zeroed, a reload's configuration not freed and the
+      metrics left with the freed session name
+- [ ] TSan for the threads (`daemon.threads`)
 - [x] Big endian, 32 bit and strict alignment: unit and builtin tests under
       qemu for s390x, mips and aarch64 in CI (`scripts/test_qemu.sh`).
       Found and fixed: Speck (also header encryption) and ChaCha20 broken
