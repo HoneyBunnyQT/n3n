@@ -15,11 +15,31 @@ SPDX-FileCopyrightText: Copyright Hamish Coleman
 | other CPUs: big endian, 32 bit, ARM, under qemu-user | `scripts/test_qemu.sh`, see below | yes |
 | an edge-only build (`./configure --disable-relay`) | the unit and builtin tests | yes |
 | the options reference is up to date | `make options.check` | yes |
+| sanitizers: all of the above but lint and qemu, with AddressSanitizer and UndefinedBehaviorSanitizer built in, every finding fatal | see below | yes, on every push (`sanitizers.yml`), the NAT tests too |
 
 `make test` runs the first four and the quick NAT tests (which skip
 themselves without root).  A change that touches the protocol, NAT
 traversal, the threads or the supernode should also pass
 `make test.netns.full`, with and without `./configure --enable-pthread`.
+
+### With the sanitizers
+
+```
+F="-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -g -O1"
+./configure --enable-pthread CFLAGS="$F" LDFLAGS="$F" && make -j4
+mkdir -p /tmp/san
+export ASAN_OPTIONS=log_path=/tmp/san/asan UBSAN_OPTIONS=log_path=/tmp/san/ubsan
+make test.units test.builtin test.integration
+sudo -E tests/netns/run.py
+ls /tmp/san          # empty: nothing found
+```
+
+The reports go to files of their own: a daemon that leaks exits with 1,
+and its report may come after its log is closed.  AddressSanitizer does not
+run in the User-Mode Linux kernel of `tests/netns/uml.sh` (its shadow
+memory does not fit there), UndefinedBehaviorSanitizer alone does.  The
+bundled minilzo reads unaligned on purpose, so the Makefile leaves out
+the alignment check for it.
 
 # Built in Testing and Benchmarking framework
 
