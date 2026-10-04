@@ -52,8 +52,8 @@
 
 #define LOW(Z) vgetq_lane_u64(Z,0)
 #define HIGH(Z) vgetq_lane_u64(Z,1)
-#define STORE(ip,X,Y) (((u64 *)(ip))[0]=HIGH(Y), ((u64 *)(ip))[1]=HIGH(X), ((u64 *)(ip))[2]=LOW(Y), ((u64 *)(ip))[3]=LOW(X))
-#define XOR_STORE(in,out,X,Y) (Y=XOR(Y,SET(((u64 *)(in))[2],((u64 *)(in))[0])), X=XOR(X,SET(((u64 *)(in))[3],((u64 *)(in))[1])), STORE(out,X,Y))
+#define STORE(ip,X,Y) (speck_st64((unsigned char *)(ip), HIGH(Y)), speck_st64((unsigned char *)(ip) + 8, HIGH(X)), speck_st64((unsigned char *)(ip) + 16, LOW(Y)), speck_st64((unsigned char *)(ip) + 24, LOW(X)))
+#define XOR_STORE(in,out,X,Y) (Y=XOR(Y,SET(speck_ld64((const unsigned char *)(in) + 8 * 2),speck_ld64(in))), X=XOR(X,SET(speck_ld64((const unsigned char *)(in) + 8 * 3),speck_ld64((const unsigned char *)(in) + 8 * 1))), STORE(out,X,Y))
 
 #define ROR(X,r) vsriq_n_u64(SL(X,(64-r)),X,r)
 #define ROL(X,r) ROR(X,(64-r))
@@ -101,7 +101,7 @@
     if(numbytes == 16) {                                \
         x[0] = nonce[1]; y[0]=nonce[0]; nonce[0]++;     \
         Encrypt_ ## keysize(x, y, ctx->key, 1);           \
-        ((u64 *)out)[1] = x[0]; ((u64 *)out)[0] = y[0]; \
+        speck_st64((unsigned char *)(out) + 8 * 1, x[0]); speck_st64(out, y[0]); \
         return 0;                                       \
     }                                                   \
                                                         \
@@ -158,14 +158,14 @@ static int internal_speck_ctr (unsigned char *out, const unsigned char *in, unsi
 
     int i;
     u64 nonce[2];
-    unsigned char block[16];
-    u64 *const block64 = (u64 *)block;
+    u64 block64[2];
+    unsigned char *const block = (unsigned char *)block64;
 
     if(!inlen)
         return 0;
 
-    nonce[0] = ((u64 *)n)[0];
-    nonce[1] = ((u64 *)n)[1];
+    nonce[0] = speck_ld64(n);
+    nonce[1] = speck_ld64((const unsigned char *)(n) + 8 * 1);
 
     while(inlen >= 128) {
         speck_encrypt_xor(out, in, nonce, ctx, 128);
@@ -189,8 +189,8 @@ static int internal_speck_ctr (unsigned char *out, const unsigned char *in, unsi
 
     if(inlen >= 16) {
         speck_encrypt_xor(block, in, nonce, ctx, 16);
-        ((u64 *)out)[0] = block64[0] ^ ((u64 *)in)[0];
-        ((u64 *)out)[1] = block64[1] ^ ((u64 *)in)[1];
+        speck_st64(out, block64[0] ^ speck_ld64(in));
+        speck_st64((unsigned char *)(out) + 8 * 1, block64[1] ^ speck_ld64((const unsigned char *)(in) + 8 * 1));
         in += 16; inlen -= 16; out += 16;
     }
 
@@ -210,7 +210,7 @@ static int speck_expand_key (speck_context_t *ctx, const unsigned char *k, int k
     size_t i;
 
     for(i = 0; i < (keysize >> 6); i++)
-        K[i] = ((u64 *)k)[i];
+        K[i] = speck_ld64((const unsigned char *)(k) + 8 * i);
 
     // 128 bit has only two keys A and B thus replacing both C and D with B then
     if(keysize == 128) {

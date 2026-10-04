@@ -372,7 +372,7 @@ socklen_t prepare_sockaddr_for_send (struct sockaddr_storage *out_sa,
         // construct the ::ffff:x.x.x.x mapped address
         sa6.sin6_addr.s6_addr[10] = 0xff;
         sa6.sin6_addr.s6_addr[11] = 0xff;
-        *(uint32_t *)&sa6.sin6_addr.s6_addr[12] = sa4->sin_addr.s_addr;
+        memcpy(&sa6.sin6_addr.s6_addr[12], &sa4->sin_addr.s_addr, 4);
 
         *(struct sockaddr_in6 *)out_sa = sa6;
 
@@ -686,7 +686,12 @@ int sock_equal (const n3n_sock_t * a,
 int memxor (uint8_t *destination, const uint8_t *source, size_t len) {
 
     for(; len >= 4; len -= 4) {
-        *(uint32_t*)destination ^= *(uint32_t*)source;
+        uint32_t d, s;
+        // either may be anywhere in memory, also unaligned
+        memcpy(&d, destination, sizeof(d));
+        memcpy(&s, source, sizeof(s));
+        d ^= s;
+        memcpy(destination, &d, sizeof(d));
         source += 4;
         destination += 4;
     }

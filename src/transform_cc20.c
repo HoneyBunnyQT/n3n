@@ -222,8 +222,7 @@ static const ssize_t bench_encr_run (
     // TODO: refactor to call transop_encode_cc20() directly
 
     // First, populate our static test IV
-    *(uint64_t *)(&ctx->outbuf[0]) = *(uint64_t *)&ctx->iv[0];
-    *(uint64_t *)(&ctx->outbuf[8]) = *(uint64_t *)&ctx->iv[8];
+    memcpy(&ctx->outbuf[0], &ctx->iv[0], 16);
 
     cc20_crypt(
         &ctx->outbuf[CC20_PREAMBLE_SIZE],

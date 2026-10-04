@@ -521,7 +521,9 @@ static void handle_fd (const time_t now, const struct fd_info info, struct n3n_r
                     return;
 
                 case CONN_READY: {
-                    int size = ntohs(*(uint16_t *)&conn->request->str);
+                    uint16_t be_size;
+                    memcpy(&be_size, conn->request->str, sizeof(be_size));
+                    int size = ntohs(be_size);
 
                     edge_read_proto3_tcp(
                         eee,
