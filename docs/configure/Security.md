@@ -13,6 +13,9 @@ There are multiple encryption options to choose from. Please have a look at
 help make a choice. n3n edge nodes use AES encryption by default. Other
 ciphers can be chosen using the `community.cipher` option.
 
+`n3n-edge help transform` lists the ciphers and compressions of a build,
+with the implementation each one uses (OpenSSL, AES-NI, AVX2, NEON, plain
+C, ...): which one depends on the CPU and options the build was made for.
 A built-in benchmark of the encryption methods is available with the
 `n3n-edge test benchmark` tool.
 

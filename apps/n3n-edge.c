@@ -265,10 +265,21 @@ static void cmd_help_options (int argc, char **argv, void *conf) {
 }
 
 static void cmd_help_transform (int argc, char **argv, void *conf) {
-    // TODO: add an interface to the registered transform lookups and print
-    // out the list
-    printf("Not implemented\n");
-    exit(1);
+    printf("Ciphers (community.cipher, with a community.key):\n");
+    for(int id = 0; id <= UINT8_MAX; id++) {
+        struct n3n_transform *t = n3n_transform_lookup_id(id);
+        if(t) {
+            printf("  %-10s %s\n", t->name, t->desc ? t->desc : "");
+        }
+    }
+    printf("\nCompressions (community.compression):\n");
+    for(int id = 0; id <= UINT8_MAX; id++) {
+        struct n3n_transform *t = n3n_compression_lookup_id(id);
+        if(t) {
+            printf("  %-10s %s\n", t->name, t->desc ? t->desc : "");
+        }
+    }
+    exit(0);
 }
 
 static void cmd_help_version (int argc, char **argv, void *conf) {

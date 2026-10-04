@@ -620,6 +620,7 @@ static struct bench_item bench_encr_burst = {
 
 static struct n3n_transform transform = {
     .name = "AES",
+    .desc = "AES-CBC, " AES_IMPL,
     .id = N2N_TRANSFORM_ID_AES,
 };
 

@@ -525,6 +525,7 @@ static struct bench_item bench_decr = {
 
 static struct n3n_transform transform = {
     .name = "Twofish",
+    .desc = "Twofish-CBC, plain C",
     .id = N2N_TRANSFORM_ID_TWOFISH,
 };
 

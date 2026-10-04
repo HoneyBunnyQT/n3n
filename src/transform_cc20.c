@@ -294,6 +294,7 @@ static struct bench_item bench_decr = {
 
 static struct n3n_transform transform = {
     .name = "ChaCha20",
+    .desc = "ChaCha20, " CC20_IMPL,
     .id = N2N_TRANSFORM_ID_CHACHA20,
 };
 

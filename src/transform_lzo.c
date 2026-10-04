@@ -236,6 +236,7 @@ static const void *const bench_lzo_get_output (void *const _ctx) {
 
 static struct n3n_transform transform = {
     .name = "lzo",
+    .desc = "LZO1X, built in (miniLZO)",
     .id = N2N_COMPRESSION_ID_LZO,
     .is_compress = true,
 };

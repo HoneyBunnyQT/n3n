@@ -35,6 +35,21 @@
 #include <openssl/err.h>
 #endif
 
+// the implementation built, as the cc20_*.c files choose it
+#if defined (HAVE_LIBCRYPTO)
+#define CC20_IMPL "OpenSSL"
+#elif defined (__AVX512F__)
+#define CC20_IMPL "AVX-512"
+#elif defined (__AVX2__)
+#define CC20_IMPL "AVX2"
+#elif defined (__SSE2__)
+#define CC20_IMPL "SSE2"
+#elif defined (__ARM_NEON) && !defined (__ARM_BIG_ENDIAN)
+#define CC20_IMPL "NEON"
+#else
+#define CC20_IMPL "plain C"
+#endif
+
 // only the cipher and the key: the OpenSSL context is per thread and the
 // keystream is worked out on the stack of every call, so that several threads
 // can use one context at once

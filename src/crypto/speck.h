@@ -38,6 +38,8 @@
 
 #if defined (__AVX512F__) // AVX512 support -----------------------------------------------------------------------
 
+#define SPECK_IMPL "AVX-512"
+
 
 #include <immintrin.h>
 #include <string.h>    /* memcpy() */
@@ -55,6 +57,8 @@ typedef struct {
 
 #elif defined (__AVX2__) // AVX2 support --------------------------------------------------------------------------
 
+#define SPECK_IMPL "AVX2"
+
 
 #include <immintrin.h>
 
@@ -70,6 +74,8 @@ typedef struct {
 
 
 #elif defined (__SSE2__) // SSE support ---------------------------------------------------------------------------
+
+#define SPECK_IMPL "SSE2"
 
 
 #include <immintrin.h>
@@ -88,6 +94,8 @@ typedef struct {
 
 #elif defined (__ARM_NEON) && defined (SPECK_ARM_NEON)      // NEON support ---------------------------------------
 
+#define SPECK_IMPL "NEON"
+
 
 #include <arm_neon.h>
 
@@ -101,6 +109,8 @@ typedef struct {
 
 
 #else // plain C --------------------------------------------------------------------------------------------------
+
+#define SPECK_IMPL "plain C"
 
 
 typedef struct {

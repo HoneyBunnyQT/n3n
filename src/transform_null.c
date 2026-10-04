@@ -93,6 +93,7 @@ int n2n_transop_null_init (const n2n_edge_conf_t *conf, n2n_trans_op_t *ttt) {
 
 static struct n3n_transform transform = {
     .name = "null",
+    .desc = "no encryption (without a key)",
     .id = N2N_TRANSFORM_ID_NULL,
 };
 

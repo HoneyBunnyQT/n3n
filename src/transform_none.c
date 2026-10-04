@@ -12,6 +12,7 @@
 // A dummy transform struct for the no-op compression
 static struct n3n_transform transform = {
     .name = "none",
+    .desc = "no compression",
     .id = N2N_COMPRESSION_ID_NONE,
     .is_compress = true,
 };
