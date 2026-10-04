@@ -98,6 +98,12 @@ LDFLAGS+=-L$(abspath src)
 
 CFLAGS+=-DHAVE_BRIDGING_SUPPORT
 
+# minilzo reads unaligned on purpose, where the CPU can (LZO_OPT_UNALIGNED*):
+# not a finding for -fsanitize=undefined, which checks the rest of it still
+ifneq ($(findstring -fsanitize=,$(CFLAGS)),)
+libs/lzo/minilzo.o: CFLAGS+=-fno-sanitize=alignment
+endif
+
 OBJS=\
 	libs/lzo/minilzo.o \
 	src/auth.o \
@@ -250,7 +256,8 @@ CFLAGS+=-I$(abspath libs)
 LDFLAGS+=-L$(abspath libs/connslot)
 LDLIBS_LOCAL+=-lconnslot
 
-libs/connslot/libconnslot.a:
+# rebuilt when its sources change (its own Makefile knows the rest)
+libs/connslot/libconnslot.a: $(wildcard libs/connslot/*.c libs/connslot/*.h)
 	$(MAKE) -C $(dir $@) $(notdir $@) httpd-test
 SUBDIR_LIBS+=libs/connslot/libconnslot.a
 SUBDIR_CLEAN+=libs/connslot
