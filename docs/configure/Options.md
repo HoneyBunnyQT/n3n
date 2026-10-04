@@ -136,7 +136,7 @@ Default: `false`
 
 Fall back to TCP when UDP does not get through.
 
-Defaulting to true: when no supernode answers over UDP, for a round over all of them (at least two rounds), the edge connects to them over TCP instead, as connect_tcp does. While on TCP, it sends a UDP ping to its supernode every three register_intervals, and goes back to UDP as soon as one is answered. Peer-to-peer connections need UDP, so over TCP everything goes through the supernode. Not with several threads (daemon.threads).
+Defaulting to true: when no supernode answers over UDP, for a round over all of them (at least two rounds), the edge connects to them over TCP instead, as connect_tcp does. While on TCP, it sends a UDP ping to its supernode every three register_intervals, and goes back to UDP as soon as one is answered. Peer-to-peer connections need UDP, so over TCP everything goes through the supernode; while a peer is heard directly over UDP, the edge stays on it, as the supernodes are rather down than blocked. Not with several threads (daemon.threads).
 
 Default: `true`
 

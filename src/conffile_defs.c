@@ -197,7 +197,9 @@ static struct n3n_conf_option section_connection[] = {
                 "does.  While on TCP, it sends a UDP ping to its supernode "
                 "every three register_intervals, and goes back to UDP as "
                 "soon as one is answered.  Peer-to-peer connections need "
-                "UDP, so over TCP everything goes through the supernode.  "
+                "UDP, so over TCP everything goes through the supernode; "
+                "while a peer is heard directly over UDP, the edge stays "
+                "on it, as the supernodes are rather down than blocked.  "
                 "Not with several threads (daemon.threads).",
     },
     {

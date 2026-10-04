@@ -122,7 +122,9 @@ Yes, if the supernode is reachable over TCP, and without changing anything:
 when no supernode answers over UDP, for a round over all of them (twice
 with one supernode), the edge connects to them over TCP instead
 (`connection.tcp_fallback`, on by default).  Over TCP all its traffic goes
-through the supernode, as peer-to-peer connections need UDP.  Every three
+through the supernode, as peer-to-peer connections need UDP - so while
+it hears a peer directly over UDP, it stays on UDP: the supernodes are
+down then, rather than blocked, and its peers stay reachable.  Every three
 `connection.register_interval`s (a minute by default) it sends a UDP ping
 to its supernode, and goes back to UDP as soon as one gets an answer - after
 leaving the airport, say.  `n3nctl get_info` shows the transport in use

@@ -195,10 +195,9 @@ void transport_probe_close (struct n3n_runtime_data *eee) {
 
 
 // Close what reaches the supernode now, and open the other transport
-static void transport_switch (struct n3n_runtime_data *eee, bool tcp, time_t now) {
+static void transport_switch (struct n3n_runtime_data *eee, bool tcp, time_t now, const char *why) {
 
-    traceEvent(TRACE_NORMAL, tcp ? "no supernode answers over UDP, trying TCP"
-                                 : "UDP gets through again, leaving TCP");
+    traceEvent(TRACE_NORMAL, "%s", why);
     supernode_disconnect(eee);
     transport_probe_close(eee);
     eee->client.tcp = tcp;
@@ -209,6 +208,21 @@ static void transport_switch (struct n3n_runtime_data *eee, bool tcp, time_t now
     }
     reset_sup_attempts(eee);
     supernode_connect(eee);
+}
+
+
+// Whether a peer was heard directly of late: then UDP gets through, and
+// the supernodes are rather down than out of reach over UDP
+static bool udp_reaches_peers (struct n3n_runtime_data *eee, time_t now) {
+
+    struct peer_info *scan, *tmp;
+
+    HASH_ITER(hh, eee->client.known_peers, scan, tmp) {
+        if(now - SHARED_LOAD(scan->last_p2p) <= (time_t)eee->conf.client.register_interval) {
+            return true;
+        }
+    }
+    return false;
 }
 
 
@@ -226,7 +240,15 @@ bool transport_note_giveup (struct n3n_runtime_data *eee, time_t now) {
        || !supernode_count(eee, !eee->client.tcp)) {
         return false;
     }
-    transport_switch(eee, !eee->client.tcp, now);
+    // over TCP, it would lose its peers: everything goes through the
+    // supernode then, and no supernode answers
+    if(!eee->client.tcp && udp_reaches_peers(eee, now)) {
+        traceEvent(TRACE_INFO, "no supernode answers, staying on UDP as peers do");
+        return false;
+    }
+    transport_switch(eee, !eee->client.tcp, now,
+                     eee->client.tcp ? "no supernode answers over TCP either, back to UDP"
+                                     : "no supernode answers over UDP, trying TCP");
     return true;
 }
 
@@ -1483,7 +1505,7 @@ void update_supernode_reg (struct n3n_runtime_data * eee, time_t now) {
     int off = 0;
 
     if(eee->client.probe_ok) {
-        transport_switch(eee, false, now);
+        transport_switch(eee, false, now, "UDP gets through again, leaving TCP");
         eee->client.last_register_req = 0;   // register over UDP right away
     } else {
         transport_probe(eee, now);
