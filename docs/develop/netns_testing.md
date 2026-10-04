@@ -60,6 +60,8 @@ tar xjf /usr/src/linux-source-*.tar.bz2 -C ~
 tests/netns/uml.sh kernel ~/linux-source-*    # configure and build, once
 tests/netns/uml.sh run @ipv6                  # run.py's arguments
 tests/netns/uml.sh run @quick
+tests/netns/uml.sh exec make test.integration # any command, e.g. upstream's
+                                              # tests, which need IPv6 too
 ```
 
 The UML kernel runs on one CPU and slower than the host, so `uml.sh`

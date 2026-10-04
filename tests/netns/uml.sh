@@ -14,6 +14,9 @@
 #                                      source tree, e.g. Debian/Ubuntu's
 #                                      linux-source package) as UML
 #   tests/netns/uml.sh run [ARGS]      run tests/netns/run.py ARGS in it
+#   tests/netns/uml.sh exec CMD...     run any command in it, e.g.
+#                                      "make test.integration", which
+#                                      needs IPv6 too
 #
 # The kernel is SRC/linux; run takes it from $UML_KERNEL, or from
 # tests/netns/out/linux, where "kernel" puts a link to it.
@@ -51,6 +54,16 @@ kernel() {
 }
 
 run() {
+    # slower than the host: starting the senders of a flow can take
+    # longer than half the peers' timeout (the register interval), and
+    # the first frames then go the supernode's way
+    case " $* " in *" --register-interval"*) ;; *) set -- --register-interval 10 "$@" ;; esac
+    # one CPU: scenarios at once starve each other
+    case " $* " in *" -j"*|*" --jobs"*) ;; *) set -- -j 1 "$@" ;; esac
+    in_uml python3 tests/netns/run.py "$@"
+}
+
+in_uml() {
     uml=${UML_KERNEL:-$OUT/linux}
     [ -x "$uml" ] || { echo "no UML kernel at $uml: see '$0 kernel'" >&2; exit 1; }
     mkdir -p "$OUT"
@@ -71,14 +84,7 @@ run() {
         echo "ip link set lo up"
         echo "export PATH=$PATH HOME=/root"
         echo "cd '$TOP'"
-        printf "python3 tests/netns/run.py"
-        # slower than the host: starting the senders of a flow can take
-        # longer than half the peers' timeout (the register interval), and
-        # the first frames then go the supernode's way
-        case " $* " in *" --register-interval"*) ;; *) printf " --register-interval 10" ;; esac
-        # one CPU: scenarios at once starve each other
-        case " $* " in *" -j"*|*" --jobs"*) ;; *) printf " -j 1" ;; esac
-        for a in "$@"; do printf " '%s'" "$a"; done
+        for a in "$@"; do printf "'%s' " "$a"; done
         echo
         echo "echo \$? > '$status'"
         # LINUX_REBOOT_CMD_HALT: the UML process ends
@@ -97,5 +103,6 @@ run() {
 case "$1" in
     kernel) shift; kernel "$@" ;;
     run) shift; run "$@" ;;
-    *) sed -n '7,20p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+    exec) shift; in_uml "$@" ;;
+    *) sed -n '7,23p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac
