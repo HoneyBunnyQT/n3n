@@ -38,7 +38,7 @@ test:
 recv:
 000: 03 02 00 67 74 65 73 74  00 00 00 00 00 00 00 00   |   gtest        |
 010: 00 00 00 00 00 00 00 00  00 00 10 00 02 00 00 00   |                |
-020: 00 01 0a c8 af 73 18 00  0f 00 00 1b 58 7f 00 00   |     s      X   |
+020: 00 01 0a c8 af 73 18 80  0f 00 00 1b 58 7f 00 00   |     s      X   |
 030: 01 00 00 00 00 00 00 00  00 00                     |          |
 {'_name': 'REGISTER_SUPER_ACK',
  'proto_version': 3,
@@ -51,7 +51,7 @@ recv:
  'srcMac': b'\x02\x00\x00\x00\x00\x01',
  'ipv4': b'\n\xc8\xafs',
  'masklen': 24,
- 'lifetime': 15,
+ 'lifetime': 32783,
  'sock_family': <AddressFamily.AF_INET: 2>,
  'sock_type': <SocketKind.SOCK_DGRAM: 2>,
  'sock_port': 7000,
