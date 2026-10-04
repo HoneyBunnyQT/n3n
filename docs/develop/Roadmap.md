@@ -171,9 +171,18 @@ tests and `make lint` pass after each.
       "packet too big" into the TAP for the inner sender, as kernel
       tunnels do; TCP MSS clamping per peer; a TAP MTU derived from the
       path
+- [x] Reload: SIGHUP (not in a terminal), `n3nctl reload` (method
+      `reload`), `ExecReload` in the units (`RELOADING=1`/`READY=1`).
+      `src/reload.c` loads the configuration as at the start, compares
+      the dumps option by option with what runs, applies the live ones
+      (supernodes, register interval, password, verbosity, a supernode's
+      communities, ...) and reports the rest as waiting for a restart.
+      netns scenario `reload`.  Open: filter rules (not in the dump, so not
+      compared); the edge of a supernode (`supernode.tap`) takes only what
+      the supernode's configuration changes
 - [ ] Ideas to pick from (all v3 compatible): keep learned supernodes on disk;
       names for peers (DNS); IPv6 on the TAP device from a prefix derived
-      from the community; reload on SIGHUP; interop tests against n2n 3.x
+      from the community; interop tests against n2n 3.x
       and older n3n in the netns lab; epoll and batched I/O; no alloc per
       packet; fewer privileges (CAP_NET_ADMIN only, Landlock); packages for
       the single binary; tools init / tools qr
