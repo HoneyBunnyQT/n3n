@@ -572,6 +572,23 @@ class Run:
         self.check("roam:path", direct or not self.sc.roam_direct,
                    "{} {}s after the move".format(
                        self._modes_str(self.modes()), ROAM_WATCH))
+        if not direct and self.expect == "direct":
+            # not yet (roam-nowatch: only with the next rounds of
+            # registration, later under load): the burst measures the way
+            # the edges settle on, so it waits for them as the warm-up does,
+            # with frames (what makes an edge look for its peer)
+            t = time.monotonic()
+            hold = [self.sender(s, d, FLOW_HOLD, 0, 10)
+                    for s, d in self.sc.directions()]
+            again = wait_for(
+                lambda: all(m == "p2p" for m in self.modes().values()),
+                self.sc.connect_timeout or self.st.connect_timeout,
+                interval=0.5)
+            for p in hold:
+                p.stop()
+            self.log("direct again {}{:.1f}s later".format(
+                "" if again else "not even ", time.monotonic() - t))
+            time.sleep(1)
 
     def restart_edge(self, sname):
         """Stop an edge and start it again, with its log in a file of its
@@ -1139,12 +1156,18 @@ class Run:
                 log = f.read()
         except OSError:
             log = ""
-        applied = "applied: community.supernode, connection.description" in log
+        lines = [line.split("] ", 1)[-1] for line in log.splitlines()
+                 if "reload" in line]
+        applied = any("applied:" in line
+                      and "community.supernode" in line
+                      and "connection.description" in line
+                      for line in lines)
         self.check("reload", ok and applied,
                    "{} at {} after {}s, {}".format(
                        site, d.current_supernode(), took,
                        "both options applied" if applied
-                       else "no \"applied\" line in its log"))
+                       else "its log of the reload: {}".format(
+                           " | ".join(lines[-4:]) or "none")))
         # A round of registrations for the peers to find each other again
         time.sleep(self.st.register_interval + 1)
 
