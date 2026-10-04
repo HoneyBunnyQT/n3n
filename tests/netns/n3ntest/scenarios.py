@@ -13,6 +13,9 @@ from .scenario import Scenario, Site, version_built
 # The release of upstream n3n the interop scenarios run against, see
 # tests/netns/versions.sh: "tests/netns/versions.sh build n3n-3.4.6 3.4.6"
 OLD = "n3n-3.4.6"
+# The release of n2n they run against: IPv4 only, so a few basic ones
+# "tests/netns/versions.sh build n2n-3.1.1 3.1.1 https://github.com/ntop/n2n"
+N2N = "n2n-3.1.1"
 
 SCENARIOS = [
     Scenario(
@@ -339,6 +342,39 @@ SCENARIOS = [
         Site(["easy-kept"], version=OLD), Site(["easy-changed"]),
         "direct", auth="userpw", sn_versions={"sn1": OLD, "sn2": OLD},
         tags=["interop"]),
+    Scenario(
+        "interop-n2n-edge",
+        "a is an edge of n2n 3.1.1, b and the supernodes are this tree: the "
+        "edges go direct",
+        Site(["easy-kept"], version=N2N),
+        Site(["easy-changed"]),
+        "direct", tags=["interop", "n2n"]),
+    Scenario(
+        "interop-n2n-sn",
+        "the supernodes are of n2n 3.1.1, the edges of this tree",
+        Site(["easy-kept"]),
+        Site(["easy-changed"]),
+        "direct", sn_versions={"sn1": N2N, "sn2": N2N},
+        tags=["interop", "n2n"]),
+    Scenario(
+        "interop-n2n-fed",
+        "a federation of a supernode of n2n 3.1.1 (sn1) and one of this "
+        "tree (sn2), each edge knowing only one; a of n2n too",
+        Site(["easy-kept"], supernodes=["sn1"], version=N2N),
+        Site(["easy-changed"], supernodes=["sn2"]),
+        "direct", sn_versions={"sn1": N2N}, tags=["interop", "n2n"]),
+    Scenario(
+        "interop-n2n-relayed",
+        "hard-range / hard-range, a of n2n 3.1.1, the supernodes one of "
+        "each: the frames go through the supernodes",
+        Site(["hard-range"], version=N2N),
+        Site(["hard-range"]),
+        "relayed", sn_versions={"sn1": N2N}, tags=["interop", "n2n"]),
+    Scenario(
+        "interop-n2n-header-enc",
+        "encrypted headers, a of n2n 3.1.1",
+        Site(["easy-kept"], version=N2N), Site(["easy-changed"]),
+        "direct", auth="header", tags=["interop", "n2n"]),
     Scenario(
         "same-lan",
         "both sites use 192.168.1.0/24, the edges at the same address",

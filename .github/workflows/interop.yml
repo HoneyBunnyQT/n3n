@@ -2,9 +2,9 @@
 name: Interop
 
 # The netns scenarios tagged "interop": edges and supernodes of this tree
-# together with those of the last release of upstream n3n, see
-# tests/netns/versions.sh.  The older versions need a kernel with IPv6,
-# which the runners have.
+# together with those of the last release of upstream n3n, and of n2n
+# 3.1.1, see tests/netns/versions.sh.  The older n3n needs a kernel with
+# IPv6, which the runners have.
 
 # yamllint disable-line rule:truthy
 on:
@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   interop:
-    name: With n3n 3.4.6
+    name: With n3n 3.4.6 and n2n 3.1.1
     runs-on: ubuntu-latest
 
     steps:
@@ -28,7 +28,7 @@ jobs:
         run: |
           git fetch --force --tags
 
-      - name: Build this tree and the release
+      - name: Build this tree and the releases
         run: |
           sudo apt-get update
           sudo apt-get install -y nftables iproute2
@@ -37,6 +37,8 @@ jobs:
           make build-dep
           make -j4 all
           tests/netns/versions.sh build n3n-3.4.6 3.4.6
+          tests/netns/versions.sh build n2n-3.1.1 3.1.1 \
+            https://github.com/ntop/n2n
 
       - name: Interop scenarios
         run: |

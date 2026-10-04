@@ -182,8 +182,7 @@ tests and `make lint` pass after each.
       the supernode's configuration changes
 - [ ] Ideas to pick from (all v3 compatible): keep learned supernodes on disk;
       names for peers (DNS); IPv6 on the TAP device from a prefix derived
-      from the community; interop tests with n2n 3.x against n2n 3.x
-      and older n3n in the netns lab; epoll and batched I/O; no alloc per
+      from the community; epoll and batched I/O; no alloc per
       packet; fewer privileges (CAP_NET_ADMIN only, Landlock); packages for
       the single binary; tools init / tools qr
 - [x] TUN mode (layer 3 device): `tuntap.type = tun`, `src/tun.c`, netns
@@ -209,7 +208,11 @@ tests and `make lint` pass after each.
       supernodes (also with port guessing), a mixed federation, relayed,
       encrypted headers, user/password - all pass (in UML; 3.4.6 needs
       IPv6 in the kernel).  `tests/netns/versions.sh`, `interop.yml`.
-      Open: n2n 3.x (command line options, its own management interface)
+      And n2n 3.1.1 (IPv4 only): its edge, its supernodes, a mixed
+      federation, relayed, encrypted headers - all pass; the harness gives
+      n2n its command line and reads its UDP management interface.  Found:
+      n2n 3.1.1's `-F` leaves the federation's header key at the default
+      name's (its `N2N_FEDERATION` does not)
 - [x] Peers without a description on the edge's page: who a peer is comes
       only with its REGISTER, not with the ACK to ours; a peer lost and
       found again (idle, moved, restarted) came back by the ACK alone, and

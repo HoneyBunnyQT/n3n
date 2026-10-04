@@ -41,7 +41,8 @@ import time
 
 from . import nat
 from .lab import Lab, LabError, describe_exit, run, wait_for
-from .node import Edge, MgmtError, Supernode, stats_delta, write_conf
+from .node import (Edge, MgmtError, N2nEdge, N2nSupernode, Supernode,
+                   stats_delta, write_conf)
 
 INET_NET = "203.0.113.{}"
 INET_PREFIX = 24
@@ -258,7 +259,14 @@ VERSIONS = os.path.join(os.path.dirname(os.path.dirname(
 
 
 def version_built(version):
-    return os.path.exists(os.path.join(VERSIONS, version, "n3n-edge"))
+    return os.path.exists(os.path.join(VERSIONS, version, "n3n-edge")) \
+        or is_n2n(version)
+
+
+def is_n2n(version):
+    """Whether the version is one of n2n, which versions.sh built"""
+    return bool(version) and os.path.exists(
+        os.path.join(VERSIONS, version, "edge"))
 
 
 class Settings:
@@ -271,6 +279,8 @@ class Settings:
         if not version_built(version):
             raise LabError("version {} is not built: tests/netns/versions.sh "
                            "build {} REF".format(version, version))
+        if is_n2n(version):
+            name = {"n3n-edge": "edge", "n3n-supernode": "supernode"}[name]
         return os.path.join(self.versions, version, name)
 
     def __init__(self, topdir, workdir, register_interval=5, punch_ports=128,
@@ -347,8 +357,10 @@ class Run:
         lab = self.lab
         if self.sc.ipv6 and not os.path.exists("/proc/sys/net/ipv6"):
             raise LabError("this kernel has no IPv6 (see tests/netns/uml.sh)")
-        versioned = self.sc.sn_versions or any(
-            s.version for s in self.sc.sites.values())
+        # n2n has no IPv6 at all
+        versioned = [v for v in list(self.sc.sn_versions.values()) +
+                     [s.version for s in self.sc.sites.values()]
+                     if v and not is_n2n(v)]
         if versioned and not os.path.exists("/proc/sys/net/ipv6"):
             # 3.4.6 sends to IPv4 peers as IPv4-mapped IPv6 addresses
             raise LabError("this kernel has no IPv6, which older versions "
@@ -720,10 +732,11 @@ class Run:
                 sections[section] = [
                     (o, v) for o, v in sections[section] if o not in options
                 ] + list(options.items())
-            d = Supernode(self.lab, name, sn["ns"], self._session(name),
-                          self.st.binary("n3n-supernode",
-                                         self.sc.sn_versions.get(name)),
-                          sections, wrap=self.st.wrap)
+            version = self.sc.sn_versions.get(name)
+            d = (N2nSupernode if is_n2n(version) else Supernode)(
+                self.lab, name, sn["ns"], self._session(name),
+                self.st.binary("n3n-supernode", version),
+                sections, wrap=self.st.wrap)
             d.start()
             self._log_left_out(name, d)
             sn["daemon"] = d
@@ -816,10 +829,11 @@ class Run:
             if site.on_supernode:
                 e["registered_at"] = "{}:{}".format(e["ip"], SN_PORT)
                 continue
-            d = Edge(self.lab, "edge-" + sname, e["ns"], self._session(sname),
-                     self.st.binary("n3n-edge", site.version),
-                     self._edge_sections(sname, site, e),
-                     wrap=self.st.wrap, overlay_ip=e["overlay"], mac=e["mac"])
+            d = (N2nEdge if is_n2n(site.version) else Edge)(
+                self.lab, "edge-" + sname, e["ns"], self._session(sname),
+                self.st.binary("n3n-edge", site.version),
+                self._edge_sections(sname, site, e),
+                wrap=self.st.wrap, overlay_ip=e["overlay"], mac=e["mac"])
             d.start()
             self._log_left_out("edge " + sname, d)
             e["daemon"] = d

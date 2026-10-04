@@ -64,7 +64,7 @@ built.  An older version gets only the options it knows (from its `help
 config`; the run names those it left out), its NAT class is not checked,
 and with older supernodes neither is the edges'.  3.4.6 sends to IPv4
 peers as IPv4-mapped IPv6 addresses, so it needs a kernel with IPv6 (UML
-here, or the CI runners: `interop.yml`).
+here, or the CI runners: `interop.yml`).  n2n (below) needs no IPv6.
 
 | scenario | sites | expected |
 |----------|-------|----------|
@@ -76,8 +76,34 @@ here, or the CI runners: `interop.yml`).
 | interop-header-enc | encrypted headers, a 3.4.6, b easy-changed | direct |
 | interop-userpw | user/password, a and the supernodes 3.4.6 | direct |
 
-n2n 3.x is not among them yet: it takes command line options, not this
-configuration format, and its management interface is another one.
+#### n2n 3.x
+
+The scenarios tagged `n2n` (and `interop`) run n2n 3.1.1 along with this
+tree.  `versions.sh` builds it from n2n's repository:
+
+```
+tests/netns/versions.sh build n2n-3.1.1 3.1.1 https://github.com/ntop/n2n
+sudo tests/netns/run.py @n2n
+```
+
+n2n takes command line options: the harness gives it the same settings as
+those, and names the ones n2n has none for (the `n3ntestN-NAME.conf` in
+the scenario's log directory then holds its command line).  It talks to
+n2n's own management interface, the JSON rows over UDP on the loopback of
+the daemon's namespace (`n3ntest/n2nmgmt.py`); n2n reports no NAT class
+and knows no TCP.  n2n has no IPv6, so these scenarios need none either,
+and are all IPv4.  n2n 3.1.1 sets up the federation's header key before
+it reads its options: with `-F` alone its supernode would keep the key of
+the default name, and no other supernode would understand it.  The harness
+gives the name in `N2N_FEDERATION` instead, which gets into the key.
+
+| scenario | sites | expected |
+|----------|-------|----------|
+| interop-n2n-edge | a n2n (easy-kept) / b (easy-changed), supernodes of this tree | direct |
+| interop-n2n-sn | edges of this tree, both supernodes n2n | direct |
+| interop-n2n-fed | sn1 n2n, sn2 this tree; a n2n knows only sn1, b only sn2 | direct, across the mixed federation |
+| interop-n2n-relayed | hard-range / hard-range, a and sn1 n2n | relayed |
+| interop-n2n-header-enc | encrypted headers, a n2n, b easy-changed | direct |
 
 ### IPv6, in a kernel of its own
 
