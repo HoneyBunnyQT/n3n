@@ -379,7 +379,8 @@ static void section_supernode (strbuf_t **b, struct n3n_runtime_data *sss, bool 
                 "<dt>MAC</dt><dd class=mono>%s</dd>\n"
                 "<dt>Federation</dt><dd>",
                 macaddr_str(mac_buf, sss->conf.relay.sn_mac_addr));
-    html_text(b, sss->conf.relay.sn_federation, sizeof(sss->conf.relay.sn_federation));
+    // the federation's name is its key: hidden like an encrypted community's
+    community_name(b, sss->conf.relay.sn_federation, HEADER_ENCRYPTION_ENABLED, unlocked);
     sb_reprintf(b, "</dd>\n<dt>Serving</dt><dd>%d edge%s in %d communit%s</dd>\n</dl>\n",
                 edges, (edges == 1) ? "" : "s", communities, (communities == 1) ? "y" : "ies");
 
@@ -466,6 +467,10 @@ static bool any_hidden (struct n3n_runtime_data *edge, struct n3n_runtime_data *
         return true;
     }
     if(relay) {
+        // the federation's name, see section_supernode()
+        if(mgmt_name_hidden(HEADER_ENCRYPTION_ENABLED, false)) {
+            return true;
+        }
         HASH_ITER(hh, relay->relay.communities, comm, tmp) {
             if(!comm->is_federation && mgmt_name_hidden(comm->header_encryption, false)) {
                 return true;
@@ -515,10 +520,13 @@ void mgmt_page_render (strbuf_t **b, struct n3n_runtime_data *rt, struct n3n_run
                 "<p class=bad><b>The management password is still the default one</b>: "
                 "whoever can reach this page can stop n3n. "
                 "Set <code>management.password</code> in the configuration.</p>\n" : "",
-                unlocked ? "Unlocked: names of communities with header encryption are shown. " :
+                unlocked ? (relay ? "Unlocked: the federation's name and those of communities with header encryption are shown. " :
+                            "Unlocked: names of communities with header encryption are shown. ") :
                 any_hidden(edge, relay) ?
-                "Names of communities with header encryption show as " MGMT_NAME_HIDDEN
-                ": <a href=\"/unlock\">unlock</a> (the same password). " : "",
+                (relay ? "The federation's name and those of communities with header encryption show as "
+                 MGMT_NAME_HIDDEN ": <a href=\"/unlock\">unlock</a> (the same password). " :
+                 "Names of communities with header encryption show as "
+                 MGMT_NAME_HIDDEN ": <a href=\"/unlock\">unlock</a> (the same password). ") : "",
                 clock);
 
     if(edge) {

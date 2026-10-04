@@ -53,7 +53,8 @@ buttons for more and less, and a button to stop n3n.
 - Names of communities with header encryption show as `***`: with header
   encryption, the name is the key of the headers.  On a supernode this
   also goes for communities whose kind is not known yet (no edge of them
-  has registered).  The link *unlock* (`/unlock`) asks for the management
+  has registered).  The same goes for a supernode's federation name,
+  which is the key of the federation.  The link *unlock* (`/unlock`) asks for the management
   password and shows them; the browser then sends the password along, so
   the page stays unlocked as it refreshes.  The JsonRPC methods do the
   same, see Authentication below.
