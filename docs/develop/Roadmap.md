@@ -139,8 +139,15 @@ tests and `make lint` pass after each.
       netns scenarios `dual-stack`, `hard-hard-v6`, `v6-v4only`, in
       User-Mode Linux (`tests/netns/uml.sh`), which runs the integration
       tests too; the page and get_edges show the other address
-- [ ] Ideas to pick from (all v3 compatible): react to network changes and
-      wake-up (netlink, clock jumps); keep learned supernodes on disk;
+- [x] Network changes: the edge watches netlink (address, link, default
+      route) and wake-up (CLOCK_BOOTTIME), and registers again at once,
+      everywhere; a peer the supernode reports at another public address
+      while it is quiet has moved; Android tells the edge through
+      `n3n_edge_network_changed()`.  netns scenario `roam`: ~1s without a
+      frame instead of ~10s.  Open: `dual-stack` fails in UML now and then
+      (a few frames relayed when the measured flow starts, before this
+      work too: 3 of 6)
+- [ ] Ideas to pick from (all v3 compatible): keep learned supernodes on disk;
       names for peers (DNS); IPv6 on the TAP device from a prefix derived
       from the community; reload on SIGHUP; interop tests against n2n 3.x
       and older n3n in the netns lab; epoll and batched I/O; no alloc per
