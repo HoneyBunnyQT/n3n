@@ -115,7 +115,7 @@ static int decode_uint32 (uint32_t * out,
                           size_t * idx) {
 
     if(*rem >= 4) {
-        *out  = ( base[0 + *idx] & 0xff ) << 24;
+        *out  = (uint32_t)( base[0 + *idx] & 0xff ) << 24;
         *out |= ( base[1 + *idx] & 0xff ) << 16;
         *out |= ( base[2 + *idx] & 0xff ) << 8;
         *out |= ( base[3 + *idx] & 0xff );
