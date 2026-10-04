@@ -1213,7 +1213,15 @@ class Run:
 
     def measure(self):
         n = self.st.frames
+        # a trickle of frames while the counters are read, which can take
+        # seconds (n2n's, under UML): without it an edge may take its peer
+        # for idle, and send the first frames of the burst through the
+        # supernode while it finds it again
+        hold = [self.sender(s, d, FLOW_HOLD, 0, 10)
+                for s, d in self.sc.directions()]
         before = self.snapshot()
+        for p in hold:
+            p.stop()
         senders = {(s, d): self.sender(s, d, FLOW_MEAS, n, self.st.rate)
                    for s, d in self.sc.directions()}
         limit = 10 + 2 * n / self.st.rate
