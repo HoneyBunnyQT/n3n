@@ -201,7 +201,8 @@ int generic_check (
 static void *item_setup (const struct bench_item *item) {
     void *ctx;
     if(item->ctx_size) {
-        ctx = malloc(item->ctx_size);
+        // zeroed: a setup sets what it needs, and finds the rest empty
+        ctx = calloc(1, item->ctx_size);
         if(!ctx) {
             fprintf(stderr, "Malloc failure");
             exit(1);
