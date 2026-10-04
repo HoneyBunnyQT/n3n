@@ -182,7 +182,7 @@ tests and `make lint` pass after each.
       the supernode's configuration changes
 - [ ] Ideas to pick from (all v3 compatible): keep learned supernodes on disk;
       names for peers (DNS); IPv6 on the TAP device from a prefix derived
-      from the community; interop tests against n2n 3.x
+      from the community; interop tests with n2n 3.x against n2n 3.x
       and older n3n in the netns lab; epoll and batched I/O; no alloc per
       packet; fewer privileges (CAP_NET_ADMIN only, Landlock); packages for
       the single binary; tools init / tools qr
@@ -204,6 +204,12 @@ tests and `make lint` pass after each.
 - [ ] Integration test: a supernode with a TAP device next to plain edges
 - [ ] Run the netns NAT scenarios in CI (`make test.netns`)
 - [ ] Fuzzing of the PDU decoders (`wire.c`) and of header decryption
+- [x] Interop: netns scenarios with edges and supernodes of the last
+      release of upstream n3n (3.4.6) next to this tree: old edge, old
+      supernodes (also with port guessing), a mixed federation, relayed,
+      encrypted headers, user/password - all pass (in UML; 3.4.6 needs
+      IPv6 in the kernel).  `tests/netns/versions.sh`, `interop.yml`.
+      Open: n2n 3.x (command line options, its own management interface)
 - [x] ASan/UBSan in CI on every push (`sanitizers.yml`): unit, builtin,
       integration and netns tests, findings fatal.  Found and fixed:
       unaligned loads and stores (Speck SIMD, header encryption, memxor,
