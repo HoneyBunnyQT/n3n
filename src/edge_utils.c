@@ -49,6 +49,7 @@
 #include "management.h"              // for mgmt_event_post
 #include "n2n_wire.h"                // for fill_sockaddr, decod...
 #include "natclass.h"                // for nat_view_add, nat_view_reset, ...
+#include "netwatch.h"                // for netwatch_open, netwatch_close
 #include "role_client.h"
 #include "role_tap.h"
 #include "punch.h"                   // for punch_round, punch_note_rx, ...
@@ -495,8 +496,17 @@ int open_udp_sockets (struct n3n_runtime_data *eee) {
         set_sock_options(eee, eee->bind_sock[i], eee->bind_family[i], false);
     }
 
-    // the NAT maps new sockets anew; each family's samples are about the
-    // socket that sends to that family
+    // the NAT maps new sockets anew
+    edge_nat_reset(eee);
+    return 0;
+}
+
+
+/* Forget what the NAT was seen to do, as for new sockets or another
+ * network; each family's samples are about the socket that sends to that
+ * family */
+void edge_nat_reset (struct n3n_runtime_data *eee) {
+
     for(int f = 0; f < 2; f++) {
         int i = bind_entry_for_family(eee, f ? AF_INET6 : AF_INET);
         struct sockaddr_storage sa;
@@ -508,7 +518,6 @@ int open_udp_sockets (struct n3n_runtime_data *eee) {
         }
         nat_view_reset(&eee->client.nat[f], port);
     }
-    return 0;
 }
 
 
@@ -1444,6 +1453,7 @@ static void edge_register_ticks (struct n3n_runtime_data *rt) {
 #endif
     mainloop_register_tick_rt(edge_tick_dhcp, IFACE_UPDATE_INTERVAL, rt);
     mainloop_register_tick_rt(edge_tick_supernodes, 0, rt);
+    mainloop_register_tick_rt(edge_tick_network, 0, rt);
 }
 
 
@@ -1470,6 +1480,15 @@ int run_edge_loop (struct n3n_runtime_data *eee) {
 
     edge_register_ticks(NULL);
 
+    // changes of the host's network, but not of the edge's own device
+    eee->client.netwatch_fd = -1;
+    if(eee->conf.client.watch_network && !eee->conf.client.local_link) {
+        eee->client.netwatch_fd = netwatch_open(eee->tap.device.dev_name);
+        if(eee->client.netwatch_fd >= 0) {
+            mainloop_register_fd(eee->client.netwatch_fd, fd_info_proto_netwatch);
+        }
+    }
+
     /* Main loop
      *
      * select() is used to wait for input on either the TAP fd or the UDP/TCP
@@ -1479,6 +1498,12 @@ int run_edge_loop (struct n3n_runtime_data *eee) {
     mainloop_run(eee);
 
     edge_threads_stop(eee);
+
+    if(eee->client.netwatch_fd >= 0) {
+        mainloop_unregister_fd(eee->client.netwatch_fd);
+        netwatch_close(eee->client.netwatch_fd);
+        eee->client.netwatch_fd = -1;
+    }
 
     send_unregister_super(eee);
 
@@ -1882,6 +1907,7 @@ void edge_conf_role_defaults (n2n_edge_conf_t *conf) {
     conf->community.compression = N2N_COMPRESSION_ID_NONE;
     conf->client.allow_p2p = true;
     conf->client.local_discovery = true;
+    conf->client.watch_network = true;
     conf->client.tcp_fallback = true;
     conf->client.register_interval = REGISTER_SUPER_INTERVAL_DFL;
     conf->client.punch_ports = NAT_PUNCH_PORTS_DFL;

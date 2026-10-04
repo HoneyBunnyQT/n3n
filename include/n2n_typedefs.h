@@ -449,6 +449,7 @@ struct n3n_conf_client {
     bool local_link;                    /* the supernode is the one of this process, see local_link.h */
     bool allow_p2p;                                  /**< Allow P2P connection */
     bool local_discovery;                            /**< Look for peers on the local network by multicast */
+    bool watch_network;                              /**< Register again at once when the host's network changes, see netwatch.h */
     uint32_t register_interval;                      /**< Interval for supernode registration, also used for UDP NAT hole punching. */
     uint32_t register_ttl;                           /**< TTL for registration packet when UDP NAT hole punching through supernode. */
     uint32_t punch_ports;                            /**< ports to try per round towards a peer behind a hard NAT, 0: none */
@@ -711,6 +712,7 @@ struct n3n_rt_client {
 #ifndef SKIP_MULTICAST_PEERS_DISCOVERY
     int udp_multicast_sock_v4;                                           /**< socket for local IPv4 multicast registrations. */
     int udp_multicast_sock_v6;                                           /**< socket for local IPv6 multicast registrations. */
+    int netwatch_fd;                                                     /**< changes of the host's network, see netwatch.h; -1 for none */
     n3n_sock_t multicast_peer_v4;                                        /**< IPv4 multicast peer group (for local edges) */
     n3n_sock_t multicast_peer_v6;                                        /**< IPv6 multicast peer group (for local edges) */
 #endif

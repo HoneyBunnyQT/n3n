@@ -224,6 +224,19 @@ static struct n3n_conf_option section_connection[] = {
                 "carries multicast.",
     },
     {
+        .name = "watch_network",
+        .type = n3n_conf_bool,
+        .offset = offsetof(n2n_edge_conf_t, client.watch_network),
+        .desc = "Register again at once when the network changes",
+        .help = "Defaulting to true, the edge notices when an address, a "
+                "link or the default route of the host changes, or the host "
+                "wakes up from sleep, and then registers again at once, "
+                "with the supernode and with its peers, instead of at the "
+                "next round of registration.  Linux only, where it watches "
+                "netlink; an app embedding the edge can tell it with "
+                "n3n_edge_network_changed().",
+    },
+    {
         .name = "pmtu_discovery",
         .type = n3n_conf_bool,
         .offset = offsetof(n2n_edge_conf_t, pmtu_discovery),

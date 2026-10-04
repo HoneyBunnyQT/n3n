@@ -156,6 +156,14 @@ Defaulting to true, the edge sends its registration to a multicast group and lis
 
 Default: `true`
 
+### connection.watch_network
+
+Register again at once when the network changes.
+
+Defaulting to true, the edge notices when an address, a link or the default route of the host changes, or the host wakes up from sleep, and then registers again at once, with the supernode and with its peers, instead of at the next round of registration. Linux only, where it watches netlink; an app embedding the edge can tell it with n3n_edge_network_changed().
+
+Default: `true`
+
 ### connection.pmtu_discovery
 
 Control use of PMTU discovery for network packets.

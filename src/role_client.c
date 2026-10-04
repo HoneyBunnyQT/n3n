@@ -33,6 +33,7 @@
 #include "management.h"
 #include "n2n_wire.h"
 #include "natclass.h"
+#include "netwatch.h"
 #include "pearson.h"
 #include "punch.h"
 #include "role_client.h"
@@ -971,6 +972,111 @@ static void check_join_multicast_group (struct n3n_runtime_data *eee) {
         }
     }
 #endif
+}
+
+
+/* Leave the multicast groups, for check_join_multicast_group() to join
+ * them again on the interface the system picks now */
+static void leave_multicast_groups (struct n3n_runtime_data *eee) {
+
+#ifndef SKIP_MULTICAST_PEERS_DISCOVERY
+    if(eee->client.multicast_joined_v4) {
+        struct ip_mreq mreq;
+        mreq.imr_multiaddr.s_addr = inet_addr(N2N_MULTICAST_GROUP);
+        mreq.imr_interface.s_addr = htonl(INADDR_ANY);
+        setsockopt(eee->client.udp_multicast_sock_v4, IPPROTO_IP, IP_DROP_MEMBERSHIP, (char *)&mreq, sizeof(mreq));
+        eee->client.multicast_joined_v4 = false;
+    }
+    if(eee->client.multicast_joined_v6) {
+        struct ipv6_mreq mreq6;
+        inet_pton(AF_INET6, N3N_MULTICAST_GROUP_V6, &mreq6.ipv6mr_multiaddr);
+        mreq6.ipv6mr_interface = 0;
+        setsockopt(eee->client.udp_multicast_sock_v6, IPPROTO_IPV6, IPV6_DROP_MEMBERSHIP, (char *)&mreq6, sizeof(mreq6));
+        eee->client.multicast_joined_v6 = false;
+    }
+#endif
+}
+
+
+// What edge_network_change() noted (NETWATCH_*), and since when; the
+// former from any thread, the rest the main thread's
+static unsigned network_change_why;
+static time_t network_change_since;
+
+
+void edge_network_change (unsigned why) {
+
+    if(why) {
+        __atomic_or_fetch(&network_change_why, why, __ATOMIC_SEQ_CST);
+    }
+}
+
+
+/* The host's network changed: the addresses the edge is seen at - by the
+ * supernode, the NAT, its peers - may be others now.  Rather than waiting
+ * for the next round of registration (and the supernode's and the peers'
+ * timeouts), register again now, everywhere. */
+static void edge_network_changed (struct n3n_runtime_data *eee, unsigned why, time_t now) {
+
+    struct peer_info *peer, *tmp;
+    char buf[64];
+
+    traceEvent(TRACE_NORMAL, "the network changed (%s): registering again",
+               netwatch_str(why, buf, sizeof(buf)));
+
+    // a TCP connection to the supernode went with the old network
+    if(eee->client.tcp) {
+        supernode_disconnect(eee);
+        supernode_connect(eee);
+    }
+    // the NAT in front may be another one, or map anew
+    edge_nat_reset(eee);
+    // the multicast groups are joined anew, on today's interface
+    leave_multicast_groups(eee);
+    // names may resolve to other addresses on this network
+    eee->client.resolution_request = true;
+    // PINGs to all supernodes, and their round trips sorted anew
+    eee->client.last_sweep = 0;
+    // registered again with the next tick
+    reset_sup_attempts(eee);
+    eee->client.last_register_req = 0;
+    // the peers learn the edge's address afresh, as a new peer would: a
+    // REGISTER to the peer opens the way back through the edge's NAT, one
+    // through the supernode tells the peer the address it comes from now -
+    // the peer's NAT lets the edge's packets in only once the peer has
+    // sent to that address itself
+    if(!eee->conf.client.allow_p2p) {
+        return;
+    }
+    HASH_ITER(hh, eee->client.known_peers, peer, tmp) {
+        send_register(eee, &(peer->sock), peer->mac_addr, N2N_REGULAR_REG_COOKIE);
+        send_register(eee, &(eee->client.curr_sn->sock), peer->mac_addr, forwarded_reg_cookie(eee));
+    }
+}
+
+
+void edge_tick_network (struct n3n_runtime_data *eee, time_t now) {
+
+    unsigned why;
+
+    if(eee->conf.client.watch_network && netwatch_resumed()) {
+        edge_network_change(NETWATCH_RESUME);
+    }
+    if(!__atomic_load_n(&network_change_why, __ATOMIC_SEQ_CST)) {
+        return;
+    }
+    // a change comes in many messages (a link, its addresses, the routes):
+    // one reaction, a second after the first of them
+    if(!network_change_since) {
+        network_change_since = now;
+        return;
+    }
+    if(now - network_change_since < 1) {
+        return;
+    }
+    network_change_since = 0;
+    why = __atomic_exchange_n(&network_change_why, 0, __ATOMIC_SEQ_CST);
+    edge_network_changed(eee, why, now);
 }
 
 

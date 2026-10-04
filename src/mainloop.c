@@ -35,7 +35,9 @@
 #include "role_tap.h"           // for edge_read_from_tap_batch
 #include "edge_threads.h"       // for edge_threads_main_release, ...
 #include "management.h"         // for readFromMgmtSocket
+#include "netwatch.h"           // for netwatch_read
 #include "notify.h"             // for n3n_notify_tick
+#include "role_client.h"        // for edge_network_change
 #include "minmax.h"             // for min, max
 #include "portable_endian.h"    // for htobe16
 
@@ -114,6 +116,7 @@ static char *proto_str[] = {
     [fd_info_proto_http] = "http",
     [fd_info_proto_wakeup] = "wakeup",
     [fd_info_proto_listen_v3tcp] = "listen_v3tcp",
+    [fd_info_proto_netwatch] = "netwatch",
 };
 
 struct fd_info {
@@ -629,6 +632,11 @@ static void handle_fd (const time_t now, int slot, struct n3n_runtime_data *eee)
         case fd_info_proto_wakeup:
             // a packet thread queued something; the edge loop takes it
             // right after this loop iteration, see edge_threads_drain()
+            return;
+
+        case fd_info_proto_netwatch:
+            // acted on a little later, once all of a change came in
+            edge_network_change(netwatch_read(info.fd));
             return;
 
         case fd_info_proto_tuntap:

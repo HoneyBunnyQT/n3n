@@ -153,6 +153,7 @@ OBJS=\
 	src/qr_seal.o \
 	src/random_numbers.o \
 	src/resolve.o \
+	src/netwatch.o \
 	src/role_client.o \
 	src/role_tap.o \
 	src/sn_selection.o \

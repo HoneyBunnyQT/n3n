@@ -83,6 +83,7 @@ char* intoa (uint32_t /* host order */ addr, char* buf, uint16_t buf_len);
 
 // The tap device failed: open it again, after a pause
 void edge_tap_reopen (struct n3n_runtime_data *eee);
+void edge_nat_reset (struct n3n_runtime_data *eee);
 
 // The sockets of the edge, see also punch.h
 void set_sock_options (struct n3n_runtime_data *eee, SOCKET sock, int family, bool quiet);
