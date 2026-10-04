@@ -469,7 +469,7 @@ uint32_t bitlen2mask (uint8_t bitlen) {
     uint32_t mask = 0;
 
     for(i = 1; i <= bitlen; ++i) {
-        mask |= 1 << (32 - i);
+        mask |= 1u << (32 - i);
     }
 
     return mask;

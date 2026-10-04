@@ -139,8 +139,8 @@ const uint8_t multEF[] = { 0x00, 0xEF, 0xB7, 0x58, 0x07, 0xE8, 0xB0, 0x5F, 0x0E,
 #define b2(x) ((uint8_t)((x) >> 16))
 #define b3(x) ((uint8_t)((x) >> 24))
 
-#define U8ARRAY_TO_U32(r) ((r[0] << 24) ^ (r[1] << 16) ^ (r[2] << 8) ^ r[3])
-#define U8S_TO_U32(r0, r1, r2, r3) ((r0 << 24) ^ (r1 << 16) ^ (r2 << 8) ^ r3)
+#define U8ARRAY_TO_U32(r) (((uint32_t)r[0] << 24) ^ ((uint32_t)r[1] << 16) ^ ((uint32_t)r[2] << 8) ^ r[3])
+#define U8S_TO_U32(r0, r1, r2, r3) (((uint32_t)(r0) << 24) ^ ((uint32_t)(r1) << 16) ^ ((uint32_t)(r2) << 8) ^ (r3))
 
 
 // The block functions below work on blocks of TF_BLOCK_WORDS host-aligned 32-bit
@@ -310,19 +310,19 @@ void fullKey (uint32_t L[4], int k, uint32_t QF[4][256], uint8_t SB[4][256]) {
         SB[0][i] = y0; SB[1][i] = y1; SB[2][i] = y2; SB[3][i] = y3;
 
         // now do the partial MDS matrix multiplies
-        QF[0][i] = ((multEF[y0] << 24)
+        QF[0][i] = (((uint32_t)multEF[y0] << 24)
                     | (multEF[y0] << 16)
                     | (mult5B[y0] << 8)
                     | y0);
-        QF[1][i] = ((y1 << 24)
+        QF[1][i] = (((uint32_t)y1 << 24)
                     | (mult5B[y1] << 16)
                     | (multEF[y1] << 8)
                     | multEF[y1]);
-        QF[2][i] = ((multEF[y2] << 24)
+        QF[2][i] = (((uint32_t)multEF[y2] << 24)
                     | (y2 << 16)
                     | (multEF[y2] << 8)
                     | mult5B[y2]);
-        QF[3][i] = ((mult5B[y3] << 24)
+        QF[3][i] = (((uint32_t)mult5B[y3] << 24)
                     | (multEF[y3] << 16)
                     | (y3 << 8)
                     | mult5B[y3]);
