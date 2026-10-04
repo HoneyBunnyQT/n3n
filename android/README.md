@@ -83,9 +83,13 @@ configuration - what tells, after opening, that the PIN was right.  This
 keeps a code from saying what it is at a glance; it is no strong
 protection, a short PIN can be found by trying them all.
 
+When the phone changes networks - WiFi to mobile data, another WiFi, back -
+the app tells the edge (`n3n_edge_network_changed()`), which registers
+again at once, with the supernode and its peers, instead of with its next
+round, up to 20 seconds later; the log says "the phone's network changed".
+
 Limits for now: IPv4 only, one network at a time, no automatic addresses
-(`tuntap.address_mode = auto`), no reconnect when the phone changes
-networks other than through the edge's own re-registration.
+(`tuntap.address_mode = auto`).
 
 ## How it is put together
 

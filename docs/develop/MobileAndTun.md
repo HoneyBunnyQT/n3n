@@ -106,9 +106,11 @@ This is what hin2n, the Android app of n2n, does as well.
   directory.  The app reads the state with the management API over that
   socket (`get_info`, `get_edges`, `get_packetstats`), as `n3nctl` does.
 - **Network changes**: when the phone moves from WiFi to mobile data, the
-  sockets have to be opened anew and the edge has to register again; the
-  app gets told by Android (`ConnectivityManager`) and tells the edge, for
-  example with a management method `reconnect`.  The TCP fallback already
+  edge has to register again; the sockets, bound to `[::]` and protected,
+  stay.  The app gets told by Android (`ConnectivityManager`) and tells the
+  edge with `n3n_edge_network_changed()`, which registers again at once,
+  with the supernode and its peers (done; on Linux the edge watches
+  netlink itself, `connection.watch_network`).  The TCP fallback already
   covers networks that block UDP.
 - **Battery**: the registrations every `register_interval` keep the NAT
   mappings open, and they wake the phone.  A longer interval on mobile
@@ -152,9 +154,8 @@ with the phone (always-on VPN).
    `Android` workflow).
 4. Done in part: a minimal app in [android/](../../android/README.md):
    import a file or a QR code (camera or image), connect, disconnect, the
-   log.  Open: the
-   state (peers, supernode) from the management API, automatic addresses,
-   reconnecting on network changes.
+   log, the state (peers, supernode) from the management API, registering
+   again on network changes.  Open: automatic addresses.
 5. Then: several networks, always-on, a quick settings tile, per-app VPN,
    F-Droid (the app would be GPL-3.0 like n3n).
 

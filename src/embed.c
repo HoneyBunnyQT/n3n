@@ -21,6 +21,8 @@
 #include <string.h>
 #include "n2n.h"                // for edge_init, edge_tap_open, run_edge_loop, n3n_set_socket_hook
 #include "n2n_typedefs.h"
+#include "netwatch.h"           // for NETWATCH_EXTERNAL
+#include "role_client.h"        // for edge_network_change
 
 #ifdef __linux__
 
@@ -142,6 +144,16 @@ void n3n_edge_stop (void) {
     }
 }
 
+void n3n_edge_network_changed (void) {
+
+    edge_network_change(NETWATCH_EXTERNAL);
+    // the main loop acts on it with its next round, see edge_tick_network()
+    if(wake_pipe[1] >= 0) {
+        ssize_t r = write(wake_pipe[1], "x", 1);
+        (void)r;
+    }
+}
+
 #else
 
 int n3n_edge_run (const char *config, int tun_fd, const struct n3n_embed *e) {
@@ -149,6 +161,9 @@ int n3n_edge_run (const char *config, int tun_fd, const struct n3n_embed *e) {
 }
 
 void n3n_edge_stop (void) {
+}
+
+void n3n_edge_network_changed (void) {
 }
 
 #endif

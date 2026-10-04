@@ -45,4 +45,11 @@ int n3n_edge_run (const char *config, int tun_fd, const struct n3n_embed *e);
 // Stop the edge that n3n_edge_run() runs, from any thread
 void n3n_edge_stop (void);
 
+// The host's network changed (another WiFi, mobile data, back): the edge
+// registers again at once, with the supernode and its peers, instead of at
+// its next round.  For an app that hears of it from the system - as on
+// Android, where an app may not watch netlink itself; on Linux the edge
+// notices on its own (connection.watch_network).  From any thread.
+void n3n_edge_network_changed (void);
+
 #endif

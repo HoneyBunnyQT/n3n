@@ -170,6 +170,13 @@ Java_dev_n3n_android_N3nVpnService_nativeStop (JNIEnv *env, jobject service) {
 }
 
 
+JNIEXPORT void JNICALL
+Java_dev_n3n_android_N3nVpnService_nativeNetworkChanged (JNIEnv *env, jobject service) {
+
+    n3n_edge_network_changed();
+}
+
+
 // Seal: QR codes sealed with a PIN, see src/qr_seal.c
 
 JNIEXPORT jstring JNICALL

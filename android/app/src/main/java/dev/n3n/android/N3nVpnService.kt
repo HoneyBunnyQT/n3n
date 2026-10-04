@@ -10,6 +10,11 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.LinkProperties
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.VpnService
 import android.os.Build
 import android.os.Handler
@@ -69,6 +74,82 @@ class N3nVpnService : VpnService() {
 
     private external fun nativeRun(config: String, tunFd: Int, rundir: String): Int
     private external fun nativeStop()
+    private external fun nativeNetworkChanged()
+
+    /* The networks the phone has (WiFi, mobile data) changed: the edge
+     * registers again at once, rather than with its next round - an app may
+     * not watch netlink, as the edge does on Linux by itself.  Any change
+     * counts - a network comes or goes, its addresses change - as the
+     * phone may move its traffic to another one while the first stays (back
+     * to WiFi, mobile data kept as a backup); a few too many cost one
+     * registration each, and the core takes a burst of them as one. */
+    private var watching: ConnectivityManager.NetworkCallback? = null
+    private val networks = HashMap<Network, List<String>>()
+    private var watchingSince = 0L
+
+    private fun watchNetwork() {
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                main.post { networkIs(network, cm.getLinkProperties(network), "network") }
+            }
+
+            override fun onLinkPropertiesChanged(network: Network, lp: LinkProperties) {
+                main.post { networkIs(network, lp, "addresses") }
+            }
+
+            override fun onLost(network: Network) {
+                main.post {
+                    if (networks.remove(network) != null) {
+                        changed("network lost")
+                    }
+                }
+            }
+        }
+        // the networks the phone could use, not this VPN itself
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+            .build()
+        try {
+            watchingSince = System.currentTimeMillis()
+            cm.registerNetworkCallback(request, callback)
+            watching = callback
+        } catch (e: RuntimeException) {
+            addLog("cannot watch the network: ${e.message}")
+        }
+    }
+
+    // main thread
+    private fun networkIs(network: Network, lp: LinkProperties?, why: String) {
+        val addresses = lp?.linkAddresses?.map { it.toString() }?.sorted() ?: emptyList()
+        if (networks[network] == addresses) {
+            return
+        }
+        networks[network] = addresses
+        changed(why)
+    }
+
+    private fun changed(why: String) {
+        // what the registration itself tells about the networks there are
+        if (System.currentTimeMillis() - watchingSince < 2000) {
+            return
+        }
+        if (edge != null && !stopping) {
+            addLog("the phone's network changed ($why)")
+            nativeNetworkChanged()
+        }
+    }
+
+    private fun unwatchNetwork() {
+        val callback = watching ?: return
+        watching = null
+        networks.clear()
+        try {
+            getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(callback)
+        } catch (e: RuntimeException) {
+        }
+    }
 
     /** From the native code, for every line of the edge's log */
     @Suppress("unused")
@@ -165,6 +246,9 @@ class N3nVpnService : VpnService() {
         }, "n3n-edge")
         edge = thread
         thread.start()
+        if (watching == null) {
+            watchNetwork()
+        }
         return true
     }
 
@@ -178,6 +262,7 @@ class N3nVpnService : VpnService() {
             return
         }
         running = false
+        unwatchNetwork()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -201,6 +286,7 @@ class N3nVpnService : VpnService() {
     }
 
     override fun onDestroy() {
+        unwatchNetwork()
         // the edge's thread outlives this object; it is told to stop, if
         // nothing waits to follow it
         if (edge != null && next == null) {
