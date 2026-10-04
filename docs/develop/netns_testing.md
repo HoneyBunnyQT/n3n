@@ -41,7 +41,10 @@ sudo tests/netns/run.py --cleanup   # namespaces left by a killed run
 `make test` runs it through sudo unless make runs as root already, and
 prints `SKIP` instead if something it needs is missing.  Several scenarios
 run at once (`-j`, 4 by default): the quick ones take about half a minute,
-all of them a minute and a half.
+all of them a few minutes (the outage ones run 90 seconds without
+supernodes).  The scenarios tagged `limits` show what n3n cannot do (yet):
+they fail, and a run without names leaves them out (`run.py @limits` runs
+them).
 
 ### IPv6, in a kernel of its own
 
@@ -145,6 +148,13 @@ router behind a carrier NAT.  The block of hard-range ends at a multiple of
 | tcp-only | easy-kept with its supernodes as `tcp://` only (`tcp_only`) / public | relayed, a over TCP from the start |
 | tun-tap | easy-kept with `tuntap.type=tun` / easy-changed with a TAP device | direct, the TUN edge building the frames |
 | tun-tun | hard-range / hard-range, both with `tuntap.type=tun` | relayed |
+| sn-outage | easy-kept / easy-changed; both supernodes killed while frames flow both ways, for 90s (longer than the registrations live) | direct throughout, the longest gap each way at most 3s |
+| sn-outage-idle | as sn-outage, the frames stopping for 40s 10s into it | direct again at once (gap at most 3s): the edges keep their idle peers while no supernode answers |
+| sn-outage-roam | as sn-outage, easy-kept / easy-kept, b moving to another network 10s into it (limits) | fails: with no supernode to tell a b's new address, a's NAT keeps b out |
+| sn-outage-restart | as sn-outage, easy-kept / easy-kept, b's edge restarting 10s into it (limits) | fails: b drops all PACKETs until a supernode has answered it |
+| mtu-1280 | easy-kept / easy-kept with a 1280 byte link, frames of 1200 bytes | direct, the packets fragmented |
+| mtu-1280-nofrag | as mtu-1280, b's router dropping fragments (limits) | fails one way: b's large packets do not get out |
+| mtu-1280-df | as mtu-1280, with connection.pmtu_discovery (limits) | fails: the large packets are refused ("Message too long") instead of fragmented |
 
 An edge connected over TCP does not learn how its NAT maps it, so the NAT
 class of tcp-tcp and tcp-udp is not checked for those edges (`expect_nat` of
@@ -152,6 +162,12 @@ a `Site`).  A `Site(block_udp=True)` drops the UDP its edge sends out of
 `eth0` (but DNS), as some airport networks do: the scenario then checks that
 the edge is on TCP (`transport` of `get_info`), and with `unblock_udp` of
 the `Scenario` lets UDP through again and waits for the edge to go back.
+`Site(link_mtu=1280)` gives the site's lan link (the edge's `eth0` and its
+router's side) that MTU, and `drop_fragments` has its router drop IPv4
+fragments before reassembly, as some firewalls do; `size` of a `Scenario`
+sets the size of its frames.  `outage` of a `Scenario` kills all
+supernodes after the warm-up, `outage_then` names what happens 10 seconds
+into it (`("roam", site)`, `("restart", site)`, `("idle", seconds)`).
 `sn_tcp_port` of a `Scenario` has the supernodes take TCP on that port only
 (`bind = udp://... tcp://...`) and gives the edges `tcp://` entries for it;
 `Site(tcp_only=True)` gives that edge only `tcp://` entries.  `sn_conf` of a `Scenario` sets options of the supernodes.
@@ -192,6 +208,10 @@ To keep runs short, the edges use `connection.register_interval=5` and
    - `roam:` (roam) whether the edges are direct again after the move,
      and each way the longest time without a frame of the flow that ran
      across it
+   - `outage:` (sn-outage...) each way the longest time without a frame of
+     the flow that ran while the supernodes were gone; with a pause in it
+     (sn-outage-idle), of the flow after the pause, counting from its first
+     frame sent
    - `moves:` (dual-stack) with a trickle of frames each way for 4 more
      rounds of registration, how often each edge moved its peer to
      another address ("peer ... changed" in its log): at most once

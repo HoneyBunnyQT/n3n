@@ -189,6 +189,59 @@ SCENARIOS = [
         conf={"connection": {"register_interval": 20,
                              "watch_network": False}}),
     Scenario(
+        "sn-outage",
+        "both supernodes die while the edges are direct: the edges go on "
+        "talking directly, for longer than their registrations live",
+        Site(["easy-kept"]),
+        Site(["easy-changed"]),
+        "direct", outage=True, outage_max_gap=3.0),
+    Scenario(
+        "sn-outage-idle",
+        "as sn-outage, and 10s into it the frames stop for 40s: the edges "
+        "find each other again without a supernode",
+        Site(["easy-kept"]),
+        Site(["easy-changed"]),
+        "direct", outage=True, outage_then=("idle", 40), outage_max_gap=3.0),
+    Scenario(
+        "sn-outage-roam",
+        "as sn-outage, and 10s into it b moves to another network: with no "
+        "supernode to tell a b's new address, a's NAT keeps b out",
+        Site(["easy-kept"]),
+        Site(["easy-kept"]),
+        "direct", outage=True, outage_then=("roam", "b"), roam="b",
+        tags=["limits"]),
+    Scenario(
+        "sn-outage-restart",
+        "as sn-outage, and 10s into it b's edge restarts: it knows of no "
+        "peer, and none of the supernodes it would ask",
+        Site(["easy-kept"]),
+        Site(["easy-kept"]),
+        "direct", outage=True, outage_then=("restart", "b"),
+        tags=["limits"]),
+    Scenario(
+        "mtu-1280",
+        "b's link takes 1280 bytes (as PPPoE or a mobile network may), the "
+        "frames are 1200: the packets between the edges get fragmented, "
+        "and arrive",
+        Site(["easy-kept"]),
+        Site(["easy-kept"], link_mtu=1280),
+        "direct", size=1200),
+    Scenario(
+        "mtu-1280-nofrag",
+        "as mtu-1280, and b's router drops fragments, as some firewalls do: "
+        "large frames do not get through",
+        Site(["easy-kept"]),
+        Site(["easy-kept"], link_mtu=1280, drop_fragments=True),
+        "direct", size=1200, tags=["limits"]),
+    Scenario(
+        "mtu-1280-df",
+        "as mtu-1280, with connection.pmtu_discovery: the edges send with "
+        "DF, and what is too large gets dropped instead of fragmented",
+        Site(["easy-kept"]),
+        Site(["easy-kept"], link_mtu=1280),
+        "direct", size=1200, tags=["limits"],
+        conf={"connection": {"pmtu_discovery": True}}),
+    Scenario(
         "same-lan",
         "both sites use 192.168.1.0/24, the edges at the same address",
         Site(["easy-kept"], lan="192.168.1.0/24"),
@@ -331,10 +384,11 @@ BY_NAME = {s.name: s for s in SCENARIOS}
 
 
 def select(patterns):
-    """Scenarios by name, fnmatch pattern or @tag; all for none"""
+    """Scenarios by name, fnmatch pattern or @tag; for none all but those
+    tagged limits, which show what n3n cannot do (yet), and fail"""
     import fnmatch
     if not patterns:
-        return list(SCENARIOS)
+        return [s for s in SCENARIOS if "limits" not in s.tags]
     out = []
     for pat in patterns:
         if pat.startswith("@"):

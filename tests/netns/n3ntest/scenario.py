@@ -66,9 +66,21 @@ PASSWORD = "nettest-password"
 FLOW_WARM = 1
 FLOW_MEAS = 2
 FLOW_HOLD = 3
-FLOW_ROAM = 4
+FLOW_ROAM = 4       # across a move or an outage
+FLOW_IDLE = 5       # after a pause in an outage
 # seconds of frames after the move, see Scenario.roam
 ROAM_WATCH = 30
+# and after the supernodes are gone, see Scenario.outage: longer than
+# REGISTRATION_TIMEOUT (60s) and a purge round (30s)
+OUTAGE_WATCH = 90
+# what drops IPv4 fragments, before the defragmentation of conntrack
+NOFRAG = """table ip nofrag {
+    chain pre {
+        type filter hook prerouting priority -450; policy accept;
+        ip frag-off & 0x3fff != 0 counter drop
+    }
+}
+"""
 
 TRAFFIC_PY = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                           "traffic.py")
@@ -106,8 +118,16 @@ class Site:
 
     def __init__(self, nat=(), lan=None, supernodes=("sn1", "sn2"),
                  conf=None, expect_nat=None, on_supernode=None,
-                 block_udp=False, tcp_only=False, sn_family=4, no_ipv6=False):
+                 block_udp=False, tcp_only=False, sn_family=4, no_ipv6=False,
+                 link_mtu=None, drop_fragments=False):
         self.on_supernode = on_supernode
+        # the MTU of the link between the edge and its (innermost) router,
+        # as of a PPPoE or mobile link: larger packets get fragmented, or,
+        # with DF, dropped with an ICMP "fragmentation needed"
+        self.link_mtu = link_mtu
+        # the router drops IPv4 fragments, as some firewalls do: a path
+        # that takes no packet larger than its MTU at all
+        self.drop_fragments = drop_fragments
         # with Scenario(ipv6=True): this site has IPv4 only all the same
         self.no_ipv6 = no_ipv6
         # the address family the edge knows its supernodes by: 4, 6, or
@@ -132,7 +152,9 @@ class Scenario:
                  sn_conf=None, auth=None, community_conf=False,
                  unblock_udp=False, sn_tcp_port=None, gateway=None,
                  ipv6=False, max_moves=None, delay6=None, sn_block6=False,
-                 roam=None, roam_max_gap=None, roam_direct=True):
+                 roam=None, roam_max_gap=None, roam_direct=True,
+                 size=None, outage=False, outage_then=None,
+                 outage_max_gap=None):
         self.name = name
         self.desc = desc
         self.sites = {"a": a, "b": b}
@@ -183,6 +205,19 @@ class Scenario:
         self.roam_max_gap = roam_max_gap
         # whether the edges have to be direct again within ROAM_WATCH
         self.roam_direct = roam_direct
+        # The size of the test frames' UDP payload, instead of --size
+        self.size = size
+        # After the warm-up, all supernodes are killed while frames flow
+        # both ways for OUTAGE_WATCH seconds; outage_then is what happens
+        # 10s into it: ("roam", site) moves the edge to its other network
+        # (roam must name it too), ("restart", site) restarts the edge,
+        # ("idle", seconds) stops the frames for that long, then sends
+        # again: the longest gap then counts from the first one sent again.
+        # The longest gap each way should be at most outage_max_gap seconds
+        # (None: reported only).
+        self.outage = outage
+        self.outage_then = outage_then
+        self.outage_max_gap = outage_max_gap
 
     def directions(self):
         return {
@@ -389,6 +424,12 @@ class Run:
             ip = up_net.format(2)
             lab.addr(ns, "eth0", "{}/24".format(ip))
             lab.route(ns, "default", up_net.format(1))
+            if site.link_mtu:
+                for n, dev in ((up_ns, up_if), (ns, "eth0")):
+                    run(["ip", "-n", n, "link", "set", dev, "mtu",
+                         str(site.link_mtu)])
+            if site.drop_fragments:
+                lab.nft(up_ns, NOFRAG, sname + "-nofrag")
             if self.sc.ipv6 and not site.no_ipv6:
                 lab.addr(up_ns, up_if, "{}/64".format(
                     SITE6_NET.format(i + 1, "1")), nodad=True)
@@ -443,43 +484,106 @@ class Run:
         run(["ip", "-n", e["ns"], "route", "replace", "default",
              "via", e["roam_gw"]])
 
+    def span_flows(self, flow=FLOW_ROAM):
+        """A flow each way, across what comes, see check_span()"""
+        self.span_flow = flow
+        self.span = {(s, d): self.sender(s, d, flow, 0, 20)
+                     for s, d in self.sc.directions()}
+        time.sleep(4)
+
+    def span_end(self):
+        for p in self.span.values():
+            p.stop()
+
     def roam_phase(self):
         """Frames both ways while an edge moves to another network: how
         long each way goes without, and whether the edges are direct again
         after"""
-        self.roam_flows = {(s, d): self.sender(s, d, FLOW_ROAM, 0, 20)
-                           for s, d in self.sc.directions()}
-        time.sleep(4)
+        self.span_flows()
         self.log("moving the edge of {} to another network".format(
             self.sc.roam))
         self.roam_switch(self.sc.roam)
         # long enough for a round of registration (20s by default) and
         # more: what goes missing shows as the longest gap
         time.sleep(ROAM_WATCH)
-        for p in self.roam_flows.values():
-            p.stop()
+        self.span_end()
         direct = all(m == "p2p" for m in self.modes().values())
         self.check("roam:path", direct or not self.sc.roam_direct,
                    "{} {}s after the move".format(
                        self._modes_str(self.modes()), ROAM_WATCH))
 
-    def check_roam(self, received):
+    def restart_edge(self, sname):
+        """Stop an edge and start it again, with its log in a file of its
+        own"""
+        d = self.edges[sname]["daemon"]
+        d.proc.stop()
+        d.name += "-again"
+        d.start()
+        d.wait_mgmt()
+        # its TAP device is a new one: the neighbours again (with the
+        # supernodes gone, ARP, a broadcast, would not get through).  An
+        # edge opens it after its PINGs to the supernodes, 3 rounds of 3s
+        # when none answers.
+        ns = self.edges[sname]["ns"]
+        t = time.monotonic()
+        up = wait_for(lambda: "n3n0" in run(["ip", "-n", ns, "link", "show"],
+                                            check=False), 30)
+        self.log("edge {} restarted, its TAP {} after {:.1f}s".format(
+            sname, "up" if up else "still missing", time.monotonic() - t))
+        self.set_neighbours(sname)
+
+    def outage_phase(self):
+        """Frames both ways while all supernodes are gone"""
+        self.span_flows()
+        self.log("killing all supernodes")
+        for name, sn in self.supernodes.items():
+            sn["daemon"].proc.stop(sig=signal.SIGKILL)
+            self.killed.add(name)
+        then = self.sc.outage_then
+        if then and then[0] == "idle":
+            time.sleep(10)
+            self.span_end()
+            self.log("no frames for {}s".format(then[1]))
+            time.sleep(then[1])
+            self.log("frames again, the supernodes still gone")
+            self.span_flows(FLOW_IDLE)
+            time.sleep(OUTAGE_WATCH - 10 - then[1])
+        elif then:
+            time.sleep(10)
+            what, sname = then
+            self.log("{} of {}, the supernodes still gone".format(what, sname))
+            if what == "roam":
+                self.roam_switch(sname)
+            elif what == "restart":
+                self.restart_edge(sname)
+            time.sleep(OUTAGE_WATCH - 10)
+        else:
+            time.sleep(OUTAGE_WATCH)
+        self.span_end()
+        self.log("after {}s without supernodes: {}".format(
+            OUTAGE_WATCH, self._modes_str(self.modes())))
+
+    def check_span(self, received, tag, max_gap):
+        """The longest time without a frame each way, across a move or an
+        outage; max_gap None: reported only"""
         gaps = {}
         for (src, dst) in self.sc.directions():
-            f = received.get(dst, {}).get(str(FLOW_ROAM), {})
-            sent = self._read_json(self.roam_flows[(src, dst)].out.name)
-            # between two frames, or from the last one to the end of the
-            # flow, when none came any more
+            f = received.get(dst, {}).get(str(self.span_flow), {})
+            sent = self._read_json(self.span[(src, dst)].out.name)
+            # between two frames, from the first one sent to the first
+            # one in, or from the last one to the end of the flow, when
+            # none came any more
+            s_first, s_last = sent.get("first", 0), sent.get("last", 0)
             gap = max(f.get("gap_max_ms", 0) / 1000.0,
-                      sent.get("last", 0) - f.get("last", 0))
+                      f.get("first", s_last) - s_first,
+                      s_last - f.get("last", s_first))
             gaps["{}->{}".format(src, dst)] = round(gap, 1)
-            ok = bool(f) and gap <= self.sc.roam_max_gap
-            self.check("roam:{}->{}".format(src, dst), ok,
-                       "{} frames, longest gap {:.1f}s{}".format(
-                           f.get("unique", 0), gap,
-                           "" if ok else " (more than {}s)".format(
-                               self.sc.roam_max_gap)))
-        self.result["roam_gaps"] = gaps
+            ok = bool(f) and (max_gap is None or gap <= max_gap)
+            self.check("{}:{}->{}".format(tag, src, dst), ok,
+                       "{} of {} frames, longest gap {:.1f}s{}".format(
+                           f.get("unique", 0), sent.get("sent", 0), gap,
+                           "" if ok else " (more than {}s)".format(max_gap)))
+        self.result[tag + "_gaps"] = gaps
 
     def _delay6(self, ns, dev, ms):
         """Delay the IPv6 packets leaving through dev by ms milliseconds"""
@@ -692,17 +796,20 @@ class Run:
             "{} at {}".format(s, e["registered_at"])
             for s, e in sorted(self.edges.items())))
 
-        # The peers' MACs are known up front: no ARP frames in the counts.
-        # A TUN device has no neighbours: there the edge finds the MACs.
-        for sname, e in self.edges.items():
-            if self.sc.sites[sname].conf.get("tuntap", {}).get("type") \
-                    == "tun":
-                continue
-            for oname, o in self.edges.items():
-                if oname != sname:
-                    run(["ip", "-n", e["ns"], "neigh", "replace",
-                         o["overlay"], "lladdr", o["mac"], "dev", "n3n0",
-                         "nud", "permanent"])
+        for sname in self.edges:
+            self.set_neighbours(sname)
+
+    def set_neighbours(self, sname):
+        """The peers' MACs are known up front: no ARP frames in the counts.
+        A TUN device has no neighbours: there the edge finds the MACs."""
+        e = self.edges[sname]
+        if self.sc.sites[sname].conf.get("tuntap", {}).get("type") == "tun":
+            return
+        for oname, o in self.edges.items():
+            if oname != sname:
+                run(["ip", "-n", e["ns"], "neigh", "replace",
+                     o["overlay"], "lladdr", o["mac"], "dev", "n3n0",
+                     "nud", "permanent"])
 
     def daemons(self):
         """The daemons started, less the ones killed on purpose"""
@@ -771,7 +878,8 @@ class Run:
              "--src", s["overlay"],
              "--to", "{}:{}".format(d["overlay"], TRAFFIC_PORT),
              "--flow", str(flow), "--count", str(count),
-             "--rate", str(rate), "--size", str(self.st.size)],
+             "--rate", str(rate), "--size",
+             str(self.sc.size or self.st.size)],
             stdout_path=os.path.join(self.workdir, name + ".json"))
 
     def modes(self):
@@ -1087,7 +1195,9 @@ class Run:
             self.wait_nat_classes(timeout=45)
             if self.check_alive("nat classification"):
                 self.warm_up()
-            if self.sc.roam and self.check_alive("warm-up"):
+            if self.sc.outage and self.check_alive("warm-up"):
+                self.outage_phase()
+            elif self.sc.roam and self.check_alive("warm-up"):
                 self.roam_phase()
             if self.sc.failover and self.check_alive("warm-up"):
                 self.failover()
@@ -1095,8 +1205,11 @@ class Run:
                 n, sent, deltas, modes = self.measure()
                 received = self.stop_receivers()
                 self.evaluate(n, sent, deltas, modes, received)
-                if self.sc.roam:
-                    self.check_roam(received)
+                if self.sc.outage:
+                    self.check_span(received, "outage",
+                                    self.sc.outage_max_gap)
+                elif self.sc.roam:
+                    self.check_span(received, "roam", self.sc.roam_max_gap)
                 self.check_alive("measurement")
             if self.sc.gateway and self.check_alive("measurement"):
                 self.check_gateway()
