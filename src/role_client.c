@@ -915,6 +915,24 @@ void check_known_peer_sock_change (struct n3n_runtime_data *eee,
             peer_info_free(scan);
 
             register_with_new_peer(eee, from_supernode, via_multicast, mac, dev_addr, dev_desc, peer);
+        } else if((peer->family == scan->sock.family)
+                  && (peer_way_rank(peer) < 3) && (peer_way_rank(&scan->sock) < 3)
+                  && (when - scan->last_p2p >= 1)) {
+            /* What the supernode reports can be another socket than the one
+             * the peer reaches us from - its LAN address, the other family,
+             * another port of a NAT that maps each destination anew - which
+             * is no reason to move the peer.  But a public address of the
+             * same family, while nothing comes from the peer directly, says
+             * it moved to another network: its old address goes stale, so
+             * that the next packet from the new one moves it at once, and a
+             * REGISTER there opens the way through our NAT for the peer's
+             * packets, which it lets in only from where we sent to. */
+            traceEvent(TRACE_INFO, "peer %s seems to have moved [%s] -> [%s]",
+                       macaddr_str(mac_buf, scan->mac_addr),
+                       sock_to_cstr(sockbuf1, &(scan->sock)),
+                       sock_to_cstr(sockbuf2, peer));
+            scan->last_seen = 0;
+            send_register(eee, peer, scan->mac_addr, N2N_REGULAR_REG_COOKIE);
         } else {
             /* Don't worry about what the supernode reports, it could be seeing a different socket. */
         }
