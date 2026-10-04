@@ -18,7 +18,6 @@
 #include <stdint.h>
 #include <stdlib.h>             // for calloc, realloc, free, abort
 #include <string.h>             // for memmove, memset, strerror
-#include <strings.h>            // for strncasecmp
 
 #ifndef _WIN32
 #include <sys/select.h>         // for select, FD_ZERO,
@@ -477,38 +476,6 @@ static void fdlist_freefd (int fd) {
 
 // Close the socket of a slot, and its connection if it has one, and forget
 // the slot
-// Whether an http client wants the connection closed after the reply:
-// HTTP/1.0 does unless it asks to keep it alive (lynx reads to the end of
-// the connection), and any with "Connection: close"
-static bool http_close_after (const char *req) {
-
-    const char *eol = strstr(req, "\r\n");
-    const char *end = strstr(req, "\r\n\r\n");
-    bool close = eol && (eol - req >= 8) && !strncmp(eol - 8, "HTTP/1.0", 8);
-
-    if(!strncmp(req, "GET /events/", 12)) {
-        // a subscription stays, see event_subscribe()
-        return false;
-    }
-
-    for(const char *p = eol; p && end && (p < end); p = strstr(p + 2, "\r\n")) {
-        if(strncasecmp(p + 2, "Connection:", 11)) {
-            continue;
-        }
-        const char *v = p + 13;
-        while(*v == ' ') {
-            v++;
-        }
-        if(!strncasecmp(v, "close", 5)) {
-            close = true;
-        } else if(!strncasecmp(v, "keep-alive", 10)) {
-            close = false;
-        }
-    }
-    return close;
-}
-
-
 static void fdlist_close_slot (int slot) {
     int fd = fdlist[slot].fd;
     int connnr = fdlist[slot].connnr;
@@ -810,8 +777,7 @@ static void handle_fd (const time_t now, int slot, struct n3n_runtime_data *eee)
                     return;
 
                 case CONN_READY: {
-                    bool close_after = http_close_after(conn->request->str);
-                    mgmt_api_handler(eee, conn);
+                    bool close_after = mgmt_api_handler(eee, conn);
                     if(conn->reply_sendpos == 0) {
                         // Looks like we have finished a write, so we can clean up
                         sb_zero(conn->request);
