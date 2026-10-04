@@ -269,6 +269,12 @@ while `peer` keeps getting what does not touch the wire, merged into
 
 - [ ] Peer identity: a Curve25519 key per peer, node ID = hash of the
       public key (`auth.c` has the curve already)
+- [ ] Who a peer is (name, address, description) in its signed record,
+      sent with every answer that makes it known - not only with one of
+      the messages, as v3's REGISTER, where an edge that knows a peer by
+      the ACK alone has to remember it on the side (`peer_who` in
+      `role_client.c`, a workaround: the description came late to n2n,
+      in REGISTER only).  A negative example to keep in mind
 - [ ] Encryption between each pair of peers: X25519 handshake, then
       ChaCha20-Poly1305 or AES-GCM, replay window per peer, rekeying.  A
       prerequisite for letting any peer relay
