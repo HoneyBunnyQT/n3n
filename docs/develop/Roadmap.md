@@ -210,6 +210,14 @@ tests and `make lint` pass after each.
       encrypted headers, user/password - all pass (in UML; 3.4.6 needs
       IPv6 in the kernel).  `tests/netns/versions.sh`, `interop.yml`.
       Open: n2n 3.x (command line options, its own management interface)
+- [x] Peers without a description on the edge's page: who a peer is comes
+      only with its REGISTER, not with the ACK to ours; a peer lost and
+      found again (idle, moved, restarted) came back by the ACK alone, and
+      a moved one twice (one entry by its old address).  Now the edge keeps
+      what REGISTERs told by MAC, answers a REGISTER from a peer it knows
+      with one of its own, and keeps one entry per MAC.  netns checks
+      `description:` and `description after:`.  The federation's name (its
+      key) shows on the management page only when unlocked
 - [x] ASan/UBSan in CI on every push (`sanitizers.yml`): unit, builtin,
       integration and netns tests, findings fatal.  Found and fixed:
       unaligned loads and stores (Speck SIMD, header encryption, memxor,

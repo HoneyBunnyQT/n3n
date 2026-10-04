@@ -239,6 +239,8 @@ To keep runs short, the edges use `connection.register_interval=5` and
    other as `p2p` in `get_edges` (within `--connect-timeout`, 90 seconds)
    - or, for the relayed ones, that they do not for 4 rounds of
    registration
+   - `description:` direct, each edge lists the other with its
+   description (from the other's REGISTER, an edge of this tree only)
 3. a counted burst, 500 frames each way at 200 per second (`--frames`,
    `--rate`, `--size`), then:
    - `frames:` all arrived, give or take `--loss` (1 percent)
@@ -248,6 +250,10 @@ To keep runs short, the edges use `connection.register_interval=5` and
    - `relay:supernodes:` the supernodes' `sn_fwd` counted next to none
      of them (direct), or all of them (relayed)
    - `path:after:` the edges are still on the path they should be
+   - `description after:` the edges still list each other with their
+     descriptions: also after an edge lost its peer and found it again
+     (idle, moved, restarted), when only the ACK to its REGISTER may
+     come back, which tells nothing of who the peer is
    - `roam:` (roam) whether the edges are direct again after the move,
      and each way the longest time without a frame of the flow that ran
      across it

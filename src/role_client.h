@@ -55,6 +55,10 @@ void check_known_peer_sock_change (struct n3n_runtime_data *eee,
 void send_unregister_super (struct n3n_runtime_data *eee);
 void sort_supernodes (struct n3n_runtime_data *eee, time_t now);
 int check_query_peer_info (struct n3n_runtime_data *eee, time_t now, const n2n_mac_t mac);
+// who the peers are, by MAC (see role_client.c): forget those gone for
+// long, and all
+void peer_who_purge (struct n3n_runtime_data *eee, time_t now);
+void peer_who_clear (struct n3n_runtime_data *eee);
 int query_peer_fast (struct n3n_runtime_data *eee, time_t now, const n2n_mac_t mac);
 
 // The handlers of the control messages, on the main thread

@@ -579,6 +579,79 @@ static void register_with_local_peers (struct n3n_runtime_data * eee) {
 }
 
 
+// Who a peer is - its description and address - comes with its REGISTER
+// only, not with the ACK to one of ours.  A peer the edge loses and finds
+// again (gone idle, moved, a packet ahead of its registration) may come
+// back by an ACK alone: what its REGISTERs told is kept here, by MAC
+static void peer_who_learn (struct n3n_runtime_data *eee, const n2n_mac_t mac,
+                            const n2n_ip_subnet_t *dev_addr, const n2n_desc_t *dev_desc, time_t now) {
+
+    struct peer_info *who;
+
+    HASH_FIND_PEER(eee->client.peer_who, mac, who);
+    if(!who) {
+        if(HASH_COUNT(eee->client.peer_who) >= PEER_WHO_MAX) {
+            return;
+        }
+        who = peer_info_malloc(mac);
+        if(!who) {
+            return;
+        }
+        HASH_ADD_PEER(eee->client.peer_who, who);
+    }
+    if(dev_addr) {
+        who->dev_addr = *dev_addr;
+    }
+    memcpy(who->dev_desc, dev_desc, N2N_DESC_SIZE);
+    who->last_seen = now;
+}
+
+
+// What a peer's REGISTERs told, where its entry does not know it
+static void peer_who_fill (struct n3n_runtime_data *eee, struct peer_info *peer) {
+
+    struct peer_info *who;
+
+    HASH_FIND_PEER(eee->client.peer_who, peer->mac_addr, who);
+    if(!who) {
+        return;
+    }
+    if(peer->dev_addr.net_addr == 0) {
+        peer->dev_addr = who->dev_addr;
+    }
+    if(!peer->dev_desc[0]) {
+        memcpy(peer->dev_desc, who->dev_desc, N2N_DESC_SIZE);
+    }
+}
+
+
+void peer_who_purge (struct n3n_runtime_data *eee, time_t now) {
+
+    struct peer_info *who, *tmp, *known;
+
+    HASH_ITER(hh, eee->client.peer_who, who, tmp) {
+        HASH_FIND_PEER(eee->client.known_peers, who->mac_addr, known);
+        if(known) {
+            who->last_seen = now;
+        } else if((now - who->last_seen) > PEER_WHO_KEEP) {
+            HASH_DEL(eee->client.peer_who, who);
+            peer_info_free(who);
+        }
+    }
+}
+
+
+void peer_who_clear (struct n3n_runtime_data *eee) {
+
+    struct peer_info *who, *tmp;
+
+    HASH_ITER(hh, eee->client.peer_who, who, tmp) {
+        HASH_DEL(eee->client.peer_who, who);
+        peer_info_free(who);
+    }
+}
+
+
 /** Start the registration process.
  *
  *    If the peer is already in pending_peers, ignore the request.
@@ -696,6 +769,10 @@ void check_peer_registration_needed (struct n3n_runtime_data *eee,
 
     struct peer_info *scan;
 
+    if(dev_desc) {
+        peer_who_learn(eee, mac, dev_addr, dev_desc, time(NULL));
+    }
+
     HASH_FIND_PEER(eee->client.known_peers, mac, scan);
 
     /* If we were not able to find it by MAC, we try to find it by socket. */
@@ -718,6 +795,24 @@ void check_peer_registration_needed (struct n3n_runtime_data *eee,
     } else {
         /* Already in known_peers. */
         time_t now = time(NULL);
+
+        // who the peer is, from its REGISTER: also for a peer that became
+        // known by the ACK to ours before its own REGISTER came
+        if(dev_addr != NULL) {
+            memcpy(&(scan->dev_addr), dev_addr, sizeof(n2n_ip_subnet_t));
+        }
+        if(dev_desc) memcpy(scan->dev_desc, dev_desc, N2N_DESC_SIZE);
+
+        // A REGISTER from a peer we know already: it takes us for new, as
+        // after its restart or when it lost us.  It learns who we are (our
+        // description and address) only from a REGISTER of ours, the ACK
+        // tells nothing of it: one back, at most one a round, so that two
+        // edges answering each other end there
+        if(dev_desc && eee->conf.client.allow_p2p
+           && ((now - scan->last_reg_back) >= eee->conf.client.register_interval)) {
+            scan->last_reg_back = now;
+            send_register(eee, &(scan->sock), mac, N2N_REGULAR_REG_COOKIE);
+        }
 
         if(!from_supernode)
             scan->last_p2p = now;
@@ -757,13 +852,24 @@ static void peer_set_p2p_confirmed (struct n3n_runtime_data * eee,
     }
 
     if(scan) {
+        bool same_sock = false;
+
         HASH_DEL(eee->client.pending_peers, scan);
 
-        scan_tmp = find_peer_by_sock(peer, eee->client.known_peers);
+        // the peer may be known already, at another address: as when it
+        // moved, and a PEER_INFO had it pending anew - one entry for it,
+        // the known one, which knows who it is
+        HASH_FIND_PEER(eee->client.known_peers, mac, scan_tmp);
+        if(scan_tmp == NULL) {
+            scan_tmp = find_peer_by_sock(peer, eee->client.known_peers);
+            same_sock = (scan_tmp != NULL);
+        }
         if(scan_tmp != NULL) {
             HASH_DEL(eee->client.known_peers, scan_tmp);
             free(scan);
             scan = scan_tmp;
+        }
+        if(same_sock) {
             memcpy(scan->mac_addr, mac, sizeof(n2n_mac_t));
             // in case of MAC change, reset cookie to allow immediate re-registration
             scan->last_cookie = N2N_NO_REG_COOKIE;
@@ -782,6 +888,7 @@ static void peer_set_p2p_confirmed (struct n3n_runtime_data * eee,
             }
         }
 
+        peer_who_fill(eee, scan);
         HASH_ADD_PEER(eee->client.known_peers, scan);
         scan->last_p2p = now;
         mgmt_event_post(N3N_EVENT_PEER,N3N_EVENT_PEER_P2P_ADD,scan);

@@ -1368,6 +1368,7 @@ static void edge_tick_purge (struct n3n_runtime_data *eee, time_t now) {
         numPurged = purge_peer_list(&eee->client.known_peers, eee->sock, NULL, now - REGISTRATION_TIMEOUT);
     }
     numPurged += purge_peer_list(&eee->client.pending_peers, eee->sock, NULL, now - REGISTRATION_TIMEOUT);
+    peer_who_purge(eee, now);
 
     if(numPurged > 0) {
         traceEvent(
@@ -1734,6 +1735,7 @@ void edge_term (struct n3n_runtime_data * eee) {
     clear_peer_list(&eee->client.pending_peers);
     clear_peer_list(&eee->client.known_peers);
     clear_peer_list(&eee->client.supernodes);
+    peer_who_clear(eee);
 
 #ifdef HAVE_BRIDGING_SUPPORT
     if(eee->conf.tap.allow_routing) {

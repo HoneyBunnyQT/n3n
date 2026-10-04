@@ -956,6 +956,31 @@ class Run:
             out[(src, dst)] = mode
         return out
 
+    def check_descriptions(self, name="description"):
+        """A direct peer shows with its description, whichever of the two
+        REGISTERs got through first, and keeps it when it moves"""
+        pairs = [(s, d) for s, d in self.sc.directions()
+                 if "daemon" in self.edges[s]
+                 and not self.sc.sites[s].version]
+        if not pairs:
+            return
+
+        def descs():
+            out = {}
+            for s, d in pairs:
+                mode, row = self.edges[s]["daemon"].peer(self.edges[d]["mac"])
+                if mode == "p2p":
+                    out[(s, d)] = row.get("desc", "")
+            return out
+        wait_for(lambda: all(descs().values()), 5, interval=0.5)
+        got = descs()
+        if not got:
+            return
+        empty = ["{}->{}".format(s, d) for (s, d), v in got.items() if not v]
+        self.check(name, not empty,
+                   "peers show their descriptions" if not empty else
+                   "no description for " + ", ".join(empty))
+
     def warm_up(self):
         warm = [self.sender(s, d, FLOW_WARM, 0, 10)
                 for s, d in self.sc.directions()]
@@ -977,6 +1002,8 @@ class Run:
                        if ok else
                        "still {} {}s after the edges started".format(
                            self._modes_str(modes), took))
+            if ok:
+                self.check_descriptions()
             # Let a few frames go the new way before measuring
             time.sleep(1)
         else:
@@ -1339,7 +1366,8 @@ class Run:
                                     self.sc.outage_max_gap)
                 elif self.sc.roam:
                     self.check_span(received, "roam", self.sc.roam_max_gap)
-                self.check_alive("measurement")
+                if self.check_alive("measurement"):
+                    self.check_descriptions("description after")
             if self.sc.gateway and self.check_alive("measurement"):
                 self.check_gateway()
             if self.sc.max_moves is not None:

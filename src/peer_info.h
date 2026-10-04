@@ -42,6 +42,7 @@ struct peer_info {
     time_t last_seen;
     time_t last_p2p;
     time_t last_sent_query;
+    time_t last_reg_back;   /* an edge's peer: when we last registered back, see check_peer_registration_needed() */
     time_t time_alloc;
     uint64_t selection_criterion;
     uint64_t last_valid_time_stamp;

@@ -720,6 +720,7 @@ struct n3n_rt_client {
     struct peer_info *supernodes;                                        /**< List of supernodes */
     struct peer_info *               known_peers;                        /**< Edges we are connected to. */
     struct peer_info *               pending_peers;                      /**< Edges we have tried to register with. */
+    struct peer_info *               peer_who;                           /**< Who the edges are: description and address by MAC, from their REGISTERs, see peer_who_fill() */
 
     time_t last_register_req;                                            /**< Check if time to re-register with super*/
     time_t last_p2p;                                                     /**< Last time p2p traffic was received. */

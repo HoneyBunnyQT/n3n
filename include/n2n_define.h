@@ -32,6 +32,8 @@
 #define PURGE_REGISTRATION_FREQUENCY     30
 #define RE_REG_AND_PURGE_FREQUENCY       10
 #define REGISTRATION_TIMEOUT             60
+#define PEER_WHO_KEEP                    3600 /* sec an edge keeps who a peer was (description, address) after it left */
+#define PEER_WHO_MAX                     4096 /* peers an edge keeps that for at most */
 
 #define SOCKET_TIMEOUT_INTERVAL_SECS     10
 #define REGISTER_SUPER_INTERVAL_DFL      20 /* sec, usually UDP NAT entries in a firewall expire after 30 seconds */
