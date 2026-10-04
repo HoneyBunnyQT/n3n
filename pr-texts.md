@@ -33,20 +33,16 @@ E - Description:
 
 ## 2. PR 165 - comment, then close
 
-> Fair point. I'll close this one and split it into three PRs with one
-> topic each: the peer table purge (#142), the edge startup issues, and a
-> small leak fix.
+> Fair point. I'll close this one and split it: one PR for the edge startup
+> issues, one for a small leak fix. The purge of small peer tables I'm
+> dropping: I had missed that keeping them is intentional (#142, #143).
 
-## 3. New: purge small peer tables
+## 3. (dropped) purge small peer tables
 
-C: https://github.com/n42n/n3n/compare/main...HoneyBunnyQT:n3n:pr/peer-purge
-
-Title: **Purge expired peers also from tables of fewer than 16**
-
-> `purge_peer_list()` returned straight away for fewer than 16 peers, so a
-> supernode with a small community never forgot an edge that had gone, and
-> kept sending it the community's broadcasts; edges kept gone peers just the
-> same (#142). New unit test `tests-peers`.
+Not opened: Hamish considers the `< 16` rule intentional, and #143
+(Sugarfarmeriod, earlier than ours) already covers the topic, now going
+for removing peers after terminal send errors instead.  The branch
+pr/peer-purge stays, unused; the fork (peer) keeps the purge.
 
 ## 4. New: edge startup
 
