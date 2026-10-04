@@ -189,6 +189,15 @@ SCENARIOS = [
         conf={"connection": {"register_interval": 20,
                              "watch_network": False}}),
     Scenario(
+        "reload",
+        "easy-kept / easy-changed; a's configuration loses the supernode a "
+        "is at and gets another description, then a gets SIGHUP: it "
+        "applies both while it runs, moves to the other supernode, and "
+        "the edges stay direct",
+        Site(["easy-kept"]),
+        Site(["easy-changed"]),
+        "direct", reload="a"),
+    Scenario(
         "sn-outage",
         "both supernodes die while the edges are direct: the edges go on "
         "talking directly, for longer than their registrations live",

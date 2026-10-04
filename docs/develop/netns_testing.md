@@ -148,6 +148,7 @@ router behind a carrier NAT.  The block of hard-range ends at a multiple of
 | tcp-only | easy-kept with its supernodes as `tcp://` only (`tcp_only`) / public | relayed, a over TCP from the start |
 | tun-tap | easy-kept with `tuntap.type=tun` / easy-changed with a TAP device | direct, the TUN edge building the frames |
 | tun-tun | hard-range / hard-range, both with `tuntap.type=tun` | relayed |
+| reload | easy-kept / easy-changed; a's configuration loses the supernode a is at and gets another description, then SIGHUP | a applies both while it runs and moves to the other supernode; direct |
 | sn-outage | easy-kept / easy-changed; both supernodes killed while frames flow both ways, for 90s (longer than the registrations live) | direct throughout, the longest gap each way at most 3s |
 | sn-outage-idle | as sn-outage, the frames stopping for 40s 10s into it | direct again at once (gap at most 3s): the edges keep their idle peers while no supernode answers |
 | sn-outage-roam | as sn-outage, easy-kept / easy-kept, b moving to another network 10s into it (limits) | fails: with no supernode to tell a b's new address, a's NAT keeps b out |
@@ -163,6 +164,8 @@ a `Site`).  A `Site(block_udp=True)` drops the UDP its edge sends out of
 `eth0` (but DNS), as some airport networks do: the scenario then checks that
 the edge is on TCP (`transport` of `get_info`), and with `unblock_udp` of
 the `Scenario` lets UDP through again and waits for the edge to go back.
+`reload` of a `Scenario` names the site whose edge gets a changed
+configuration file and SIGHUP after the warm-up (the check `reload:`).
 `Site(link_mtu=1280)` gives the site's lan link (the edge's `eth0` and its
 router's side) that MTU, and `drop_fragments` has its router drop IPv4
 fragments before reassembly, as some firewalls do; `size` of a `Scenario`

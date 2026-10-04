@@ -41,7 +41,7 @@ import time
 
 from . import nat
 from .lab import Lab, LabError, describe_exit, run, wait_for
-from .node import Edge, MgmtError, Supernode, stats_delta
+from .node import Edge, MgmtError, Supernode, stats_delta, write_conf
 
 INET_NET = "203.0.113.{}"
 INET_PREFIX = 24
@@ -154,7 +154,7 @@ class Scenario:
                  ipv6=False, max_moves=None, delay6=None, sn_block6=False,
                  roam=None, roam_max_gap=None, roam_direct=True,
                  size=None, outage=False, outage_then=None,
-                 outage_max_gap=None):
+                 outage_max_gap=None, reload=None):
         self.name = name
         self.desc = desc
         self.sites = {"a": a, "b": b}
@@ -218,6 +218,11 @@ class Scenario:
         self.outage = outage
         self.outage_then = outage_then
         self.outage_max_gap = outage_max_gap
+        # After the warm-up, the configuration of this site's edge loses
+        # the supernode it is registered at and gets another description,
+        # and the edge gets SIGHUP: it should apply both while it runs,
+        # and move to the other supernode
+        self.reload = reload
 
     def directions(self):
         return {
@@ -980,6 +985,58 @@ class Run:
     def check_alive_quiet(self):
         return all(d.proc.alive() for _, d in self.daemons())
 
+    def reload_phase(self):
+        """Change an edge's configuration file, SIGHUP it: it drops the
+        supernode it is at, and moves to the other one"""
+        site = self.sc.reload
+        d = self.edges[site]["daemon"]
+        at = d.current_supernode() or ""
+        victim = None
+        for name, sn in self.supernodes.items():
+            if at.startswith(sn["ip"] + ":"):
+                victim = name
+        if not victim:
+            return self.check("reload", False,
+                              "edge {} is at no known supernode ({!r})"
+                              .format(site, at))
+        ip = self.supernodes[victim]["ip"] + ":"
+        for section, options in d.sections.items():
+            d.sections[section] = [
+                (o, v) for o, v in options
+                if not (o == "supernode" and v.split("//")[-1].startswith(ip))
+                and o != "description"]
+        d.sections.setdefault("connection", []).append(
+            ("description", site + "-reloaded"))
+        write_conf(d.conf, d.sections)
+        self.log("{}: without {} in its configuration, SIGHUP".format(
+            site, victim))
+        d.proc.send_signal(signal.SIGHUP)
+        t = time.monotonic()
+
+        def moved():
+            if not self.check_alive_quiet():
+                return "dead"
+            now = d.current_supernode() or ip
+            if now.startswith(ip) or not d.registered():
+                return None
+            return "ok"
+        ok = wait_for(moved, 30 + 2 * self.st.register_interval,
+                      interval=0.5) == "ok"
+        took = round(time.monotonic() - t, 1)
+        try:
+            with open(d.proc.log_path, errors="replace") as f:
+                log = f.read()
+        except OSError:
+            log = ""
+        applied = "applied: community.supernode, connection.description" in log
+        self.check("reload", ok and applied,
+                   "{} at {} after {}s, {}".format(
+                       site, d.current_supernode(), took,
+                       "both options applied" if applied
+                       else "no \"applied\" line in its log"))
+        # A round of registrations for the peers to find each other again
+        time.sleep(self.st.register_interval + 1)
+
     def failover(self):
         """Kill the supernode an edge is at, wait for the edges to move"""
         site = self.sc.failover
@@ -1201,6 +1258,8 @@ class Run:
                 self.roam_phase()
             if self.sc.failover and self.check_alive("warm-up"):
                 self.failover()
+            if self.sc.reload and self.check_alive("warm-up"):
+                self.reload_phase()
             if self.check_alive("warm-up"):
                 n, sent, deltas, modes = self.measure()
                 received = self.stop_receivers()
