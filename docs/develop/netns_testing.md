@@ -151,7 +151,8 @@ router behind a carrier NAT.  The block of hard-range ends at a multiple of
 | sn-outage | easy-kept / easy-changed; both supernodes killed while frames flow both ways, for 90s (longer than the registrations live) | direct throughout, the longest gap each way at most 3s |
 | sn-outage-idle | as sn-outage, the frames stopping for 40s 10s into it | direct again at once (gap at most 3s): the edges keep their idle peers while no supernode answers |
 | sn-outage-roam | as sn-outage, easy-kept / easy-kept, b moving to another network 10s into it (limits) | fails: with no supernode to tell a b's new address, a's NAT keeps b out |
-| sn-outage-restart | as sn-outage, easy-kept / easy-kept, b's edge restarting 10s into it (limits) | fails: b drops all PACKETs until a supernode has answered it |
+| sn-outage-restart | as sn-outage, easy-kept / easy-kept, b's edge restarting 10s into it | direct again once b's device is up, the longest gap each way at most 20s |
+| sn-outage-restart-userpw | as sn-outage-restart, with user/password authentication (limits) | fails: b waits for a supernode to vouch for it |
 | mtu-1280 | easy-kept / easy-kept with a 1280 byte link, frames of 1200 bytes | direct, the packets fragmented |
 | mtu-1280-nofrag | as mtu-1280, b's router dropping fragments (limits) | fails one way: b's large packets do not get out |
 | mtu-1280-df | as mtu-1280, with connection.pmtu_discovery (limits) | fails: the large packets are refused ("Message too long") instead of fragmented |

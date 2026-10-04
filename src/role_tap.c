@@ -168,6 +168,28 @@ static int tap_write_device (struct n3n_runtime_data *eee, uint8_t *buf, int len
 }
 
 
+// Whether frames may pass between the device and the peers.  Once a
+// supernode answered; before that too once the device is open, unless the
+// supernode has to vouch for the edge first (user/password: it gives out
+// the header keys).  So an edge restarted while no supernode answers
+// rejoins the peers that still know it ("half-cold rejoin").
+static bool frames_may_pass (struct n3n_runtime_data *eee) {
+
+    if(SHARED_LOAD(eee->client.last_sup)) {
+        return true;
+    }
+    if(eee->conf.shared_secret) {
+        return false;
+    }
+#ifdef _WIN32
+    return (eee->tap.device.device_handle != NULL)
+           && (eee->tap.device.device_handle != INVALID_HANDLE_VALUE);
+#else
+    return eee->tap.device.fd > 0;
+#endif
+}
+
+
 // A frame for the device: as it is to a TAP device, its IP packet to a TUN
 // device, see tun.c
 static int tap_write (struct n3n_runtime_data *eee, uint8_t *buf, int len) {
@@ -844,7 +866,7 @@ static int edge_tap_take (struct n3n_runtime_data * eee,
         return 1;
     }
 
-    if(!SHARED_LOAD(eee->client.last_sup)) {
+    if(!frames_may_pass(eee)) {
         // drop packets before first registration with supernode
         traceEvent(TRACE_DEBUG, "DROP packet before first registration with supernode");
         return 1;
@@ -1061,7 +1083,7 @@ void edge_rx_packet (struct n3n_runtime_data *eee, struct pdu_ctx *c) {
         }
     }
 
-    if(!SHARED_LOAD(eee->client.last_sup)) {
+    if(!frames_may_pass(eee)) {
         // drop packets received before first registration with supernode
         traceEvent(TRACE_DEBUG, "dropped PACKET recevied before first registration with supernode");
         return;

@@ -213,11 +213,20 @@ SCENARIOS = [
     Scenario(
         "sn-outage-restart",
         "as sn-outage, and 10s into it b's edge restarts: it knows of no "
-        "peer, and none of the supernodes it would ask",
+        "peer, and no supernode answers - a, which still knows b, gets it "
+        "back (the gap counts the restart, ~10s without supernodes)",
         Site(["easy-kept"]),
         Site(["easy-kept"]),
         "direct", outage=True, outage_then=("restart", "b"),
-        tags=["limits"]),
+        outage_max_gap=20.0),
+    Scenario(
+        "sn-outage-restart-userpw",
+        "as sn-outage-restart, with user/password authentication: b waits "
+        "for a supernode to vouch for it, and stays apart",
+        Site(["easy-kept"]),
+        Site(["easy-kept"]),
+        "direct", outage=True, outage_then=("restart", "b"),
+        auth="userpw", tags=["limits"]),
     Scenario(
         "mtu-1280",
         "b's link takes 1280 bytes (as PPPoE or a mobile network may), the "

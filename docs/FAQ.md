@@ -67,6 +67,19 @@ Yes, there is. Please [read](configure/Federation.md) about how several
 supernodes can form a Federation to increase network resilience.
 
 
+### What happens when all supernodes are down?
+
+Edges that reach each other directly go on doing so: an edge stays on UDP
+while it hears its peers there (no TCP fallback then), and keeps a peer at
+its last address, sending it REGISTERs that keep the NATs open, until a
+supernode answers again.  An edge that starts while none answers carries
+on after about ten seconds of PINGs, and takes frames from the peers that
+still know it - unless the community uses user/password authentication,
+where the edge waits for a supernode to let it in.  What needs a
+supernode stays out: edges that have not met yet, and an edge that moved
+to another network behind a NAT.
+
+
 ### Can a supernode listen on multiple ports?
 
 Yes: `connection.bind` takes several addresses, separated by spaces, for
