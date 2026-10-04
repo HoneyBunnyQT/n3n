@@ -130,6 +130,15 @@ tests and `make lint` pass after each.
       fixed, also on `fixes`
 - [x] systemd: Type=notify units (ready, status line, watchdog,
       stopping), without libsystemd and only when NOTIFY_SOCKET is set
+- [x] IPv4 and IPv6: a peer stays at its address while it answers there,
+      ranked LAN > IPv6 > IPv4; each address of a supernode is an entry of
+      its own; the edge registers its address of the other family too, and
+      the supernode tells each peer the address of a family both have
+      (`N3N_REG_SUPER_OTHER_FAMILY`, v3 compatible); selection counts IPv4
+      half again, the current supernode by round trip a quarter less.
+      netns scenarios `dual-stack`, `hard-hard-v6`, `v6-v4only`, in
+      User-Mode Linux (`tests/netns/uml.sh`), which runs the integration
+      tests too.  Open: the other address on the management page
 - [ ] Ideas to pick from (all v3 compatible): react to network changes and
       wake-up (netlink, clock jumps); keep learned supernodes on disk;
       names for peers (DNS); IPv6 on the TAP device from a prefix derived
@@ -267,6 +276,14 @@ while `peer` keeps getting what does not touch the wire, merged into
   the branch `peer-v4` off `peer` (see "Later: the peer protocol").
 - 2026-10-01: Roles are chosen at run time; leaving the relay code out of a
   build is an option for later, decided in one place.
+- 2026-10-04: `fixes` takes real bugs that upstream has too - no features,
+  nothing of the fork's own.  Porting them onto upstream's code is no
+  effort we spend for now: upstream can cherry-pick, or we do it later.
+- 2026-10-04: PRs for upstream: one topic each, the project's conventions
+  as they are (a .gitignore per directory, comments as in the sibling
+  files, explicit names over wildcards), and a look at the existing
+  issues and PRs on a topic first.  The fork keeps purging peer tables of
+  any size (upstream keeps tables of fewer than 16 on purpose, #142).
 
 ## Scratchpad
 
