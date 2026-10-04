@@ -24,6 +24,11 @@ they should for their NATs.
 
 ## Running
 
+CI runs all the scenarios on every push (`netns.yml`; the runners' kernel
+has IPv6), but those tagged `limits`, and the interop ones with the other
+versions built (`interop.yml`); `sanitizers.yml` runs them with the
+sanitizers built in.  A failed run uploads the logs of the scenarios.
+
 It needs root (namespaces, TAP devices, nftables), iproute2, nft and
 `/dev/net/tun`, and Python 3 without further modules.
 

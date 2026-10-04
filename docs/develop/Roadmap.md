@@ -201,7 +201,8 @@ tests and `make lint` pass after each.
       whose roles share one config
 - [ ] Unit tests for the parts that become shared (send layer, `pdu_in`)
 - [ ] Integration test: a supernode with a TAP device next to plain edges
-- [ ] Run the netns NAT scenarios in CI (`make test.netns`)
+- [x] Run the netns NAT scenarios in CI: all of them on every push
+      (`netns.yml`), plain build
 - [ ] Fuzzing of the PDU decoders (`wire.c`) and of header decryption
 - [x] Interop: netns scenarios with edges and supernodes of the last
       release of upstream n3n (3.4.6) next to this tree: old edge, old

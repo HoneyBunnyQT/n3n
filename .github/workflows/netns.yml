@@ -1,0 +1,52 @@
+---
+name: netns
+
+# On every push: all the netns scenarios (docs/develop/netns_testing.md) -
+# edges and supernodes behind NATs of several kinds, failovers, outages,
+# roaming, reloads, IPv6 - with a plain build, as it ships.  All but those
+# tagged "limits", which fail on purpose, and the interop ones, which
+# interop.yml runs with the other versions built.  The runners' kernel has
+# IPv6, so no UML is needed here.
+
+# yamllint disable-line rule:truthy
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  netns:
+    name: All scenarios
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Fix Checkout
+        run: |
+          git fetch --force --tags
+
+      - name: Build
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nftables iproute2
+          ./autogen.sh
+          ./configure
+          make build-dep
+          ./configure --enable-pthread
+          make -j4 all
+
+      - name: netns scenarios
+        run: |
+          sudo python3 tests/netns/run.py --skip-missing -j 4
+
+      - if: ${{ failure() }}
+        name: Upload the logs
+        uses: actions/upload-artifact@v6
+        with:
+          name: netns
+          path: tests/netns/out
