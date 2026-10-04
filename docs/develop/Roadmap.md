@@ -185,8 +185,9 @@ tests and `make lint` pass after each.
       core, built from `src/` by the NDK, CI artifact; import a file or a
       QR code (`tools/n3n-qr`), connect, log.  Open: state view, auto addresses, network
       changes, IPv6
-- [ ] `n3n-edge help transform`: list the ciphers and compressions built in,
-      with the implementation of each (says "Not implemented" so far)
+- [x] `n3n-edge help transform`: lists the ciphers and compressions built
+      in, with the implementation of each (`*_IMPL` in `src/crypto/*.h`,
+      `desc` of the transforms); also on `fixes`
 - [ ] `-O` on the command line for an instance (`-O "community home.key=x"`)
 - [ ] The edge reading the community file (the first entry), for a peer
       whose roles share one config
