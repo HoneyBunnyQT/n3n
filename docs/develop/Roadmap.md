@@ -316,6 +316,13 @@ while `peer` keeps getting what does not touch the wire, merged into
   issues and PRs on a topic first.  The fork keeps purging peer tables of
   any size (upstream keeps tables of fewer than 16 on purpose, #142).
 
+- 2026-10-04: Nothing of the edge's learned state goes to disk in v3.
+  Learned supernodes on disk come with v4 (peer store, "Learned relays
+  survive"), the file encrypted with the community's data key - which
+  some setups may hold elsewhere, e.g. on a smart card, not in the config.
+  Performance work (epoll, batched I/O, no alloc per packet) from
+  2026-10-11 on.
+
 ## Scratchpad
 
 Current ideas, half-decided things, commands worth keeping.
