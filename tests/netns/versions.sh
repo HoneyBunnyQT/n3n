@@ -21,7 +21,9 @@ DIR=$HERE/versions
 case "$1" in
     build)
         name=$2; ref=$3; repo=${4:-https://github.com/n42n/n3n}
-        [ -n "$name" ] && [ -n "$ref" ] || { sed -n '7,15p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+        if [ -z "$name" ] || [ -z "$ref" ]; then
+            sed -n '7,15p' "$0" | sed 's/^# \{0,1\}//'; exit 2
+        fi
         mkdir -p "$DIR"
         src=$DIR/$name.src
         rm -rf "${src:?}" "${DIR:?}/${name:?}"
