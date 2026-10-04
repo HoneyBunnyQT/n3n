@@ -148,20 +148,22 @@ tests and `make lint` pass after each.
       (a few frames relayed when the measured flow starts, before this
       work too: 3 of 6)
 - [x] Supernode outage and path MTU: netns scenarios `sn-outage`,
-      `sn-outage-idle`, `mtu-1280`, and (tagged `limits`, failing on
-      purpose) `sn-outage-roam`, `sn-outage-restart`, `mtu-1280-nofrag`,
-      `mtu-1280-df`.  Found and fixed: with all supernodes gone, the TCP
+      `sn-outage-idle`, `sn-outage-restart`, `mtu-1280`, and (tagged
+      `limits`, failing on purpose) `sn-outage-roam`,
+      `sn-outage-restart-userpw`, `mtu-1280-nofrag`, `mtu-1280-df`.  Found and fixed: with all supernodes gone, the TCP
       fallback took the edge off UDP and so off its peers, for good (direct
       traffic stopped ~10s into the outage) - it now stays on UDP while a
       peer is heard directly; a peer idle for half its timeout was dropped
       and looked up through the supernode - kept at its address while the
       supernode misses a re-registration; start-up without an answering
       supernode took ~33s (each PING round waited the main loop's 10s)
-- [ ] Open from the outage scenarios: a (re)started edge drops every
-      PACKET until a supernode has answered it (`last_sup` check in
-      `role_tap.c`), so it cannot rejoin its peers in an outage although
-      they know it; a peer that moves during an outage stays out behind
-      the other's NAT (inherent without a third party)
+- [x] Half-cold rejoin: an edge (re)started while no supernode answers
+      lets frames pass once its device is open, so the peers that still
+      know it get it back (`sn-outage-restart`, ~11s gap with the restart).
+      Not with user/password authentication, where the supernode vouches
+      first and gives out the header keys (`sn-outage-restart-userpw`,
+      limits).  Left as is: a peer that moves during an outage stays out
+      behind the other's NAT (inherent without a third party)
 - [ ] Open from the MTU scenarios: on a 1280 byte path, frames that do not
       fit get fragmented (works) - lost where fragments are dropped, and
       refused with `connection.pmtu_discovery` ("Message too long", no
