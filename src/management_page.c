@@ -210,10 +210,15 @@ static void peer_row (strbuf_t **b, const struct peer_info *peer, const char *mo
         community_name(b, community->community, community->header_encryption, unlocked);
         sb_reprintf(b, "</td>");
     }
-    sb_reprintf(b, "<td class=mono>%s</td><td class=mono>%s</td><td class=mono>%s</td>",
+    sb_reprintf(b, "<td class=mono>%s</td><td class=mono>%s</td><td class=mono>%s",
                 (peer->dev_addr.net_addr == 0) ? "" : ip_subnet_to_str(ip_bit_str, &peer->dev_addr),
                 is_null_mac(peer->mac_addr) ? "" : macaddr_str(mac_buf, peer->mac_addr),
                 sock_to_cstr(sockbuf, &peer->sock));
+    // an edge at the supernode: its address of the other family, too
+    if(peer->other_seen && ((now - peer->other_seen) < REGISTRATION_TIMEOUT)) {
+        sb_reprintf(b, "<br>%s", sock_to_cstr(sockbuf, &peer->other_sock));
+    }
+    sb_reprintf(b, "</td>");
     if(nat_peers) {
         sb_reprintf(b, "<td>%s</td>", nat_hint_str(nat, sizeof(nat), np ? np->hint : 0));
     }

@@ -660,6 +660,7 @@ static void jsonrpc_get_edges_row (strbuf_t **reply, struct peer_info *peer, con
     macstr_t mac_buf;
     n3n_sock_str_t sockbuf;
     n3n_sock_str_t sockbuf2;
+    n3n_sock_str_t sockbuf3;
     dec_ip_bit_str_t ip_bit_str = {'\0'};
     char nat[40];
     char name[JSON_STR_SIZE(N2N_COMMUNITY_SIZE)];
@@ -677,6 +678,7 @@ static void jsonrpc_get_edges_row (strbuf_t **reply, struct peer_info *peer, con
                 "\"macaddr\":\"%s\","
                 "\"sockaddr\":\"%s\","
                 "\"prefered_sockaddr\":\"%s\","
+                "\"other_sockaddr\":\"%s\","
                 "\"desc\":\"%s\","
                 "\"version\":\"%s\","
                 "\"nat\":\"%s\","
@@ -694,6 +696,9 @@ static void jsonrpc_get_edges_row (strbuf_t **reply, struct peer_info *peer, con
                 (is_null_mac(peer->mac_addr)) ? "" : macaddr_str(mac_buf, peer->mac_addr),
                 sock_to_cstr(sockbuf, &(peer->sock)),
                 sock_to_cstr(sockbuf2, &(peer->preferred_sock)),
+                // an edge at the supernode: its address of the other family
+                (peer->other_seen && ((time(NULL) - peer->other_seen) < REGISTRATION_TIMEOUT))
+                ? sock_to_cstr(sockbuf3, &(peer->other_sock)) : "",
                 json_str(desc, peer->dev_desc, N2N_DESC_SIZE),
                 json_str(version, peer->version, N2N_VERSION_STRING_SIZE),
                 nat_hint_str(nat, sizeof(nat), np ? np->hint : 0),
