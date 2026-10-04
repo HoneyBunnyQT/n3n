@@ -119,8 +119,12 @@ class Site:
     def __init__(self, nat=(), lan=None, supernodes=("sn1", "sn2"),
                  conf=None, expect_nat=None, on_supernode=None,
                  block_udp=False, tcp_only=False, sn_family=4, no_ipv6=False,
-                 link_mtu=None, drop_fragments=False):
+                 link_mtu=None, drop_fragments=False, version=None):
         self.on_supernode = on_supernode
+        # another version of n3n for this edge, as tests/netns/versions.sh
+        # built it (interop): its NAT class is not checked, older ones do
+        # not tell it
+        self.version = version
         # the MTU of the link between the edge and its (innermost) router,
         # as of a PPPoE or mobile link: larger packets get fragmented, or,
         # with DF, dropped with an ICMP "fragmentation needed"
@@ -154,7 +158,7 @@ class Scenario:
                  ipv6=False, max_moves=None, delay6=None, sn_block6=False,
                  roam=None, roam_max_gap=None, roam_direct=True,
                  size=None, outage=False, outage_then=None,
-                 outage_max_gap=None, reload=None):
+                 outage_max_gap=None, reload=None, sn_versions=None):
         self.name = name
         self.desc = desc
         self.sites = {"a": a, "b": b}
@@ -223,6 +227,10 @@ class Scenario:
         # and the edge gets SIGHUP: it should apply both while it runs,
         # and move to the other supernode
         self.reload = reload
+        # {supernode: version}: those supernodes another version of n3n,
+        # as tests/netns/versions.sh built it (interop); the edges' NAT
+        # class is not checked then, older supernodes do not tell it
+        self.sn_versions = sn_versions or {}
 
     def directions(self):
         return {
@@ -237,8 +245,26 @@ class Scenario:
         return "{} / {}".format(site(self.sites["a"]), site(self.sites["b"]))
 
 
+# Other versions of n3n, see tests/netns/versions.sh
+VERSIONS = os.path.join(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))), "versions")
+
+
+def version_built(version):
+    return os.path.exists(os.path.join(VERSIONS, version, "n3n-edge"))
+
+
 class Settings:
     """What the command line sets for all scenarios"""
+
+    def binary(self, name, version=None):
+        """n3n-edge or n3n-supernode of this tree, or of another version"""
+        if not version:
+            return os.path.join(self.topdir, "apps", name)
+        if not version_built(version):
+            raise LabError("version {} is not built: tests/netns/versions.sh "
+                           "build {} REF".format(version, version))
+        return os.path.join(self.versions, version, name)
 
     def __init__(self, topdir, workdir, register_interval=5, punch_ports=128,
                  frames=500, rate=200, size=64, loss=0.01, verbose=2,
@@ -247,6 +273,7 @@ class Settings:
         self.workdir = workdir
         self.edge_bin = os.path.join(topdir, "apps", "n3n-edge")
         self.sn_bin = os.path.join(topdir, "apps", "n3n-supernode")
+        self.versions = VERSIONS
         self.register_interval = register_interval
         self.punch_ports = punch_ports
         self.frames = frames
@@ -310,6 +337,12 @@ class Run:
         lab = self.lab
         if self.sc.ipv6 and not os.path.exists("/proc/sys/net/ipv6"):
             raise LabError("this kernel has no IPv6 (see tests/netns/uml.sh)")
+        versioned = self.sc.sn_versions or any(
+            s.version for s in self.sc.sites.values())
+        if versioned and not os.path.exists("/proc/sys/net/ipv6"):
+            # 3.4.6 sends to IPv4 peers as IPv4-mapped IPv6 addresses
+            raise LabError("this kernel has no IPv6, which older versions "
+                           "need (see tests/netns/uml.sh)")
         inet = lab.netns("inet")
         lab.bridge(inet, "br0")
         lab.addr(inet, "br0", "{}/{}".format(INET_NET.format(254),
@@ -454,6 +487,7 @@ class Run:
             "overlay": OVERLAY_NET.format(i + 1),
             "mac": "02:00:00:99:00:{:02x}".format(i + 1),
             "expect_nat": (site.expect_nat if site.expect_nat is not None
+                           else ".*" if site.version or self.sc.sn_versions
                            else nat.expected_class(layers)),
         }
 
@@ -670,8 +704,11 @@ class Run:
                     (o, v) for o, v in sections[section] if o not in options
                 ] + list(options.items())
             d = Supernode(self.lab, name, sn["ns"], self._session(name),
-                          self.st.sn_bin, sections, wrap=self.st.wrap)
+                          self.st.binary("n3n-supernode",
+                                         self.sc.sn_versions.get(name)),
+                          sections, wrap=self.st.wrap)
             d.start()
+            self._log_left_out(name, d)
             sn["daemon"] = d
         for name in names:
             d = self.supernodes[name]["daemon"]
@@ -763,9 +800,11 @@ class Run:
                 e["registered_at"] = "{}:{}".format(e["ip"], SN_PORT)
                 continue
             d = Edge(self.lab, "edge-" + sname, e["ns"], self._session(sname),
-                     self.st.edge_bin, self._edge_sections(sname, site, e),
+                     self.st.binary("n3n-edge", site.version),
+                     self._edge_sections(sname, site, e),
                      wrap=self.st.wrap, overlay_ip=e["overlay"], mac=e["mac"])
             d.start()
+            self._log_left_out("edge " + sname, d)
             e["daemon"] = d
         for sname, e in sorted(self.edges.items()):
             if "daemon" not in e:
@@ -852,7 +891,8 @@ class Run:
             ok = re.match(e["expect_nat"], e["nat4"])
             detail = "nat4 {!r}".format(e["nat4"])
             site = self.sc.sites[sname]
-            if site.nat == ["hard-range"] and site.expect_nat is None and ok:
+            if site.nat == ["hard-range"] and site.expect_nat is None and ok \
+                    and e["expect_nat"] != ".*":
                 ok = nat.hard_range_ok(e["nat4"])
                 detail += ", NAT block {}-{}".format(nat.HARD_RANGE_LO,
                                                      nat.HARD_RANGE_HI)
@@ -984,6 +1024,11 @@ class Run:
 
     def check_alive_quiet(self):
         return all(d.proc.alive() for _, d in self.daemons())
+
+    def _log_left_out(self, who, d):
+        if d.left_out:
+            self.log("{}: its version does not know {}".format(
+                who, ", ".join(sorted(set(d.left_out)))))
 
     def reload_phase(self):
         """Change an edge's configuration file, SIGHUP it: it drops the

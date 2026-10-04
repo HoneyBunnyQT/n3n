@@ -7,7 +7,9 @@
 import http.client
 import json
 import os
+import re
 import socket
+import subprocess
 
 from .lab import wait_for
 
@@ -91,16 +93,53 @@ def stats_delta(before, after):
     return out
 
 
-def write_conf(path, sections):
-    """Write an n3n config file from {section: [(option, value), ...]}"""
+_known = {}
+
+
+def known_options(binary):
+    """The "section.option"s a binary knows, from its "help config"; None
+    if it does not say"""
+    if binary not in _known:
+        try:
+            out = subprocess.run([binary, "help", "config"],
+                                 stdout=subprocess.PIPE,
+                                 stderr=subprocess.DEVNULL,
+                                 universal_newlines=True, timeout=10).stdout
+        except (OSError, subprocess.SubprocessError):
+            out = ""
+        known, section = set(), ""
+        for line in out.splitlines():
+            m = re.match(r"^\[([^\]\s]+)", line)
+            if m:
+                section = m.group(1)
+                continue
+            m = re.match(r"^#?([a-z0-9_]+)=", line)
+            if m:
+                known.add(section + "." + m.group(1))
+        _known[binary] = known or None
+    return _known[binary]
+
+
+def write_conf(path, sections, known=None):
+    """Write an n3n config file from {section: [(option, value), ...]};
+    with known, the "section.option"s the binary knows, only those (an
+    older version stops at an option it does not know).  Returns those
+    left out."""
+    left_out = []
     with open(path, "w") as f:
         for section, options in sections.items():
             f.write("[{}]\n".format(section))
             for option, value in options:
+                # [community NAME] has the options of [community]
+                key = section.split()[0] + "." + option
+                if known is not None and key not in known:
+                    left_out.append(key)
+                    continue
                 if isinstance(value, bool):
                     value = "true" if value else "false"
                 f.write("{}={}\n".format(option, value))
             f.write("\n")
+    return left_out
 
 
 class Daemon:
@@ -120,7 +159,8 @@ class Daemon:
         self.conf = os.path.join(lab.workdir, session + ".conf")
 
     def start(self):
-        write_conf(self.conf, self.sections)
+        self.left_out = write_conf(self.conf, self.sections,
+                                   known_options(self.binary))
         argv = self.wrap + [self.binary, "start", self.conf]
         self.proc = self.lab.spawn(self.name, self.ns, argv)
 

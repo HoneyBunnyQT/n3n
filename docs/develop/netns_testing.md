@@ -46,6 +46,39 @@ supernodes).  The scenarios tagged `limits` show what n3n cannot do (yet):
 they fail, and a run without names leaves them out (`run.py @limits` runs
 them).
 
+### Other versions (interop)
+
+The scenarios tagged `interop` run edges and supernodes of this tree
+together with those of another version of n3n: `Site(version=NAME)` for an
+edge, `Scenario(sn_versions={"sn1": NAME})` for supernodes.
+`tests/netns/versions.sh` builds such a version into
+`tests/netns/versions/NAME`:
+
+```
+tests/netns/versions.sh build n3n-3.4.6 3.4.6     # the last release
+sudo tests/netns/run.py @interop
+```
+
+A run without names includes the interop scenarios of the versions that are
+built.  An older version gets only the options it knows (from its `help
+config`; the run names those it left out), its NAT class is not checked,
+and with older supernodes neither is the edges'.  3.4.6 sends to IPv4
+peers as IPv4-mapped IPv6 addresses, so it needs a kernel with IPv6 (UML
+here, or the CI runners: `interop.yml`).
+
+| scenario | sites | expected |
+|----------|-------|----------|
+| interop-old-edge | a 3.4.6 (easy-kept) / b (easy-changed), supernodes of this tree | direct |
+| interop-old-sn | edges of this tree, both supernodes 3.4.6 | direct |
+| interop-old-sn-hard | as interop-old-sn, b behind hard-range | direct, this tree's port guessing |
+| interop-fed | sn1 3.4.6, sn2 this tree; a 3.4.6 knows only sn1, b only sn2 | direct, across the mixed federation |
+| interop-relayed | hard-range / hard-range, a and sn1 3.4.6 | relayed |
+| interop-header-enc | encrypted headers, a 3.4.6, b easy-changed | direct |
+| interop-userpw | user/password, a and the supernodes 3.4.6 | direct |
+
+n2n 3.x is not among them yet: it takes command line options, not this
+configuration format, and its management interface is another one.
+
 ### IPv6, in a kernel of its own
 
 The scenarios tagged `ipv6` (`dual-stack`, `hard-hard-v6`,

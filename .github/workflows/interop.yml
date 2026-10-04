@@ -1,0 +1,50 @@
+---
+name: Interop
+
+# The netns scenarios tagged "interop": edges and supernodes of this tree
+# together with those of the last release of upstream n3n, see
+# tests/netns/versions.sh.  The older versions need a kernel with IPv6,
+# which the runners have.
+
+# yamllint disable-line rule:truthy
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  interop:
+    name: With n3n 3.4.6
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Fix Checkout
+        run: |
+          git fetch --force --tags
+
+      - name: Build this tree and the release
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nftables iproute2
+          ./autogen.sh
+          ./configure
+          make build-dep
+          make -j4 all
+          tests/netns/versions.sh build n3n-3.4.6 3.4.6
+
+      - name: Interop scenarios
+        run: |
+          sudo python3 tests/netns/run.py -j 2 @interop
+
+      - if: ${{ failure() }}
+        name: Upload the logs
+        uses: actions/upload-artifact@v6
+        with:
+          name: interop
+          path: tests/netns/out

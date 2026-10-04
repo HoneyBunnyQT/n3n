@@ -8,7 +8,11 @@ The expectations follow docs/advanced/NatTraversal.md.  Scenarios tagged
 "quick" make up the set "make test" runs.
 """
 
-from .scenario import Scenario, Site
+from .scenario import Scenario, Site, version_built
+
+# The release of upstream n3n the interop scenarios run against, see
+# tests/netns/versions.sh: "tests/netns/versions.sh build n3n-3.4.6 3.4.6"
+OLD = "n3n-3.4.6"
 
 SCENARIOS = [
     Scenario(
@@ -260,6 +264,54 @@ SCENARIOS = [
         "direct", size=1200, tags=["limits"],
         conf={"connection": {"pmtu_discovery": True}}),
     Scenario(
+        "interop-old-edge",
+        "a is an edge of the last release (3.4.6), b and the supernodes are "
+        "this tree: the edges go direct",
+        Site(["easy-kept"], version=OLD),
+        Site(["easy-changed"]),
+        "direct", tags=["interop"]),
+    Scenario(
+        "interop-old-sn",
+        "the supernodes are of the last release, the edges of this tree",
+        Site(["easy-kept"]),
+        Site(["easy-changed"]),
+        "direct", sn_versions={"sn1": OLD, "sn2": OLD}, tags=["interop"]),
+    Scenario(
+        "interop-old-sn-hard",
+        "as interop-old-sn, b behind a hard NAT: this tree's port guessing "
+        "with supernodes of the last release",
+        Site(["easy-kept"]),
+        Site(["hard-range"]),
+        "direct", sn_versions={"sn1": OLD, "sn2": OLD}, tags=["interop"]),
+    Scenario(
+        "interop-fed",
+        "a federation of a supernode of the last release (sn1) and one of "
+        "this tree (sn2), each edge knowing only one; a of the last release "
+        "too",
+        Site(["easy-kept"], supernodes=["sn1"], version=OLD),
+        Site(["easy-changed"], supernodes=["sn2"]),
+        "direct", sn_versions={"sn1": OLD}, tags=["interop"]),
+    Scenario(
+        "interop-relayed",
+        "hard-range / hard-range, a of the last release, the supernodes "
+        "one of each: the frames go through the supernodes",
+        Site(["hard-range"], version=OLD),
+        Site(["hard-range"]),
+        "relayed", sn_versions={"sn1": OLD}, tags=["interop"]),
+    Scenario(
+        "interop-header-enc",
+        "encrypted headers, a of the last release (which does not guess "
+        "ports, so b's NAT is an easy one)",
+        Site(["easy-kept"], version=OLD), Site(["easy-changed"]),
+        "direct", auth="header", tags=["interop"]),
+    Scenario(
+        "interop-userpw",
+        "user/password authentication, a and the supernodes of the last "
+        "release",
+        Site(["easy-kept"], version=OLD), Site(["easy-changed"]),
+        "direct", auth="userpw", sn_versions={"sn1": OLD, "sn2": OLD},
+        tags=["interop"]),
+    Scenario(
         "same-lan",
         "both sites use 192.168.1.0/24, the edges at the same address",
         Site(["easy-kept"], lan="192.168.1.0/24"),
@@ -401,12 +453,20 @@ SCENARIOS = [
 BY_NAME = {s.name: s for s in SCENARIOS}
 
 
+def _versions_built(sc):
+    versions = [site.version for site in sc.sites.values() if site.version]
+    return all(version_built(v)
+               for v in versions + list(sc.sn_versions.values()))
+
+
 def select(patterns):
     """Scenarios by name, fnmatch pattern or @tag; for none all but those
-    tagged limits, which show what n3n cannot do (yet), and fail"""
+    tagged limits, which show what n3n cannot do (yet), and fail, and the
+    interop ones of versions not built (tests/netns/versions.sh)"""
     import fnmatch
     if not patterns:
-        return [s for s in SCENARIOS if "limits" not in s.tags]
+        return [s for s in SCENARIOS if "limits" not in s.tags
+                and ("interop" not in s.tags or _versions_built(s))]
     out = []
     for pat in patterns:
         if pat.startswith("@"):
