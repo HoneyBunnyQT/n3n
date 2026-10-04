@@ -37,7 +37,12 @@ ls /tmp/san          # empty: nothing found
 The reports go to files of their own: a daemon that leaks exits with 1,
 and its report may come after its log is closed.  AddressSanitizer does not
 run in the User-Mode Linux kernel of `tests/netns/uml.sh` (its shadow
-memory does not fit there), UndefinedBehaviorSanitizer alone does.  The
+memory does not fit there), UndefinedBehaviorSanitizer alone does.
+
+ThreadSanitizer is a job of its own (`-fsanitize=thread`, which does not
+go with the others): the unit and builtin tests, and the quick netns
+scenarios with those of `daemon.threads` (`'*-threads'`).  On newer
+kernels it needs `sysctl vm.mmap_rnd_bits=28` first.  The
 bundled minilzo reads unaligned on purpose, so the Makefile leaves out
 the alignment check for it.
 

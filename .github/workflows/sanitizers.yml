@@ -83,3 +83,65 @@ jobs:
           path: |
             /tmp/san
             tests
+
+  tsan:
+    name: TSan, the threads
+    runs-on: ubuntu-latest
+    env:
+      SAN_FLAGS: -fsanitize=thread -g -O1
+      TSAN_OPTIONS: log_path=/tmp/san/tsan
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Fix Checkout
+        run: |
+          git fetch --force --tags
+
+      - name: Install essential
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nftables iproute2
+          ./autogen.sh
+          ./configure
+          make build-dep
+          # the address space randomisation of newer kernels is more than
+          # TSan's memory layout takes
+          sudo sysctl vm.mmap_rnd_bits=28
+
+      - name: Build with TSan
+        run: |
+          ./configure --enable-pthread \
+            CFLAGS="$SAN_FLAGS" LDFLAGS="$SAN_FLAGS"
+          make -j4 all
+          mkdir -p /tmp/san
+
+      - name: Unit and builtin tests
+        run: |
+          make test.units test.builtin
+
+      - name: netns scenarios with threads
+        run: |
+          # the packet threads (daemon.threads), and the resolver thread
+          # that every daemon has
+          sudo -E python3 tests/netns/run.py --skip-missing -j 2 \
+            @quick '*-threads'
+
+      - name: No sanitizer reports
+        if: ${{ always() }}
+        run: |
+          sudo chmod -R a+r /tmp/san
+          if ls /tmp/san/* >/dev/null 2>&1; then
+            head -n 60 /tmp/san/*
+            exit 1
+          fi
+
+      - if: ${{ failure() }}
+        name: Upload the reports and logs
+        uses: actions/upload-artifact@v6
+        with:
+          name: tsan
+          path: |
+            /tmp/san
+            tests

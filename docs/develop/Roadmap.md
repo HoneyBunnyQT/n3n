@@ -211,7 +211,9 @@ tests and `make lint` pass after each.
       PEER_INFO uptime decoded into half a time_t, the benchmarks'
       contexts not zeroed, a reload's configuration not freed and the
       metrics left with the freed session name
-- [ ] TSan for the threads (`daemon.threads`)
+- [x] TSan in CI (`sanitizers.yml`, job `tsan`): unit and builtin tests,
+      the quick netns scenarios and the `*-threads` ones (packet threads,
+      and the resolver thread of every daemon).  Nothing found so far
 - [x] Big endian, 32 bit and strict alignment: unit and builtin tests under
       qemu for s390x, mips and aarch64 in CI (`scripts/test_qemu.sh`).
       Found and fixed: Speck (also header encryption) and ChaCha20 broken
