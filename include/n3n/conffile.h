@@ -88,6 +88,7 @@ struct sockaddr_storage;
 int n3n_config_parse_sockaddr (struct sockaddr_storage *out, const char *value);
 
 void n3n_config_dump (void *, FILE *, int);
+void n3n_config_free (void *);
 void n3n_config_debug_addr (void *, FILE *);
 
 int n3n_config_load_env (void *);

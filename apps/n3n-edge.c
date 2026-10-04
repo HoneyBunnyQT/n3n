@@ -697,10 +697,15 @@ static int reload_load (void *_conf) {
             }
             traceEvent(TRACE_WARNING, "reload: no config file for '%s' (any more), or it cannot be read as uid %d",
                        reload_session, (int)getuid());
+            free(session);
             return -1;
         default:
+            free(session);
             return -1;
     }
+    // the session name is not compared, nor kept
+    conf->sessionname = NULL;
+    free(session);
     if(n3n_config_load_env(conf) != 0) {
         return -1;
     }

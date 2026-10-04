@@ -17,6 +17,7 @@
 #include <n3n/conffile.h>       // for n3n_config_dump, n3n_config_set_option
 #include <n3n/edge.h>           // for supernode_first
 #include <n3n/logging.h>        // for traceEvent
+#include <n3n/metrics.h>        // for n3n_metrics_set_session
 #include <n3n/resolve.h>        // for RESOLVE_LIST_SUPERNODE, resolve_hostnames_str_add
 #include <signal.h>             // for sig_atomic_t
 #include <stdio.h>
@@ -25,6 +26,7 @@
 #include <time.h>             // for clock_gettime
 
 #include "connslot/strbuf.h"
+#include "crypto/speck.h"       // for speck_deinit
 #include "edge_utils.h"         // for edge_netwatch_update
 #include "n2n.h"
 #include "notify.h"             // for n3n_notify
@@ -256,6 +258,34 @@ static void apply_supernodes (struct n3n_runtime_data *rt) {
 }
 
 
+static void free_named_communities (struct n3n_conf_community **list) {
+
+    struct n3n_conf_community *comm, *tmp;
+
+    HASH_ITER(hh, *list, comm, tmp) {
+        HASH_DEL(*list, comm);
+        free(comm->encrypt_key);
+        n3n_conf_strlist_free(&comm->users);
+        free(comm);
+    }
+}
+
+
+// What a configuration loaded for a reload holds, as far as the running
+// one did not take it over
+static void conf_release (n2n_edge_conf_t *conf) {
+
+    n3n_config_free(conf);
+    free_named_communities(&conf->communities);
+    // what edge_conf_prepare() worked out for user/password authentication
+    free(conf->public_key);
+    if(conf->shared_secret_ctx) {
+        speck_deinit(conf->shared_secret_ctx);
+    }
+    free(conf);
+}
+
+
 // A supernode's communities: the [community NAME] sections, the community
 // file and community_regex, which reload_communities() reads anew
 static bool is_relay_community (const struct n3n_runtime_data *rt, const char *key) {
@@ -277,10 +307,22 @@ static bool apply (struct n3n_runtime_data *rt, const char *key, const struct se
     const char *value = NULL;
 
     if(is_relay_community(rt, key)) {
-        // all three from the new configuration, which keeps its strings
-        rt->conf.communities = conf->communities;
-        rt->conf.relay.community_file = conf->relay.community_file;
-        rt->conf.relay.community_regex = conf->relay.community_regex;
+        // all three from the new configuration, the old ones go
+        if(rt->conf.communities != conf->communities) {
+            free_named_communities(&rt->conf.communities);
+            rt->conf.communities = conf->communities;
+            conf->communities = NULL;
+        }
+        if(rt->conf.relay.community_file != conf->relay.community_file) {
+            free(rt->conf.relay.community_file);
+            rt->conf.relay.community_file = conf->relay.community_file;
+            conf->relay.community_file = NULL;
+        }
+        if(rt->conf.relay.community_regex != conf->relay.community_regex) {
+            n3n_conf_strlist_free(&rt->conf.relay.community_regex);
+            rt->conf.relay.community_regex = conf->relay.community_regex;
+            conf->relay.community_regex = NULL;
+        }
         return true;
     }
 
@@ -387,7 +429,7 @@ int n3n_reload (struct strbuf **out) {
     struct setting *old = NULL, *new = NULL;
     const char **applied = NULL, **restart = NULL;
     int napplied = 0, nrestart = 0;
-    char *old_dump = NULL, *new_dump;
+    char *old_dump = NULL, *new_dump = NULL;
     char *running = NULL;               // the next baseline
     size_t running_len = 0;
     const char *error = NULL;
@@ -415,10 +457,23 @@ int n3n_reload (struct strbuf **out) {
     resolve_hostnames_free(RESOLVE_LIST_PEER);
 
     conf = calloc(1, sizeof(*conf));
-    if(!conf || (reload_load(conf) != 0) || !(new_dump = conf_dump(conf))) {
+    if(conf) {
+        int loaded = reload_load(conf);
+        // the defaults name the session for the metrics: still the one
+        // that runs, not the copy loaded here
+        n3n_metrics_set_session(rt->conf.sessionname);
+        if(loaded != 0) {
+            new_dump = NULL;
+        } else {
+            new_dump = conf_dump(conf);
+        }
+    }
+    if(!conf || !new_dump) {
         list_restore(RESOLVE_LIST_SUPERNODE, sn_saved, sn_count, true);
         list_restore(RESOLVE_LIST_PEER, peer_saved, peer_count, true);
-        free(conf);
+        if(conf) {
+            conf_release(conf);
+        }
         error = "the configuration could not be loaded, nothing changed";
         n3n_notify("READY=1");
         goto done;
@@ -480,14 +535,13 @@ int n3n_reload (struct strbuf **out) {
         json_list(out, "restart", restart, nrestart);
         sb_reprintf(out, "}");
     }
-    // the strings of the new configuration stay with the running one
     free(applied);
     free(restart);
     free(old);
     free(new);
     free(old_dump);
     free(new_dump);
-    free(conf);
+    conf_release(conf);
     return 0;
 
 done:

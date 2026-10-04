@@ -1049,6 +1049,50 @@ static void dump_section (FILE *f, void *base, int level, struct n3n_conf_sectio
     }
 }
 
+// What the options of a configuration hold in memory of their own: the
+// sections without instances, and the unnamed one of those with (the named
+// ones are the caller's, e.g. n3n_config_free_communities())
+void n3n_config_free (void *conf) {
+
+    for(struct n3n_conf_section *section = registered_sections; section; section = section->next) {
+        char *base = section_base(conf, section, NULL);
+        if(!base) {
+            continue;
+        }
+        for(const struct n3n_conf_option *option = section->options; option->name; option++) {
+            if(option->offset < 0) {
+                continue;
+            }
+            void *valvoid = base + option->offset;
+            switch(option->type) {
+                case n3n_conf_strdup:
+                case n3n_conf_privatekey:
+                case n3n_conf_publickey:
+                case n3n_conf_sockaddr: {
+                    void **val = (void **)valvoid;
+                    free(*val);
+                    *val = NULL;
+                    break;
+                }
+                case n3n_conf_strlist:
+                    n3n_conf_strlist_free((struct n3n_conf_strlist **)valvoid);
+                    break;
+                case n3n_conf_filter_rule: {
+                    filter_rule_t **rules = (filter_rule_t **)valvoid;
+                    filter_rule_t *rule, *tmp;
+                    HASH_ITER(hh, *rules, rule, tmp) {
+                        HASH_DEL(*rules, rule);
+                        free(rule);
+                    }
+                    break;
+                }
+                default:
+                    break;
+            }
+        }
+    }
+}
+
 void n3n_config_dump (void *conf, FILE *f, int level) {
     struct n3n_conf_section *section = registered_sections;
 
