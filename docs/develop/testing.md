@@ -30,12 +30,14 @@ F="-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointe
 mkdir -p /tmp/san
 export ASAN_OPTIONS=log_path=/tmp/san/asan UBSAN_OPTIONS=log_path=/tmp/san/ubsan
 make test.units test.builtin test.integration
-sudo -E tests/netns/run.py
+sudo -E tests/netns/run.py --keep-root
 ls /tmp/san          # empty: nothing found
 ```
 
 The reports go to files of their own: a daemon that leaks exits with 1,
-and its report may come after its log is closed.  AddressSanitizer does not
+and its report may come after its log is closed.  `--keep-root` keeps the
+daemons from dropping their privileges: a daemon that did is not dumpable
+any more, and LeakSanitizer cannot check it at its exit.  AddressSanitizer does not
 run in the User-Mode Linux kernel of `tests/netns/uml.sh` (its shadow
 memory does not fit there), UndefinedBehaviorSanitizer alone does.
 

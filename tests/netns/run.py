@@ -31,6 +31,7 @@ sys.path.insert(0, HERE)
 from n3ntest import lab as labmod             # noqa: E402
 from n3ntest.scenario import Run, Settings    # noqa: E402
 from n3ntest.scenarios import SCENARIOS, select   # noqa: E402
+from n3ntest.node import Daemon               # noqa: E402
 
 PREFIX = "n3ntest"
 LOCKFILE = "/run/n3n-netns-test.lock"
@@ -142,6 +143,10 @@ def main():
     ap.add_argument("--wrap", default="",
                     help="command to run the daemons under, e.g. "
                     "'valgrind --error-exitcode=99'")
+    ap.add_argument("--keep-root", action="store_true",
+                    help="the daemons keep root (daemon.userid=0): for "
+                    "LeakSanitizer, which cannot check a daemon that "
+                    "dropped its privileges")
     ap.add_argument("--topdir", default=topdir,
                     help="where apps/n3n-edge is (default: this tree)")
     ap.add_argument("--workdir",
@@ -182,6 +187,7 @@ def main():
         connect_timeout=args.connect_timeout,
         wrap=shlex.split(args.wrap),
     )
+    Daemon.keep_root = args.keep_root
 
     missing = missing_prerequisites(settings)
     if missing:

@@ -62,15 +62,13 @@ jobs:
 
       - name: netns scenarios
         run: |
-          # the daemons drop their privileges (daemon.userid): their reports
-          # need a directory that user can write to, and the leak check at
-          # their exit (which stops the threads by ptrace) a ptrace_scope
-          # that lets it, as they are not dumpable any more
+          # the daemons keep root: one that dropped its privileges is not
+          # dumpable any more, and LeakSanitizer cannot stop its threads
+          # at the exit ("does not work under ptrace")
           sudo chmod 1777 /tmp/san
-          sudo sysctl kernel.yama.ptrace_scope=0
           # all but those tagged "limits", which fail on purpose; two at a
           # time, the sanitized daemons are slower
-          sudo -E python3 tests/netns/run.py --skip-missing -j 2
+          sudo -E python3 tests/netns/run.py --skip-missing -j 2 --keep-root
 
       - name: No sanitizer reports
         if: ${{ always() }}

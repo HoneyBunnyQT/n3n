@@ -144,6 +144,8 @@ def write_conf(path, sections, known=None):
 
 class Daemon:
     kind = None
+    # run.py --keep-root: daemon.userid and groupid 0
+    keep_root = False
 
     def __init__(self, lab, name, ns, session, binary, sections, wrap=()):
         self.lab = lab
@@ -159,6 +161,11 @@ class Daemon:
         self.conf = os.path.join(lab.workdir, session + ".conf")
 
     def start(self):
+        if self.keep_root:
+            daemon = [(o, v) for o, v in self.sections.get("daemon", [])
+                      if o not in ("userid", "groupid")]
+            self.sections["daemon"] = daemon + [("userid", 0),
+                                                ("groupid", 0)]
         self.left_out = write_conf(self.conf, self.sections,
                                    known_options(self.binary))
         argv = self.wrap + [self.binary, "start", self.conf]
