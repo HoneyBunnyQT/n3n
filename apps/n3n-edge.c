@@ -1040,6 +1040,9 @@ int main (int argc, char* argv[]) {
     }
 
     eee->last_sup = 0; /* if it wasn't zero yet */
+    // waiting for a supernode: the main loop's shorter wait, so a round
+    // of PINGs nobody answers takes BOOTSTRAP_TIMEOUT, not its usual 10s
+    eee->sn_wait = 1;
     eee->curr_sn = eee->supernodes; // Duplicates action taken by edge_init()
     supernode_connect(eee);
     while(runlevel < 5) {
