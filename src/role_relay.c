@@ -1045,6 +1045,8 @@ void sn_rx_register_super (struct n3n_runtime_data *sss, struct pdu_ctx *c) {
         if(peer->sock.family == (uint8_t)AF_INVALID)
             continue; /* do not add unresolved supernodes to payload */
         if(memcmp(&(peer->sock), &(ack.sock), sizeof(n3n_sock_t)) == 0) continue; /* a supernode doesn't add itself to the payload */
+        // nor the one asking at another of its addresses: by its MAC
+        if(!is_null_mac(peer->mac_addr) && !memcmp(peer->mac_addr, reg.edgeMac, sizeof(n2n_mac_t))) continue;
         if((now - peer->last_seen) >= LAST_SEEN_SN_NEW) continue;  /* skip long-time-not-seen supernodes.
                                                                     * We need to allow for a little extra time because supernodes sometimes exceed
                                                                     * their SN_ACTIVE time before they get re-registred to. */

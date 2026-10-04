@@ -199,6 +199,14 @@ void sn_rx_register_super_ack (struct n3n_runtime_data *sss, struct pdu_ctx *c) 
             rem = sizeof(payload->sock);
             decode_sock_payload(&payload_sock, payload->sock, &rem, &idx);
 
+            // this very supernode, at another of its addresses: as a
+            // member of its own federation, it would send itself what it
+            // sends the others, and take its edges for the other's
+            if(!memcmp(payload->mac, sss->conf.relay.sn_mac_addr, sizeof(n2n_mac_t))) {
+                payload++;
+                continue;
+            }
+
             tmp = add_sn_to_list_by_mac_or_sock(&(sss->relay.federation->edges), &(payload_sock), payload->mac, &skip_add);
             // not come in yet: reached from an address fit for its family
             tmp->socket_fd = -1;
