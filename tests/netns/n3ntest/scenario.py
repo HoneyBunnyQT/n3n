@@ -159,7 +159,7 @@ class Scenario:
                  roam=None, roam_max_gap=None, roam_direct=True,
                  size=None, outage=False, outage_then=None,
                  outage_max_gap=None, reload=None, sn_versions=None,
-                 direct_ok=None):
+                 direct_ok=None, sn_peer_family=4):
         self.name = name
         self.desc = desc
         self.sites = {"a": a, "b": b}
@@ -235,6 +235,9 @@ class Scenario:
         # expected relayed, but direct by luck is fine too (why, as a
         # string): the rest of the checks then go for direct
         self.direct_ok = direct_ok
+        # how the supernodes know each other (supernode.peer): 4, 6, or
+        # 46 for both addresses of each (6 and 46 need ipv6)
+        self.sn_peer_family = sn_peer_family
 
     def directions(self):
         return {
@@ -681,9 +684,16 @@ class Run:
         users = self._users()
         for i, name in enumerate(names, start=1):
             sn = self.supernodes[name]
-            peers = [("peer", "{}:{}".format(self.supernodes[o]["ip"],
-                                             SN_PORT))
-                     for o in names if o != name]
+            peers = []
+            for o in names:
+                if o == name:
+                    continue
+                if "4" in str(self.sc.sn_peer_family):
+                    peers.append(("peer", "{}:{}".format(
+                        self.supernodes[o]["ip"], SN_PORT)))
+                if "6" in str(self.sc.sn_peer_family):
+                    peers.append(("peer", "[{}]:{}".format(
+                        self.supernodes[o]["ip6"], SN_PORT)))
             sections = {
                 "connection": [("bind", "[::]:{}".format(SN_PORT)
                                 if not self.sc.sn_tcp_port else

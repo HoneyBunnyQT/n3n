@@ -161,6 +161,9 @@ router behind a carrier NAT.  The block of hard-range ends at a multiple of
 | dual-stack | both edges public, with IPv4 and IPv6; a knows the supernode by IPv6, b by IPv4, and they find each other by multicast over both: each may hear the other from either family (needs IPv6, see `uml.sh`) | direct, the peers kept at one address |
 | hard-hard-v6 | hard-range / hard-range, but each site with routed IPv6 behind its router's firewall, 20 ms slower than IPv4; the edges know the supernode by both, select by round trip (needs IPv6) | direct, over IPv6: registered over IPv4, each edge also tells the supernode its IPv6 address |
 | v6-v4only | easy-kept / easy-kept, a with IPv6 too (registered over it), b with IPv4 only (needs IPv6) | direct, over IPv4: the supernode tells b a's IPv4 address |
+| fed-peers46 | as fed-split, with IPv6: the supernodes know each other by both addresses (`Scenario(sn_peer_family=46)`) (needs IPv6) | direct; a supernode once took itself for a member of its federation there |
+| fed-peers46-blocked | as fed-peers46, IPv6 blocked at the supernodes: their IPv6 entries for each other are dead (needs IPv6) | direct |
+| fed-peers46-relayed | as fed-peers46-blocked, hard-range / hard-range (needs IPv6) | relayed, across the federation |
 | hard-hard-v6-blocked | as hard-hard-v6, the supernodes' firewalls let nothing in over IPv6 (needs IPv6) | relayed, as hard-hard |
 | tcp-tcp | easy-kept / easy-changed, both edges with connect_tcp | relayed, over TCP both ways |
 | tcp-udp | as tcp-tcp, only a with connect_tcp | relayed, between TCP and UDP |

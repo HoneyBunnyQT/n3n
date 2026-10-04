@@ -155,6 +155,32 @@ SCENARIOS = [
         "direct", ipv6=True, max_moves=1, delay6=20, tags=["ipv6"],
         conf={"connection": {"supernode_selection": "rtt"}}),
     Scenario(
+        "fed-peers46",
+        "as fed-split, with IPv6 too: the supernodes know each other by "
+        "both addresses (supernode.peer twice).  A supernode once took "
+        "itself for a member of its federation, at the address the other "
+        "told it, and lost its edges' frames.  The NAT class may stay "
+        "unknown: an edge may learn the other supernode by IPv6 only",
+        Site(["easy-kept"], supernodes=["sn1"], expect_nat=".*"),
+        Site(["easy-changed"], supernodes=["sn2"], expect_nat=".*"),
+        "direct", ipv6=True, sn_peer_family=46, tags=["ipv6"]),
+    Scenario(
+        "fed-peers46-blocked",
+        "as fed-peers46, the supernodes' firewalls let nothing in over "
+        "IPv6: their IPv6 entries for each other are dead",
+        Site(["easy-kept"], supernodes=["sn1"], expect_nat=".*"),
+        Site(["easy-changed"], supernodes=["sn2"], expect_nat=".*"),
+        "direct", ipv6=True, sn_peer_family=46, sn_block6=True,
+        tags=["ipv6"]),
+    Scenario(
+        "fed-peers46-relayed",
+        "as fed-peers46-blocked, hard-range / hard-range: the frames go "
+        "across the federation",
+        Site(["hard-range"], supernodes=["sn1"], expect_nat=".*"),
+        Site(["hard-range"], supernodes=["sn2"], expect_nat=".*"),
+        "relayed", ipv6=True, sn_peer_family=46, sn_block6=True,
+        tags=["ipv6"]),
+    Scenario(
         "hard-hard-v6-blocked",
         "as hard-hard-v6, but the supernodes' firewalls let nothing in over "
         "IPv6: the edges stay with IPv4, relayed as in hard-hard",
