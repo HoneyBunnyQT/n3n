@@ -927,7 +927,12 @@ int decode_PEER_INFO (n2n_PEER_INFO_t *pkt,
         retval += retsock;
     }
     retval += decode_uint32(&pkt->load, base, rem, idx);
-    retval += decode_uint32((uint32_t*)&pkt->uptime, base, rem, idx);
+    // 32 bits on the wire, a time_t of 64 most of the time: not in place,
+    // where it would be its upper half on a big endian CPU, and the other
+    // half whatever was there
+    uint32_t uptime = 0;
+    retval += decode_uint32(&uptime, base, rem, idx);
+    pkt->uptime = uptime;
     retval += decode_buf((uint8_t*)pkt->version, sizeof(n2n_version_t), base, rem, idx);
 
     if((*idx - idx0) != retval) {
