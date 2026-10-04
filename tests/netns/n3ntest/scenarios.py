@@ -229,7 +229,9 @@ SCENARIOS = [
         "is at and gets another description, then a gets SIGHUP: it "
         "applies both while it runs, moves to the other supernode, and "
         "the edges stay direct",
-        Site(["easy-kept"]),
+        # a reload reads the file as the user the edge dropped to: in CI
+        # the checkout, under the runner's home, is not readable for it
+        Site(["easy-kept"], conf={"daemon": {"userid": 0, "groupid": 0}}),
         Site(["easy-changed"]),
         "direct", reload="a"),
     Scenario(
