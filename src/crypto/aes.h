@@ -37,6 +37,8 @@
 
 #ifdef HAVE_LIBCRYPTO // openSSL 1.1 ---------------------------------------------------------------------
 
+#define AES_IMPL "OpenSSL"
+
 #include <openssl/aes.h>
 #include <openssl/evp.h>
 #include <openssl/err.h>
@@ -49,6 +51,8 @@ typedef struct aes_context_t {
 
 #elif defined (__AES__) && defined (__SSE2__) // Intel's AES-NI ---------------------------------------------------
 
+#define AES_IMPL "AES-NI"
+
 #include <immintrin.h>
 
 typedef struct aes_context_t {
@@ -59,6 +63,8 @@ typedef struct aes_context_t {
 
 #elif (defined (__ARM_FEATURE_AES) || defined (__ARM_FEATURE_CRYPTO)) && !defined (__ARM_BIG_ENDIAN) // ARMv8 CE -
 
+#define AES_IMPL "ARMv8 Cryptography Extension"
+
 #include <arm_neon.h>
 
 typedef struct aes_context_t {
@@ -68,6 +74,8 @@ typedef struct aes_context_t {
 } aes_context_t;
 
 #else // plain C --------------------------------------------------------------------------------------------------
+
+#define AES_IMPL "plain C"
 
 typedef struct aes_context_t {
     uint32_t enc_rk[60];    // round keys for encryption

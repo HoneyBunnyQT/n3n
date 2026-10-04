@@ -43,14 +43,16 @@ static struct n3n_conf_option section_community[] = {
         .desc = "The name of the cipher to use",
         .help = "Choose from any of the registered ciphers for payload "
                 "encryption (requires a key). "
-                "(eg: Twofish, AES, ChaCha20, Speck).",
+                "(eg: Twofish, AES, ChaCha20, Speck; n3n-edge help "
+                "transform lists those built in).",
     },
     {
         .name = "compression",
         .type = n3n_conf_compression,
         .offset = offsetof(struct n3n_conf_community, compression),
         .desc = "Compress outgoing data packets",
-        .help = "none, lzo, or zstd (only in a build with zstd).",
+        .help = "none, lzo, or zstd (only in a build with zstd; "
+                "n3n-edge help transform lists those built in).",
     },
     {
         .name = "header_encryption",

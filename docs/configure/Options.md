@@ -48,7 +48,7 @@ Settings that affect connecting to the network. A supernode also knows each comm
 
 The name of the cipher to use.
 
-Choose from any of the registered ciphers for payload encryption (requires a key). (eg: Twofish, AES, ChaCha20, Speck).
+Choose from any of the registered ciphers for payload encryption (requires a key). (eg: Twofish, AES, ChaCha20, Speck; n3n-edge help transform lists those built in).
 
 Default: `null`
 
@@ -56,7 +56,7 @@ Default: `null`
 
 Compress outgoing data packets.
 
-none, lzo, or zstd (only in a build with zstd).
+none, lzo, or zstd (only in a build with zstd; n3n-edge help transform lists those built in).
 
 Default: `none`
 

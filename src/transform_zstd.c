@@ -147,6 +147,7 @@ int n2n_transop_zstd_init (const n2n_edge_conf_t *conf, n2n_trans_op_t *ttt) {
 
 static struct n3n_transform transform = {
     .name = "zstd",
+    .desc = "Zstandard, libzstd",
     .id = N2N_COMPRESSION_ID_ZSTD,
     .is_compress = true,
 };

@@ -14,6 +14,9 @@ help make a choice.  Without a key, edges send the payload unencrypted; with
 a key and no `community.cipher`, they use AES.  ChaCha20 and Speck are the
 fastest on most machines, and the ones user/password authentication needs.
 
+`n3n-edge help transform` lists the ciphers and compressions of a build,
+with the implementation each one uses (OpenSSL, AES-NI, AVX2, NEON, plain
+C, ...): which one depends on the CPU and options the build was made for.
 A built-in benchmark of the encryption methods is available with the
 `n3n-edge test benchmark` tool.
 
