@@ -380,8 +380,7 @@ static const ssize_t bench_encr_run (
     uint8_t buf[TF_BLOCK_SIZE];
 
     // First, populate our static test "IV"
-    *(uint64_t *)(&assembly[0]) = *(uint64_t *)&ctx->iv[0];
-    *(uint64_t *)(&assembly[8]) = *(uint64_t *)&ctx->iv[8];
+    memcpy(&assembly[0], &ctx->iv[0], 16);
 
     ssize_t idx = TF_PREAMBLE_SIZE;
 

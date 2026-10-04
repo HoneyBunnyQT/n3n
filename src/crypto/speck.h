@@ -29,8 +29,22 @@
 #include <stdint.h>     // for uint64_t, uint32_t
 
 
+#include <string.h>    /* memcpy() */
+
 #define u32 uint32_t
 #define u64 uint64_t
+
+// A word of a block anywhere in memory, also unaligned (as within packets),
+// in the CPU's order: the SIMD versions are for little endian CPUs only
+static inline u64 speck_ld64 (const void *p) {
+    u64 v;
+    memcpy(&v, p, sizeof(v));
+    return v;
+}
+
+static inline void speck_st64 (void *p, u64 v) {
+    memcpy(p, &v, sizeof(v));
+}
 
 #define N2N_SPECK_IVEC_SIZE     16
 #define SPECK_KEY_BYTES       (256/8)

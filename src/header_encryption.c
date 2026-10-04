@@ -37,6 +37,28 @@ struct speck_context_t;
 #define HASH_FIND_COMMUNITY(head, name, out) HASH_FIND_STR(head, name, out)
 
 
+// The words of a header, wherever the packet is in memory: also unaligned
+static inline uint32_t ld32 (const uint8_t *p) {
+    uint32_t v;
+    memcpy(&v, p, sizeof(v));
+    return v;
+}
+
+static inline uint64_t ld64 (const uint8_t *p) {
+    uint64_t v;
+    memcpy(&v, p, sizeof(v));
+    return v;
+}
+
+static inline void st32 (uint8_t *p, uint32_t v) {
+    memcpy(p, &v, sizeof(v));
+}
+
+static inline void st64 (uint8_t *p, uint64_t v) {
+    memcpy(p, &v, sizeof(v));
+}
+
+
 int packet_header_decrypt (uint8_t packet[], uint16_t packet_len,
                            char *community_name,
                            struct speck_context_t *ctx,
@@ -66,8 +88,8 @@ int packet_header_decrypt (uint8_t packet[], uint16_t packet_len,
         speck_128_decrypt(packet, (speck_context_t*)ctx_iv);
 
         // extract the required data
-        *stamp = be64toh(*(uint64_t*)&packet[4]);
-        checksum_high = be32toh(*(uint32_t*)packet);
+        *stamp = be64toh(ld64(&packet[4]));
+        checksum_high = be32toh(ld32(packet));
 
         // restore original packet order before calculating checksum
         memcpy(&packet[0], &packet[20], 4);
@@ -98,8 +120,6 @@ int packet_header_encrypt (uint8_t packet[], uint16_t header_len, uint16_t packe
                            struct speck_context_t *ctx_iv,
                            uint64_t stamp) {
 
-    uint32_t *p32 = (uint32_t*)packet;
-    uint64_t *p64 = (uint64_t*)packet;
     uint64_t checksum = 0;
     uint32_t magic = 0x6E320000; /* == ASCII "n2__" */
     magic += header_len;
@@ -113,21 +133,21 @@ int packet_header_encrypt (uint8_t packet[], uint16_t header_len, uint16_t packe
     checksum = pearson_hash_64(packet, packet_len);
 
     // re-order packet
-    p32[5] = p32[0];
+    memcpy(&packet[20], &packet[0], 4);
 
     // add time stamp, checksum, and random to form the pre-IV
-    p64[0] = htobe64(checksum);
+    st64(&packet[0], htobe64(checksum));
 
-    p32[1] = p32[1] ^ htobe32((uint32_t)(stamp >> 32));
-    p32[2] = htobe32((uint32_t)stamp);
+    st32(&packet[4], ld32(&packet[4]) ^ htobe32((uint32_t)(stamp >> 32)));
+    st32(&packet[8], htobe32((uint32_t)stamp));
 
-    p32[3] = n3n_rand();
+    st32(&packet[12], (uint32_t)n3n_rand());
 
     // encrypt this pre-IV to IV
     speck_128_encrypt(packet, (speck_context_t*)ctx_iv);
 
     // place IV plus magic in packet
-    p32[4] = htobe32(magic);
+    st32(&packet[16], htobe32(magic));
 
     // encrypt, starting from magic
     speck_ctr(&packet[16], &packet[16], header_len - 16, packet, (speck_context_t*)ctx);

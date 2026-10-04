@@ -731,7 +731,9 @@ static void handle_fd (const time_t now, int slot, struct n3n_runtime_data *eee)
                     // the buffer can hold several PDUs: hand over each one
                     // that is complete
                     while(conn->state == CONN_READY) {
-                        int size = ntohs(*(uint16_t *)&conn->request->str);
+                        uint16_t be_size;
+                        memcpy(&be_size, conn->request->str, sizeof(be_size));
+                        int size = ntohs(be_size);
 
                         read_proto3_tcp(
                             eee,

@@ -226,8 +226,7 @@ static const ssize_t bench_encr_run (
     // TODO: refactor to call transop_encode_speck() directly
 
     // First, populate our static test IV
-    *(uint64_t *)(&ctx->outbuf[0]) = *(uint64_t *)&ctx->iv[0];
-    *(uint64_t *)(&ctx->outbuf[8]) = *(uint64_t *)&ctx->iv[8];
+    memcpy(&ctx->outbuf[0], &ctx->iv[0], 16);
 
     speck_ctr(
         &ctx->outbuf[TRANSOP_SPECK_PREAMBLE_SIZE],

@@ -153,7 +153,12 @@ void conn_check_ready(conn_t *conn) {
                 return;
             }
 
-            expected_length = ntohs(*(uint16_t *)&conn->request->str) + 2;
+            {
+                // the buffer may start anywhere, also unaligned
+                uint16_t be_len;
+                memcpy(&be_len, conn->request->str, sizeof(be_len));
+                expected_length = ntohs(be_len) + 2;
+            }
             break;
 
         default:

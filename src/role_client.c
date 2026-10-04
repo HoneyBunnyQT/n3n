@@ -536,9 +536,10 @@ int is_valid_peer_sock (const n3n_sock_t *sock) {
 
     switch(sock->family) {
         case AF_INET: {
-            uint32_t *a = (uint32_t*)sock->addr.v4;
+            uint32_t a;
 
-            if(*a != htonl(localhost_v4))
+            memcpy(&a, sock->addr.v4, sizeof(a));
+            if(a != htonl(localhost_v4))
                 return(1);
         }
         break;
@@ -993,7 +994,8 @@ static void check_join_multicast_group (struct n3n_runtime_data *eee) {
             struct ip_mreq mreq;
             mreq.imr_multiaddr.s_addr = inet_addr(N2N_MULTICAST_GROUP);
 #ifdef _WIN32
-            uint32_t raw_addr = *(uint32_t *)&eee->client.curr_sn->sock.addr.v4;
+            uint32_t raw_addr;
+            memcpy(&raw_addr, eee->client.curr_sn->sock.addr.v4, sizeof(raw_addr));
             dec_ip_str_t ip_addr;
             get_best_interface_ip(raw_addr, &ip_addr);
             mreq.imr_interface.s_addr = inet_addr(ip_addr);
