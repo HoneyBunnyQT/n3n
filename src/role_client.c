@@ -852,24 +852,13 @@ static void peer_set_p2p_confirmed (struct n3n_runtime_data * eee,
     }
 
     if(scan) {
-        bool same_sock = false;
-
         HASH_DEL(eee->client.pending_peers, scan);
 
-        // the peer may be known already, at another address: as when it
-        // moved, and a PEER_INFO had it pending anew - one entry for it,
-        // the known one, which knows who it is
-        HASH_FIND_PEER(eee->client.known_peers, mac, scan_tmp);
-        if(scan_tmp == NULL) {
-            scan_tmp = find_peer_by_sock(peer, eee->client.known_peers);
-            same_sock = (scan_tmp != NULL);
-        }
+        scan_tmp = find_peer_by_sock(peer, eee->client.known_peers);
         if(scan_tmp != NULL) {
             HASH_DEL(eee->client.known_peers, scan_tmp);
             free(scan);
             scan = scan_tmp;
-        }
-        if(same_sock) {
             memcpy(scan->mac_addr, mac, sizeof(n2n_mac_t));
             // in case of MAC change, reset cookie to allow immediate re-registration
             scan->last_cookie = N2N_NO_REG_COOKIE;
@@ -885,6 +874,20 @@ static void peer_set_p2p_confirmed (struct n3n_runtime_data * eee,
                || ((rank_new == rank_cur) && (cookie > scan->last_cookie))) {
                 scan->sock = *peer;
                 scan->last_cookie = cookie;
+            }
+
+            // the peer may be known already, by its MAC at another address:
+            // as when it moved, and a PEER_INFO had it pending anew.  One
+            // entry for it - the known one, which knows who it is - and the
+            // way the pending one found
+            HASH_FIND_PEER(eee->client.known_peers, mac, scan_tmp);
+            if(scan_tmp != NULL) {
+                HASH_DEL(eee->client.known_peers, scan_tmp);
+                scan_tmp->sock = scan->sock;
+                scan_tmp->last_cookie = scan->last_cookie;
+                scan_tmp->last_seen = scan->last_seen;
+                free(scan);
+                scan = scan_tmp;
             }
         }
 
