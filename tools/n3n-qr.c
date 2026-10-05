@@ -45,9 +45,11 @@ static void usage (void) {
         "  -s, --scale N       pixels per module of the code (default 8)\n"
         "  -t, --terminal      show the code in the terminal, no image\n"
         "  -p, --print         print the text that goes into the code, no image\n"
-        "  -P, --pin           seal the code with a PIN, asked for on the terminal\n"
-        "                      (or taken from $N3N_QR_PIN): the code then shows\n"
-        "                      neither the configuration nor that it is n3n's\n"
+        "  -P, --pin[=PIN]     seal the code with a PIN: the code then shows\n"
+        "                      neither the configuration nor that it is n3n's.\n"
+        "                      The PIN comes from here (--pin=1234), else from\n"
+        "                      $N3N_QR_PIN, else it is asked for on the terminal;\n"
+        "                      there is no space before an inline PIN\n"
         "      --open CODE     print the configuration of a sealed code\n"
         "  -h, --help          this help\n"
         "\n"
@@ -59,15 +61,19 @@ static void usage (void) {
 }
 
 
-// A PIN from $N3N_QR_PIN, or asked for on the terminal without echo (twice
-// when twice is set): malloc()ed, NULL if there is none
-static char *ask_pin (bool twice) {
+// A PIN: preset (from --pin=PIN) if given, else $N3N_QR_PIN, else asked for
+// on the terminal without echo (twice when twice is set): malloc()ed, NULL
+// if there is none
+static char *ask_pin (bool twice, const char *preset) {
 
     const char *env = getenv("N3N_QR_PIN");
     char first[80], second[80];
     struct termios old, quiet;
     FILE *tty;
 
+    if(preset && *preset) {
+        return strdup(preset);
+    }
     if(env && *env) {
         return strdup(env);
     }
@@ -341,7 +347,7 @@ int main (int argc, char **argv) {
         {"scale",    required_argument, NULL, 's'},
         {"terminal", no_argument,       NULL, 't'},
         {"print",    no_argument,       NULL, 'p'},
-        {"pin",      no_argument,       NULL, 'P'},
+        {"pin",      optional_argument, NULL, 'P'},
         {"open",     required_argument, NULL, 'O'},
         {"help",     no_argument,       NULL, 'h'},
         {NULL,       0,                 NULL, 0}
@@ -351,10 +357,11 @@ int main (int argc, char **argv) {
     bool terminal = false;
     bool print = false;
     bool sealed = false;
+    const char *seal_pin = NULL;
     const char *open_code = NULL;
     int c;
 
-    while((c = getopt_long(argc, argv, "o:s:tpPh", long_options, NULL)) != -1) {
+    while((c = getopt_long(argc, argv, "o:s:tpP::h", long_options, NULL)) != -1) {
         switch(c) {
             case 'o':
                 output = optarg;
@@ -374,6 +381,10 @@ int main (int argc, char **argv) {
                 break;
             case 'P':
                 sealed = true;
+                // optarg is set for --pin=PIN or -PPIN, NULL for a bare flag;
+                // a space-separated "--pin 1234" leaves 1234 as an argument,
+                // never the PIN (see the extra-arguments message below)
+                seal_pin = optarg;
                 break;
             case 'O':
                 open_code = optarg;
@@ -387,7 +398,7 @@ int main (int argc, char **argv) {
         }
     }
     if(open_code) {
-        char *pin = ask_pin(false);
+        char *pin = ask_pin(false, NULL);
         char *text;
         if(!pin) {
             return 1;
@@ -403,6 +414,15 @@ int main (int argc, char **argv) {
         return 0;
     }
     if(optind != argc - 1) {
+        if(optind < argc - 1) {
+            fprintf(stderr,
+                    "n3n-qr: expected one FILE.conf, but got %d arguments\n"
+                    "        (the PIN is not a separate argument: use --pin=PIN, or\n"
+                    "         a bare --pin for a prompt, or the N3N_QR_PIN variable)\n",
+                    argc - optind);
+        } else {
+            fprintf(stderr, "n3n-qr: no FILE.conf given\n");
+        }
         usage();
         return 2;
     }
@@ -431,7 +451,7 @@ int main (int argc, char **argv) {
     }
 
     if(sealed) {
-        char *pin = ask_pin(true);
+        char *pin = ask_pin(true, seal_pin);
         char *code = NULL;
         if(!pin || (qr_seal(payload, pin, &code) != 0)) {
             if(pin) {
