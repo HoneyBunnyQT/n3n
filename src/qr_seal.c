@@ -28,6 +28,12 @@
 
 #include "crypto/speck.h"     // for speck_init, speck_ctr, speck_deinit
 
+#ifdef __linux__
+#include <sys/syscall.h>      // for SYS_getrandom
+#include <unistd.h>           // for syscall
+#include <errno.h>
+#endif
+
 #define SEAL_MAGIC     "n3n1\n"
 #define SEAL_ROUNDS    300000
 #define SEAL_SALT      16
@@ -147,26 +153,51 @@ static int seal_crypt (uint8_t *p, size_t len, const char *pin, const uint8_t sa
     return 0;
 }
 
+// The salt, from the same source the rest of n3n seeds its RNG with: an
+// app does not always get to open /dev/urandom in its sandbox (on Android
+// that fopen was why a sealed code never came out), but the getrandom()
+// the edge already uses on the device is there.  /dev/urandom only if the
+// syscall is not.
+static bool seal_random (uint8_t *buf, size_t n) {
+
+#if defined(__linux__) && defined(SYS_getrandom)
+    size_t got = 0;
+    while(got < n) {
+        long rc = syscall(SYS_getrandom, buf + got, n - got, 0);
+        if(rc > 0) {
+            got += (size_t)rc;
+        } else if((rc < 0) && (errno == EINTR)) {
+            continue;
+        } else {
+            break;
+        }
+    }
+    if(got == n) {
+        return true;
+    }
+#endif
+    FILE *rnd = fopen("/dev/urandom", "rb");
+    bool ok = rnd && (fread(buf, 1, n, rnd) == n);
+    if(rnd) {
+        fclose(rnd);
+    }
+    return ok;
+}
+
 int qr_seal (const char *text, const char *pin, char **out) {
 
     size_t magic = strlen(SEAL_MAGIC);
     size_t len = magic + strlen(text);
     uint8_t *buf = malloc(SEAL_SALT + len);
-    FILE *rnd;
     int rc = -1;
 
     if(!buf) {
         return -1;
     }
-    rnd = fopen("/dev/urandom", "rb");
-    if(!rnd || (fread(buf, 1, SEAL_SALT, rnd) != SEAL_SALT)) {
-        if(rnd) {
-            fclose(rnd);
-        }
+    if(!seal_random(buf, SEAL_SALT)) {
         free(buf);
         return -1;
     }
-    fclose(rnd);
 
     memcpy(buf + SEAL_SALT, SEAL_MAGIC, magic);
     memcpy(buf + SEAL_SALT + magic, text, len - magic);
