@@ -379,6 +379,39 @@ while `peer` keeps getting what does not touch the wire, merged into
 
 Current ideas, half-decided things, commands worth keeping.
 
+### Where things stand (2026-10-05)
+
+Recently on `peer` and done: the whole netns suite runs in CI on every
+push (`netns.yml`), plus interop against the last upstream release and
+n2n 3.1.1 (`interop.yml`); SIGHUP / `n3nctl reload`; the supernode's
+federation-name guarded on the management page.  Android: the app crashed
+on connect / disconnect / connect - two bugs found and fixed (the
+management request was parsed as a C string but not terminated, see
+`connslot`; and an embedded edge could not run twice in a process because
+`edge_term()` tore down the global registries that the next run needed,
+see `embed`).  The share screen now hides the keyboard before showing the
+QR code.
+
+Open, in rough order:
+
+- Android: a state view, auto addresses, reacting to network changes, IPv6
+  on the device; re-test routing through an exit node and the share screen
+  on a fresh build.
+- Path MTU on a 1280-byte path: send an ICMP "packet too big" back into
+  the TAP for the inner sender (and/or clamp TCP MSS per peer); today
+  oversize frames are fragmented or dropped, see the `mtu-1280*` scenarios.
+- Keep in mind a real finding: the direct path between two edges can be
+  the lossy one (an ISP spreading traffic over two peering legs, one
+  dropping) while the relay is clean - see the v4 path-manager note above.
+- The `-O` command-line option, the edge reading the community file, unit
+  tests for the shared send layer, the performance work (epoll, batched
+  I/O, no alloc per packet) and the v4 ideas under "Later".
+
+Picking up in a new session: read this file and `docs/develop/*.md`, build
+with `./autogen.sh && ./configure && make`, and the tests are `make test`
+(and `tests/netns/` for the NAT scenarios, `tests/netns/uml.sh` where
+there is no IPv6).
+
 ### Parked: the fixes as PRs for upstream
 
 Nine branches `pr/*` on honeybunnyqt/n3n, cut from n42n/n3n main, one per
