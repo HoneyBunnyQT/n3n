@@ -1142,6 +1142,15 @@ void n3n_deinitfuncs_mainloop () {
     free(fdlist);
     fdlist = NULL;
     fdlist_size = 0;
+    // the ticks carry the runtime they belong to, which edge_term() is
+    // about to free: an embedded edge that runs again (the Android app,
+    // reconnecting) would otherwise keep the dead ones here - the dedup in
+    // mainloop_register_tick_rt() does not match them, as the new run's
+    // runtime is at another address - and run_ticks() would call them with
+    // a freed pointer.  Clear them, so the next run starts afresh.
+    memset(ticks, 0, sizeof(ticks));
+    ticks_count = 0;
+    listen_pause_until = 0;
     // TODO: once the metrics framework supports it
     // n3n_metrics_unregister(&metrics_module_dynamic);
     // n3n_metrics_unregister(&metrics_module_static);
