@@ -1789,8 +1789,12 @@ static int edge_init_sockets (struct n3n_runtime_data *eee) {
     if(eee->conf.mgmt_port) {
         int fd = slots_create_listen_tcp(eee->conf.mgmt_port, false);
         if(fd < 0) {
-            perror("slots_listen_tcp");
-            exit(1);
+            // not exit(): an embedded edge (the Android app) is a library in
+            // someone else's process, and must not take it down - the caller
+            // unwinds through edge_init_error
+            traceEvent(TRACE_ERROR, "cannot listen on management port %d: %s",
+                       eee->conf.mgmt_port, strerror(errno));
+            return -1;
         }
         mainloop_register_fd(fd, fd_info_proto_listen_http);
 #ifdef _WIN32
@@ -1815,9 +1819,11 @@ static int edge_init_sockets (struct n3n_runtime_data *eee) {
     // - do we actually want to tie the user/group to the running pid?
 
     if(fd < 0) {
-        perror("slots_listen_unix");
-        edge_term(eee);
-        exit(1);
+        // as above: return the error, the caller (edge_init) tears the edge
+        // down through edge_init_error, instead of exit()ing the process
+        traceEvent(TRACE_ERROR, "cannot listen on the management socket %s: %s",
+                   unixsock, strerror(errno));
+        return -1;
     }
     mainloop_register_fd(fd, fd_info_proto_listen_http);
 #endif

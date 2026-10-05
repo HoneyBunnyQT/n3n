@@ -1139,6 +1139,20 @@ void n3n_initfuncs_mainloop () {
 
 void n3n_deinitfuncs_mainloop () {
     connlist_deinit();
+    // close the listening sockets the mainloop still holds.  edge_init_sockets()
+    // opens the management sockets and registers them here, but nothing ever
+    // closed them, so an embedded edge that runs again in the one process (the
+    // Android app, reconnecting) could not bind the management port a second
+    // time - and edge_init_sockets() exit()ed on that, taking the app down.
+    // The edge's own sockets (v3udp, tuntap) are closed and unregistered by
+    // then, so only the listeners are left to close here.
+    for(int slot = 0; slot < fdlist_size; slot++) {
+        if((fdlist[slot].fd >= 0)
+           && ((fdlist[slot].proto == fd_info_proto_listen_http)
+               || (fdlist[slot].proto == fd_info_proto_listen_v3tcp))) {
+            closesocket(fdlist[slot].fd);
+        }
+    }
     free(fdlist);
     fdlist = NULL;
     fdlist_size = 0;
