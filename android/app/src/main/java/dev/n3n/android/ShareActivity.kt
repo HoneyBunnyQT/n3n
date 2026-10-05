@@ -158,9 +158,6 @@ class ShareActivity : Activity() {
     private fun draw(content: String, sealed: Boolean) {
         val scroll = findViewById<ScrollView>(R.id.share_scroll)
         hideKeyboard()
-        // after the keyboard is gone and the window is its full height again,
-        // bring the code into view at the top
-        scroll.post { scroll.smoothScrollTo(0, 0) }
         try {
             code.setImageBitmap(QrEncode.bitmap(content))
             what.setText(if (sealed) R.string.code_sealed else R.string.code_plain)
@@ -171,5 +168,20 @@ class ShareActivity : Activity() {
             code.setImageDrawable(null)
             what.setText(R.string.code_too_big)
         }
+        // After the PIN dialog the switch below keeps the focus, and a
+        // ScrollView scrolls a focused child into view - down, away from the
+        // code at the top, and back down again at every attempt to scroll up.
+        // Park the focus at the top instead, and scroll up once the new code
+        // is laid out (its height is not known until then).
+        val top = scroll.getChildAt(0)
+        top.isFocusableInTouchMode = true
+        top.requestFocus()
+        scroll.viewTreeObserver.addOnGlobalLayoutListener(
+            object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+                override fun onGlobalLayout() {
+                    scroll.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                    scroll.scrollTo(0, 0)
+                }
+            })
     }
 }
