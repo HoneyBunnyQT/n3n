@@ -1772,11 +1772,15 @@ static int mkdir_p (const char *pathname, int mode, int uid, int gid) {
 
 // Where the session directories go instead of CONFIG_RUNDIR/n3n, for an app
 // that embeds n3n (n3n/embed.h)
-static const char *rundir;
+static char *rundir;
 
 void n3n_config_set_rundir (const char *dir) {
 
-    rundir = dir;
+    // own a copy: an embedder may hand a string that does not outlive the
+    // call - the Android app passes the bytes of a Java string and frees
+    // them when the run returns, which left this dangling between runs
+    free(rundir);
+    rundir = dir ? strdup(dir) : NULL;
 }
 
 
