@@ -174,6 +174,16 @@ void n3n_notify_tick (struct n3n_runtime_data *rt) {
     }
 }
 
+
+void n3n_notify_stopping (void) {
+
+    // STOPPING=1 moves the unit to "deactivating"; the STATUS line stays as
+    // "systemctl status" shows it, so leave no stale "registered ... N peers"
+    // behind - the daemon is on its way out, not still connected
+    n3n_notify("STOPPING=1\nSTATUS=shutting down");
+    status_sent[0] = 0;
+}
+
 #else
 
 void n3n_notify (const char *msg) {
@@ -183,6 +193,9 @@ void n3n_notify_ready (struct n3n_runtime_data *rt) {
 }
 
 void n3n_notify_tick (struct n3n_runtime_data *rt) {
+}
+
+void n3n_notify_stopping (void) {
 }
 
 #endif

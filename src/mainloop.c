@@ -1122,7 +1122,7 @@ void mainloop_run (struct n3n_runtime_data *rt) {
         // systemd's watchdog and status, if it asked for them
         n3n_notify_tick(rt);
     }
-    n3n_notify("STOPPING=1");
+    n3n_notify_stopping();
 }
 
 void n3n_initfuncs_mainloop () {

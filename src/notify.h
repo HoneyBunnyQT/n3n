@@ -20,4 +20,7 @@ void n3n_notify_ready (struct n3n_runtime_data *rt);
 // From the main loop: the watchdog, and the status when it changed
 void n3n_notify_tick (struct n3n_runtime_data *rt);
 
+// On the way out: STOPPING=1, and a status that is not the last peer count
+void n3n_notify_stopping (void);
+
 #endif
