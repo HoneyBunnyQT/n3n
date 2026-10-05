@@ -5,10 +5,12 @@ package dev.n3n.android
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Context
 import android.os.Bundle
 import android.text.InputType
 import android.view.View
 import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
@@ -143,8 +145,21 @@ class ShareActivity : Activity() {
         }.start()
     }
 
+    // the PIN dialog's keyboard can linger, and with adjustResize it leaves
+    // the window - and the scroll view in it - shrunk, so the code ends up
+    // out of reach above the fold
+    private fun hideKeyboard() {
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        val token = currentFocus?.windowToken ?: window.decorView.windowToken
+        imm?.hideSoftInputFromWindow(token, 0)
+        currentFocus?.clearFocus()
+    }
+
     private fun draw(content: String, sealed: Boolean) {
         val scroll = findViewById<ScrollView>(R.id.share_scroll)
+        hideKeyboard()
+        // after the keyboard is gone and the window is its full height again,
+        // bring the code into view at the top
         scroll.post { scroll.smoothScrollTo(0, 0) }
         try {
             code.setImageBitmap(QrEncode.bitmap(content))
