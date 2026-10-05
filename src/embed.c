@@ -29,7 +29,6 @@
 #include <unistd.h>             // for pipe, write, getuid
 
 
-static bool initialised;
 static bool keep_running;
 static int wake_pipe[2] = {-1, -1};
 
@@ -55,11 +54,11 @@ int n3n_edge_run (const char *config, int tun_fd, const struct n3n_embed *e) {
     n3n_set_socket_hook(e ? e->protect : NULL, e ? e->ctx : NULL);
     n3n_config_set_rundir(e ? e->rundir : NULL);
 
-    // the sections of the configuration, the metrics: once a process
-    if(!initialised) {
-        n3n_initfuncs();
-        initialised = true;
-    }
+    // the process-global registries (config sections, metrics, ...):
+    // edge_term() tears them down at the end of each run, so set them up
+    // again here.  The registries skip what is already present, so a run
+    // that returned early (before edge_term) does not double-register.
+    n3n_initfuncs();
 
     snprintf(session, sizeof(session), "%s", (e && e->session) ? e->session : "edge");
     edge_init_conf_defaults(&conf, session);

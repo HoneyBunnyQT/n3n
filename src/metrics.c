@@ -16,6 +16,14 @@ static char *sessionname;
 static struct n3n_metrics_module *registered_metrics;
 
 void n3n_metrics_register (struct n3n_metrics_module *module) {
+    // register each module only once, so a second n3n_initfuncs() (an
+    // embedded edge run again, see embed.c) does not loop the list onto
+    // itself
+    for(struct n3n_metrics_module *p = registered_metrics; p; p = p->next) {
+        if(p == module) {
+            return;
+        }
+    }
     module->next = registered_metrics;
     registered_metrics = module;
 }

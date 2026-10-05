@@ -50,12 +50,20 @@ void n3n_config_register_section_instanced (char *name, char *help, struct n3n_c
                                             n3n_conf_instance_fn instance,
                                             n3n_conf_instance_nth_fn instance_nth) {
     struct n3n_conf_section *section;
+
+    // register each section name only once: a second n3n_initfuncs()
+    // (an embedded edge run again, see embed.c) must not add duplicates
+    // when the sections were not freed in between
+    for(section = registered_sections; section; section = section->next) {
+        if(0 == strcmp(section->name, name)) {
+            return;
+        }
+    }
+
     section = malloc(sizeof(*section));
     if(!section) {
         return;
     }
-
-    // TODO: should confirm that we register each section name only once
 
     section->next = registered_sections;
     section->name = name;
@@ -90,6 +98,9 @@ void n3n_deinitfuncs_config () {
         free(p);
         p = new_p;
     }
+    // leave no dangling head: the next n3n_initfuncs() (an embedded edge
+    // run again) walks this list, see n3n_config_register_section()
+    registered_sections = NULL;
 }
 
 const char *str2id_by_id (const struct n3n_conf_str2id_data data[], const int id) {

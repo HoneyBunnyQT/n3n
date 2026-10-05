@@ -17,9 +17,12 @@ void n3n_transform_register (struct n3n_transform *transform) {
         return;
     }
 
-    // TODO: should confirm that we register each name only once
-    // (perhaps twice if one is_compression and the other is not, but that
-    // also sounds confusing)
+    // only once, so a second n3n_initfuncs() does not loop the list
+    for(struct n3n_transform *p = registered_transforms; p; p = p->next) {
+        if(p == transform) {
+            return;
+        }
+    }
 
     transform->next = registered_transforms;
     registered_transforms = transform;

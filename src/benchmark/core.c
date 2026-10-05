@@ -174,6 +174,12 @@ static void perf_measure_collect (struct info *info) {
 static struct bench_item *registered_items = NULL;
 
 void n3n_benchmark_register (struct bench_item *item) {
+    // only once, see n3n_metrics_register()
+    for(struct bench_item *p = registered_items; p; p = p->next) {
+        if(p == item) {
+            return;
+        }
+    }
     item->next = registered_items;
     registered_items = item;
 }
