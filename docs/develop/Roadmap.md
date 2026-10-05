@@ -288,7 +288,16 @@ while `peer` keeps getting what does not touch the wire, merged into
       federation, generalised)
 - [ ] Path manager: candidates direct / same host / same site / hole
       punched / via relay / via two relays, probed continuously, cost from
-      RTT, loss and load, switching while running
+      RTT, loss and load, switching while running.  Keep in mind that the
+      direct path can be the lossy one: a real case had an edge's own
+      ISP spread traffic across two peering legs (ECMP), one dropping
+      packets, so the direct p2p path lost 20-30% while the relay through
+      the supernode's datacentre was clean - plain ping to the peer's real
+      address lost too, so not n3n's doing.  v3 picks a direct path and
+      keeps it however bad it gets; v4 should measure per-path loss and
+      be willing to fall back to a clean relay even when a direct path
+      exists, and prefer another family/transport when one underlay leg
+      is bad
 - [ ] Transports as first-class citizens: every way a peer can be reached
       (UDP, TCP, later others) is announced in its record with the same
       standing, and any peer may use any of them towards any other - edges
