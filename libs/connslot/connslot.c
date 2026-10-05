@@ -185,8 +185,10 @@ void conn_check_ready(conn_t *conn) {
 ssize_t conn_read(conn_t *conn, int fd) {
     conn->state = CONN_READING;
 
-    // If no space available, try increasing our capacity
-    if (!sb_avail(conn->request)) {
+    // If no space available, try increasing our capacity.  Keep one byte
+    // spare for a terminating NUL: the request is parsed as a C string
+    // (conn_check_ready, jsonrpc), and sb_read() does not terminate it.
+    if (sb_avail(conn->request) <= 1) {
         strbuf_t *p = sb_realloc(&conn->request, conn->request->capacity + 16);
         if (!p) {
             abort(); // FIXME: do something smarter?
@@ -218,6 +220,21 @@ ssize_t conn_read(conn_t *conn, int fd) {
 
     // This will truncate the time to a int - usually 32bits
     conn->activity = time(NULL);
+
+    // NUL-terminate just past what was received, so the string parsers
+    // (conn_check_ready's header scan, jsonrpc) do not read past the
+    // buffer.  There is room: sb_read() stops short of the full capacity
+    // only when the spare byte above is kept, but grow by one if a full
+    // buffer ever left none.
+    if (sb_avail(conn->request) < 1) {
+        strbuf_t *p = sb_realloc(&conn->request, conn->request->capacity + 1);
+        if (!p) {
+            conn->state = CONN_ERROR;
+            return 0;
+        }
+    }
+    conn->request->str[conn->request->wr_pos] = '\0';
+
     conn_check_ready(conn);
     return size;
 }
