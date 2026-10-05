@@ -140,7 +140,11 @@ static int speck_expand_key (speck_context_t *ctx, const unsigned char *k, int k
 
     ctx->keysize = keysize;
 
-    return 1;
+    // 0 for success, as every other backend (NEON, SSE2, AVX2, AVX512)
+    // returns: the only caller that checks, qr_seal(), took the 1 for a
+    // failure, so a sealed QR code never came out where this plain C path
+    // is built (Android, where there is no SPECK_ARM_NEON)
+    return 0;
 }
 
 
