@@ -47,23 +47,27 @@ static int test_header (void) {
     // a packet shorter than the common part must be left alone (return 0),
     // never read or written past its end
     memset(buf, 0, sizeof(buf));
-    failed |= (packet_header_decrypt(buf, COMMON_PART - 1, community,
+    int bad = (packet_header_decrypt(buf, COMMON_PART - 1, community,
                                      ctx_static, iv_static, &stamp) != 0);
-    printf("decode-bounds: header short packet rejected: %s\n", failed ? "FAIL" : "ok");
+    failed |= bad;
+    printf("decode-bounds: header short packet rejected: %s\n", bad ? "FAIL" : "ok");
 
-    // minimum-length packets of every community but ours: the decrypted
-    // header length is arbitrary, so this used to wrap and overrun.  The
-    // result does not matter, only that it stays within the buffer (ASan).
-    int wrapped = 0;
-    for(int pattern = 0; pattern < 3; pattern++) {
-        for(int len = COMMON_PART; len <= COMMON_PART + 8; len++) {
-            memset(buf, (pattern == 0) ? 0x00 : (pattern == 1) ? 0xff : 0x5a, sizeof(buf));
-            packet_header_decrypt(buf, (uint16_t)len, community,
-                                  ctx_static, iv_static, &stamp);
-            wrapped++;
-        }
-    }
-    printf("decode-bounds: header sub-minimal length handled (%d): ok\n", wrapped);
+    // A packet whose decrypted header length is below the common part: the
+    // magic is crafted to say header_len == 10, so header_len - 16 wraps and
+    // the decryption used to run far past the packet.  In a buffer sized
+    // exactly to the packet, that overrun shows under ASan; the fix drops it
+    // (returns 0).  speck_ctr is its own inverse in CTR, so encrypting the
+    // wanted magic gives the bytes that decrypt back to it, with the first
+    // 16 bytes (zero here) as the IV.
+    uint8_t *tight = malloc(COMMON_PART);
+    uint8_t want[4] = { 0x6e, 0x32, 0x00, 0x0a }; // big-endian 0x6E320000 + 10
+    memset(tight, 0, COMMON_PART);
+    speck_ctr(tight + 16, want, 4, tight, (speck_context_t *)ctx_static);
+    bad = (packet_header_decrypt(tight, COMMON_PART, community,
+                                 ctx_static, iv_static, &stamp) != 0);
+    failed |= bad;
+    free(tight);
+    printf("decode-bounds: header sub-minimal length rejected: %s\n", bad ? "FAIL" : "ok");
 
     speck_deinit((speck_context_t *)ctx_static);
     speck_deinit((speck_context_t *)ctx_dynamic);
