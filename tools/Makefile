@@ -30,6 +30,7 @@ TESTS+=tests-cc20
 TESTS+=tests-wire-fuzz
 TESTS+=tests-wire-numsn
 TESTS+=tests-regex
+TESTS+=tests-decode-bounds
 
 .PHONY: all clean install
 all: $(TOOLS) $(TESTS)

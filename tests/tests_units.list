@@ -5,6 +5,7 @@ tests-aes
 tests-auth
 tests-cc20
 tests-compress
+tests-decode-bounds
 tests-elliptic
 tests-peers
 tests-regex
