@@ -257,10 +257,17 @@ static int handle_PACKET (struct n3n_runtime_data * eee,
     uint8_t is_multicast;
     // decrypt
     eth_payload = decode_buf;
-    eth_size = eee->client.transop.rev(&eee->client.transop,
-                                       eth_payload, N2N_PKT_BUF_SIZE,
-                                       payload, psize, pkt->srcMac);
+    int decoded = eee->client.transop.rev(&eee->client.transop,
+                                          eth_payload, N2N_PKT_BUF_SIZE,
+                                          payload, psize, pkt->srcMac);
     STATS_INC(eee, transop_rx);
+    if(decoded < 0) {
+        // not as the cipher makes it (AES and Twofish check their padding)
+        traceEvent(TRACE_INFO, "dropped a PACKET from %s that did not decrypt",
+                   macaddr_str(mac_buf, pkt->srcMac));
+        return -1;
+    }
+    eth_size = decoded;
 
     /* decompress if necessary */
     size_t deflate_len;
@@ -289,6 +296,12 @@ static int handle_PACKET (struct n3n_runtime_data * eee,
                 rx_compression_id
             );
             return(-1); // cannot handle it
+    }
+
+    if((rx_compression_id != N2N_COMPRESSION_ID_NONE) && !deflate_len) {
+        traceEvent(TRACE_INFO, "dropped a PACKET from %s that did not decompress",
+                   macaddr_str(mac_buf, pkt->srcMac));
+        return -1;
     }
 
     if(rx_compression_id != N2N_COMPRESSION_ID_NONE) {

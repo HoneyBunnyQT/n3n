@@ -238,7 +238,10 @@ static int transop_decode_aes (n2n_trans_op_t *arg,
     uint8_t buf[AES_BLOCK_SIZE];
     int len = -1;
 
-    if(((in_len - AES_PREAMBLE_SIZE) <= N2N_PKT_BUF_SIZE)  /* cipher text fits in assembly */
+    // the cipher text fits in assembly, also with the block cipher text
+    // stealing adds, and the plain text in outbuf
+    if((in_len + AES_BLOCK_SIZE <= sizeof(assembly))
+       && (in_len - AES_PREAMBLE_SIZE <= out_len)
        && (in_len >= AES_PREAMBLE_SIZE)                    /* has at least random number */
        && (in_len >= AES_BLOCK_SIZE)) {                    /* minimum size requirement for cipher text stealing */
         traceEvent(TRACE_DEBUG, "transop_decode_aes %lu bytes ciphertext", in_len);

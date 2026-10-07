@@ -120,7 +120,7 @@ static int transop_decode_lzo (n2n_trans_op_t *arg,
                                size_t in_len,
                                const uint8_t *peer_mac) {
 
-    lzo_uint deflated_len = N2N_PKT_BUF_SIZE;
+    lzo_uint deflated_len = out_len;   // what outbuf takes
 
     if(in_len > N2N_PKT_BUF_SIZE) {
         traceEvent(TRACE_ERROR, "decode_lzo inbuf wrong size (%ul) to decompress", in_len);
