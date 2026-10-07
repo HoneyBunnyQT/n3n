@@ -1,0 +1,10 @@
+# Built fuzz targets
+fuzz-wire
+fuzz-header
+fuzz-transop
+fuzz-seeds
+*.exe
+
+# Generated seed corpus and fuzzer scratch
+seeds/
+work/

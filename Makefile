@@ -372,6 +372,21 @@ NETNS_ARGS?=
 test.netns: apps		# needs apps
 	$(NETNS_RUN) $(if $(NETNS_ARGS),$(NETNS_ARGS),@quick)
 
+# The fuzz targets, see tests/fuzz/README.md.  "make fuzz" builds them with
+# driver.c (any compiler); "make fuzz FUZZ=libfuzzer" links them with
+# libFuzzer (clang) to search for new inputs.  "make test.fuzz" replays the
+# committed regression corpus and the generated seeds - meant to run under
+# the sanitizers, it is not part of "make test".
+.PHONY: fuzz test.fuzz
+fuzz: $(SUBDIR_LIBS)
+	$(MAKE) -C tests/fuzz
+
+test.fuzz: fuzz
+	tests/fuzz/fuzz-seeds tests/fuzz/seeds
+	for t in header transop wire; do \
+	    tests/fuzz/fuzz-$$t tests/fuzz/regress/$$t tests/fuzz/seeds/$$t || exit 1; \
+	done
+
 test.netns.full: apps	# needs apps
 	$(NETNS_RUN) $(NETNS_ARGS)
 
