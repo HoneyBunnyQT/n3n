@@ -2,7 +2,7 @@ SPDX-License-Identifier: GPL-3.0-only
 SPDX-FileCopyrightText: Copyright 2022 n2n contributors
 SPDX-FileCopyrightText: Copyright Hamish Coleman
 
-# n3n
+# n3n BE (Bunny Edition)
 
 [![Testing](https://github.com/n42n/n3n/actions/workflows/tests.yml/badge.svg)](https://github.com/n42n/n3n/actions/workflows/tests.yml)
 [![Latest Release](https://img.shields.io/github/v/release/n42n/n3n)](https://github.com/n42n/n3n/releases/latest)
