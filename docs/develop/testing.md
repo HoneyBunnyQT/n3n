@@ -117,6 +117,34 @@ This "fakebench" generates fake numbers and should not be used for precise
 measurements. It should be considered a hack that has been cobbled together as
 a last resort to allow a minimal CI testing.
 
+### The whole packet path
+
+`n3n-edge test benchmark` measures the parts on their own: ciphers,
+compression, hashes.  How fast frames get through the edges and
+supernodes as a whole - the tap device, the transforms, the sockets, the
+kernel's network stack in between - `tests/netns/bench.py` measures, in
+the network namespaces of the NAT scenarios (see
+[Testing behind NATs](netns_testing.md)):
+
+```
+sudo tests/netns/bench.py --json before.json
+...change, build...
+sudo tests/netns/bench.py --json after.json
+tests/netns/bench.py --compare before.json after.json
+```
+
+It runs iperf3 from one edge to the other through the tunnel - UDP with
+64 and 1200 byte payloads, and TCP - in three cases: the edges direct,
+relayed through a supernode, and direct with packet threads; each test
+three times, the median counting.  Besides the throughput (and the
+packets per second for UDP), it reads every daemon's CPU time from /proc,
+and gives the CPU per packet that arrived, all daemons together: on a
+busy or virtual machine the throughput wavers more than that.  Still,
+differences of ten percent or so between two runs of the same build are
+not unusual in a VM; repeat (`-r`) or run longer (`-t`) before believing
+a small one.  `--wrap` runs the daemons under a profiler, e.g. a script
+that execs `perf record`.
+
 ### Contributing performance changes
 
 When contributing changes that may have a performance impact, it is very

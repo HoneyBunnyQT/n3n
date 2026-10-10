@@ -44,6 +44,7 @@ sudo tests/netns/run.py easy-hard -v 3 --punch-ports 16 --register-interval 20
 sudo tests/netns/run.py --wrap 'valgrind --error-exitcode=99' easy-easy
 sudo tests/netns/run.py --cleanup   # namespaces left by a killed run
 sudo tests/netns/run.py --retry 1   # a failed scenario once more
+sudo tests/netns/bench.py           # how fast, see testing.md
 ```
 
 `make test` runs it through sudo unless make runs as root already, and
