@@ -236,6 +236,14 @@ tests and `make lint` pass after each.
       with one of its own, and keeps one entry per MAC.  netns checks
       `description:` and `description after:`.  The federation's name (its
       key) shows on the management page only when unlocked
+- [x] The supernode's own edge (`supernode.tap`) showed without its name
+      and address on the other edges: an edge without p2p sent no
+      REGISTER at all, not even the one through the supernode that tells
+      who it is (c5b7346; upstream has it too, for any edge with
+      `allow_p2p=false` - a candidate for `fixes`, but its code is in
+      `edge_utils.c` there, so not a cherry-pick); and peers got its
+      local link, 127.0.0.1:0, as its address (30b7b26).  The netns
+      description check takes relayed peers now
 - [x] ASan/UBSan in CI on every push (`sanitizers.yml`): unit, builtin,
       integration and netns tests, findings fatal.  Found and fixed:
       unaligned loads and stores (Speck SIMD, header encryption, memxor,
@@ -264,10 +272,20 @@ tests and `make lint` pass after each.
       whether Speck NEON can be on by default on newer cores
 - [ ] Runtime selection of the implementations (Hamish is working on it):
       then distribution builds get the ARMv8 AES too, without the flag
-- [ ] epoll in the mainloop instead of `select()` (`mainloop.c` TODO), lifts
+- [~] epoll in the mainloop instead of `select()` (`mainloop.c` TODO), lifts
       the limit on TCP connections
-- [ ] Batched I/O: `recvmmsg()` / `sendmmsg()`, later UDP GSO/GRO
-- [ ] No `alloc()` on the packet path (`edge_utils.c`, TODO in the send path)
+- [x] Batched I/O: `recvmmsg()` / `sendmmsg()` on Linux (`sock.c`,
+      `udp_drain()`, `sock_batch_begin()`), the edge's sends of a tap batch
+      and all receives on the sockets of `connection.bind`: up to a third
+      more throughput, a third less CPU per packet for small packets
+      (4102317).  Not batched: what a supernode forwards (no difference
+      measured).  Open: UDP GSO/GRO
+- [x] No `alloc()` on the packet path: so already (the pktbuf pool, the tap
+      batch once per thread); counted with a malloc wrapper, 9x the frames
+      add at most two allocations over a daemon's life
+- [x] A benchmark of the whole packet path: `tests/netns/bench.py`, iperf3
+      through the tunnel with the CPU per packet of each daemon, see
+      testing.md
 - [ ] IPv6 address on the TAP device, from the config or assigned by the relay
 - [ ] Supernode lookup by DNS SRV (`resolve.c` TODO)
 
