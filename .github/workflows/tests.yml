@@ -1,14 +1,10 @@
 ---
 name: Testing
 
+# (A release is made by release.yml, which builds its packages)
 # yamllint disable-line rule:truthy
 on:
   pull_request:
-  release:
-    types:
-      - published
-      - created
-      - edited
   workflow_dispatch:
 
 permissions:
@@ -667,65 +663,6 @@ jobs:
           name: binaries-${{ matrix.arch }}
           path: binaries
 
-  # Given the clearly documented use of annotated tags to signal releases,
-  # it seems strange that there is no simple way to trigger actions if the
-  # tag is annotated.  So we need to jump through some extra hoops.
-  #
-  # Looking at https://github.com/actions/checkout/issues/290 seems to show
-  # that github just doesnt care about how git expects annotated tags to be
-  # used.
-  #
-  # This workflow has added a `git fetch --force --tags` to every job that
-  # needs to have working tags
-
-  upload_release:
-    name: Upload Release Assets
-    if: startsWith(github.ref, 'refs/tags/')
-    needs:
-      - package_dpkg
-      - package_rpm
-      - package_ipk
-      - binaries_windows
-      - binaries_macos
-      - binaries_macos_universal
-      - binaries_linux_crosscompile
-    runs-on: ubuntu-latest
-
-    permissions:
-      contents: write
-
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Fix Checkout
-        run: |
-          git fetch --force --tags
-
-      - name: Get Tag Type
-        id: get_tagtype
-        run: |
-          TYPE=$(git cat-file -t $GITHUB_REF)
-          echo "TAGTYPE=$TYPE" >> $GITHUB_OUTPUT
-          echo ==========
-          echo REF=$GITHUB_REF
-          echo TAGTYPE=$TYPE
-
-      - name: Fetch all Artifacts
-        if: steps.get_tagtype.outputs.TAGTYPE == 'tag'
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Upload Assets to Release
-        if: steps.get_tagtype.outputs.TAGTYPE == 'tag'
-        uses: softprops/action-gh-release@v3
-        with:
-          prerelease: true
-          generate_release_notes: true
-          files: |
-            artifacts/packages-dpkg-*/*.deb
-            artifacts/packages-rpm/*.rpm
-            artifacts/packages-ipk-*/*/base/*.ipk
-            artifacts/binaries-x86_64-w64-mingw32/usr/local/sbin/*.exe
+# Every job that needs working tags (git describe) has a "Fix Checkout"
+# step with `git fetch --force --tags`: the checkout leaves the annotated
+# tags out, see https://github.com/actions/checkout/issues/290
