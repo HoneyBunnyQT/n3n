@@ -50,6 +50,7 @@ nav:
       - Testing behind NATs: develop/netns_testing.md
       - Roadmap: develop/Roadmap.md
       - Mobile and TUN (design): develop/MobileAndTun.md
+      - Releasing n3n BE: develop/Releasing.md
       - Release Process: ReleaseProcess.md
       - Build From Source:
           - Overview: build/index.md

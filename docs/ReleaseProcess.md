@@ -3,6 +3,10 @@ SPDX-FileCopyrightText: Copyright Hamish Coleman
 
 # Release Process
 
+n3n BE makes its releases with the workflow `Release` now, see
+[Releasing n3n BE](develop/Releasing.md); the CI steps below are those of
+upstream n3n.
+
 ## Regular release process
 First, ensure that all the changes to be included in the release have been
 committed and merged in to the main branch of the public repository.

@@ -1,0 +1,270 @@
+---
+name: Release
+
+# The packages of a release, built from its tag - .deb for four
+# architectures, .rpm, the Arch package and the signed Android app - and,
+# if asked, a draft GitHub Release of the tag with them, their SHA256SUMS
+# and attestations of where they were built.  See
+# docs/develop/Releasing.md.
+#
+# Started by hand only (Actions, Release, Run workflow), not by a pushed
+# tag: until the names, keys and channels are settled, nothing is
+# released without someone asking for it.
+
+# yamllint disable-line rule:truthy
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The tag to build, e.g. 3.4.8"
+        required: true
+        type: string
+      draft:
+        description: "Put the packages on a draft GitHub Release of the tag"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  deb:
+    name: Debian/Ubuntu ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # on the oldest Ubuntu still supported: what links against its
+        # glibc runs on the newer ones, and on Debian 12
+        include:
+          - arch: amd64
+            runner: ubuntu-22.04
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+          - arch: armhf
+            runner: ubuntu-22.04
+            cross: true
+          - arch: i386
+            runner: ubuntu-22.04
+            cross: true
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+
+      - name: Fix Checkout
+        run: |
+          git fetch --force --tags
+
+      - name: Install what the build needs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dh-python devscripts equivs
+          sudo mk-build-deps -i -t "apt-get -y --no-install-recommends"
+          rm -f n3n-be-build-deps*
+
+      - if: ${{ matrix.cross }}
+        name: Install the cross compiler
+        run: |
+          sudo apt-get install -y crossbuild-essential-${{ matrix.arch }}
+          # dpkg-shlibdeps finds no libraries of the other architecture
+          # to look at, as in tests.yml: these packages leave out the
+          # versions of libc6 they need
+          echo '#!/bin/sh' | sudo tee /usr/bin/dpkg-shlibdeps
+
+      - name: Build
+        env:
+          ARCH: ${{ matrix.arch }}
+          CROSS: ${{ matrix.cross }}
+        run: |
+          HOST=
+          if [ "$CROSS" = "true" ]; then
+            HOST="--host=$(dpkg-architecture -a"$ARCH" -q DEB_HOST_GNU_TYPE)"
+          fi
+          ./autogen.sh
+          ./configure $HOST --prefix=/usr
+          make dpkg
+          mkdir dist
+          mv ../n3n-be_*.deb dist/
+          dpkg -I dist/*.deb
+          dpkg --contents dist/*.deb
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: deb-${{ matrix.arch }}
+          path: dist/*.deb
+
+  rpm:
+    name: Fedora x86_64
+    runs-on: ubuntu-latest
+    container: fedora:latest
+
+    steps:
+      - name: Install what the build needs
+        run: |
+          dnf install -y git rpm-build gcc make autoconf automake \
+            diffutils findutils which python3
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+
+      - name: Fix Checkout
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git fetch --force --tags
+
+      - name: Build
+        run: |
+          VERSION=$(scripts/version.sh | tr - _)
+          rpmbuild --define "VERSION $VERSION" --define "TOPDIR $PWD" \
+            --define "_topdir $PWD/rpmbuild" -bb packages/rpm/n3n.spec
+          mkdir dist
+          mv rpmbuild/RPMS/*/*.rpm dist/
+          rpm -qpil dist/*.rpm
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: rpm
+          path: dist/*.rpm
+
+  arch:
+    name: Arch Linux x86_64
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+
+    steps:
+      - name: Install what the build needs
+        run: |
+          pacman -Syu --noconfirm git autoconf automake python
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+
+      - name: Fix Checkout
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git fetch --force --tags
+
+      - name: Build
+        run: |
+          # makepkg does not run as root
+          useradd -m builder
+          chown -R builder .
+          su builder -c "cd packages/arch && makepkg --noconfirm"
+          mkdir dist
+          mv packages/arch/*.pkg.tar.* dist/
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: arch
+          path: dist/*
+
+  apk:
+    name: Android
+    runs-on: ubuntu-latest
+    # the signing key is a secret of this environment, which can ask for
+    # someone's approval before a run gets it
+    environment: release
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+
+      - name: Fix Checkout
+        run: |
+          git fetch --force --tags
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Unpack the signing key
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+        run: |
+          if [ -z "$KEYSTORE" ]; then
+            echo "::error::no secret ANDROID_KEYSTORE in the environment" \
+              "release, see docs/develop/Releasing.md"
+            exit 1
+          fi
+          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.jks"
+
+      - name: Build the release APK
+        working-directory: android
+        env:
+          N3N_ANDROID_KEYSTORE: ${{ runner.temp }}/release.jks
+          # yamllint disable-line rule:line-length
+          N3N_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          N3N_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          N3N_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          ./gradlew --no-daemon assembleRelease
+          mkdir ../dist
+          cp app/build/outputs/apk/release/app-release.apk \
+            "../dist/n3n-be-android-$TAG.apk"
+
+      - name: Check the signature
+        run: |
+          TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
+          "$TOOLS/apksigner" verify --verbose --print-certs dist/*.apk
+
+      - name: Forget the key
+        if: ${{ always() }}
+        run: |
+          rm -f "$RUNNER_TEMP/release.jks"
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: apk
+          path: dist/*.apk
+
+  release:
+    name: Draft GitHub Release
+    if: ${{ inputs.draft }}
+    needs:
+      - deb
+      - rpm
+      - arch
+      - apk
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: |
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+
+      # signed statements, by GitHub, of the workflow and commit each file
+      # was built from: "gh attestation verify FILE --repo ..." checks one
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*
+
+      - name: Make the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" \
+            --draft --verify-tag --title "n3n BE $TAG" --notes-from-tag
