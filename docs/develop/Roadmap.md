@@ -203,6 +203,11 @@ tests and `make lint` pass after each.
 - [ ] Integration test: a supernode with a TAP device next to plain edges
 - [x] Run the netns NAT scenarios in CI: all of them on every push
       (`netns.yml`), plain build
+- [x] Flaky netns scenarios (see Scratchpad): the hard-range NAT never
+      shows both supernodes one port; edges behind hard NATs on both
+      sides that get through directly pass (`PASS+`); `/run/n3n` made
+      before the daemons for 3.4.6; what is left gets `--retry 1` in CI
+      and shows as `FLAKY`.  Open: `dual-stack`, `sn-tap-userpw` (ASan)
 - [ ] Fuzzing of the PDU decoders (`wire.c`) and of header decryption
 - [x] Interop: netns scenarios with edges and supernodes of the last
       release of upstream n3n (3.4.6) next to this tree: old edge, old
@@ -483,23 +488,44 @@ and the AES burst benchmark), and the branches deleted, as `phase-a` and
 
 ### Flaky netns scenarios (NAT work)
 
-Was about one or two per full run with four scenarios at a time, more than a
-chance of 1 in 256 explains; worth a closer look (TODO).  Not seen in three
-full runs in a row (34 of 34 each) after the failover work.
-Then once each in a full run with the TCP fallback: `easy-wide` and
-`userpw-relayed` (hard-range / hard-range) went direct; both passed three
-re-runs.
+Looked into 2026-10-10, from all the red runs of `netns.yml`,
+`sanitizers.yml` and `interop.yml` since they run on every push (11 of 56
+runs, one scenario each), and reproduced with `-v 3` in a loop:
 
-Seen once each in a few full runs, passing on re-runs:
+- Most of them (`no-punch`, `easy-hard-threads`, `hard-hard`,
+  `hard-hard-threads`, `tun-tun` locally): an edge behind `hard-range`
+  took its NAT for "easy (port changed)".  The guess from before was
+  right: both supernodes saw the same port, which happens one time in 256
+  with a random port per destination from 256 - and the edge, seeing just
+  those two, rightly calls that easy.  With some 25 such edges in a full
+  run, about every tenth run.  Fixed in the harness: the `hard-range`
+  router takes the port towards each supernode from a slice of the block
+  of its own (`nat.py`).
+- Edges behind hard NATs on both sides that went direct (`userpw-relayed`,
+  `failover-userpw`, `interop-relayed`, earlier `easy-wide`): n3n getting
+  through after all.  An edge that knows its NAT is hard, while the
+  peer's REGISTERs do not tell the peer's class yet (user/password makes
+  that window longer) or never do (3.4.6), opens a pool of 32 sockets
+  towards it, and now and then one meets the port the peer's NAT opened.
+  Such a scenario now passes with a plus (`PASS+`, see netns_testing.md).
+- `interop`: a 3.4.6 supernode died with "cannot mkdir /run/n3n" - its
+  mkdir_p() checks first and then makes the directory, so of two daemons
+  starting at once one may give up.  Fixed in n3n since 3.4.7 (7c5817b);
+  the harness now makes `/run/n3n` before the daemons start.
+- Not explained yet, the logs of CI were not at hand: `dual-stack` (2 moves
+  of the peer, 1 allowed, the last from IPv4 to IPv6; once in 23 runs,
+  and see "Network changes" above for UML) and `sn-tap-userpw` under
+  ASan (the edge never registered; once in 16).
 
-- `no-punch` went direct although port guessing is off on the easy side: the
-  hard side's own REGISTERs may get through the easy NAT
-- `roam-nowatch` (a few frames relayed as the burst starts) and
-  `sn-tap-failover` (the check ran before the failover settled), in a full
-  run with the outage scenarios (100s each) four at a time
-- `easy-hard-pool`, `hard-hard-threads`, `failover-relayed`, `hard-easy`: an edge behind `hard-range` took its
-  NAT for "easy (port changed)" - perhaps both supernodes saw the same port
-  drawn from the range of 240
+What is left gets one more try in CI (`--retry 1`): a scenario that passes
+then is `FLAKY`, which does not turn the run red but shows as an
+annotation on the run's page and in its summary, with the logs of the
+failed try uploaded.
+
+Earlier, seen once each in a few full runs, passing on re-runs:
+`roam-nowatch` (a few frames relayed as the burst starts) and
+`sn-tap-failover` (the check ran before the failover settled), in a full
+run with the outage scenarios (100s each) four at a time.
 
 ### ARM
 
