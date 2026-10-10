@@ -279,7 +279,7 @@ jobs:
           sudo apt-get install dh-python devscripts equivs \
             crossbuild-essential-${{ matrix.arch }}
           sudo mk-build-deps -i
-          rm -f n3n-build-deps*
+          rm -f n3n-be-build-deps*
 
       - name: Hack dpkg-shlibdeps
         run: |

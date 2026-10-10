@@ -505,7 +505,7 @@ export DEBFULLNAME
 .PHONY: dpkg
 dpkg:
 	rm -f debian/changelog
-	dch --create --empty --package n3n -v ${VERSION}-1 --no-auto-nmu local package Auto Build
+	dch --create --empty --package n3n-be -v ${VERSION}-1 --no-auto-nmu local package Auto Build
 	env -u CFLAGS dpkg-buildpackage -rfakeroot -us -uc --host-type ${CONFIG_HOST}
 
 .PHONY: install.bin

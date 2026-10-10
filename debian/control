@@ -1,7 +1,7 @@
-Source: n3n
+Source: n3n-be
 Section: net
 Priority: optional
-Maintainer: Hamish Coleman <hamish@zot.org>
+Maintainer: Honey Bunny QT <honeybunnyqt.official@proton.me>
 Standards-Version: 4.6.0
 Build-Depends:
  autoconf,
@@ -21,6 +21,9 @@ Depends:
  ${misc:Depends},
  ${python3:Depends},
  ${shlibs:Depends},
+Provides: n3n
+Conflicts: n3n
+Replaces: n3n
 Description: Peer-to-Peer and Layer-2 VPN network daemon
  n3n is a layer-two peer-to-peer virtual private network (VPN) which allows
  users to exploit features typical of P2P applications at network instead of
@@ -33,3 +36,5 @@ Description: Peer-to-Peer and Layer-2 VPN network daemon
  .
  Edge is the edge node daemon for n3n which creates a TAP interface to expose
  the n3n virtual LAN.
+ .
+ This is n3n BE (Bunny Edition), a fork of n3n, which it replaces.

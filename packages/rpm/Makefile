@@ -6,7 +6,7 @@ N3N_HOME=$(PWD)/../..
 VERSION:=$(shell $(N3N_HOME)/scripts/version.sh |tr - _)
 ARCH:=$(shell rpmbuild -E '%_arch')
 
-RPM_PATH=$(HOME)/rpmbuild/RPMS/$(ARCH)/n3n-$(VERSION)-1.$(ARCH).rpm
+RPM_PATH=$(HOME)/rpmbuild/RPMS/$(ARCH)/n3n-be-$(VERSION)-1.$(ARCH).rpm
 
 # Older RPMs might not prompt for a passphrase
 # (Centos8 was mentioned in the old autotooling)

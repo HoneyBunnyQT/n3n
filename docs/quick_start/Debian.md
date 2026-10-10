@@ -10,6 +10,11 @@ systems.
 For these systems, use the `/etc/n3n/` directory as the location for any
 config files.
 
+n3n BE, this fork of n3n, has packages of its own, named `n3n-be`: they
+install the same programs and replace an `n3n` package.  They are not in
+the repository below, which is upstream n3n's; until n3n BE has one, they
+come with its [releases](https://github.com/HoneyBunnyQT/n3n/releases).
+
 ## Modern systems
 
 For Debian 11(bullseye) or newer, and Ubuntu 23.10 or newer.
