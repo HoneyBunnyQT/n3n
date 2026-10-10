@@ -21,6 +21,7 @@
 #include <unistd.h>
 
 #include "header_encryption.h"
+#include "local_link.h"         // for LOCAL_LINK_FD
 #include "n2n_define.h"
 #include "n2n_regex.h"
 #include "n2n_wire.h"
@@ -1358,6 +1359,15 @@ void sn_rx_query_peer (struct n3n_runtime_data *sss, struct pdu_ctx *c) {
         }
 
         HASH_FIND_PEER(comm->edges, query.targetMac, scan);
+        if(scan && (scan->socket_fd == LOCAL_LINK_FD)) {
+            // The edge of this supernode (supernode.tap) has no address a
+            // peer could send to, see local_link.h - only the link inside
+            // this process, 127.0.0.1:0, which the peer would try every
+            // round.  It is reached through the supernodes, as it is now.
+            traceEvent(TRACE_DEBUG, "Rx QUERY_PEER from %s for the edge of this supernode: no PEER_INFO",
+                       macaddr_str(mac_buf, query.srcMac));
+            return;
+        }
         if(scan) {
             cmn2.ttl = N2N_DEFAULT_TTL;
             cmn2.pc = MSG_TYPE_PEER_INFO;
