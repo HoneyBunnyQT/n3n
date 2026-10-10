@@ -417,21 +417,8 @@ int main (int argc, char * argv[]) {
 
     n3n_sn_config(argc, argv, "supernode", &sss_node);
 
-    if(sss_node.conf.community_file)
-        load_allowed_sn_community(&sss_node);
-
-#ifndef _WIN32
-    if(sss_node.conf.background) {
-        setUseSyslog(1); /* traceEvent output now goes to syslog. */
-
-        if(-1 == daemon(0, 0)) {
-            traceEvent(TRACE_ERROR, "failed to become daemon");
-            exit(-5);
-        }
-    }
-#endif
-
-    /* Initialize the federation name from conf */
+    /* Initialize the federation name from conf - before the communities:
+     * the dynamic keys of the user/password ones are made from it */
     sss_node.federation->community[0] = '*';
     memcpy(
         &sss_node.federation->community[1],
@@ -446,6 +433,20 @@ int main (int argc, char * argv[]) {
                             &(sss_node.federation->header_encryption_ctx_dynamic),
                             &(sss_node.federation->header_iv_ctx_static),
                             &(sss_node.federation->header_iv_ctx_dynamic));
+
+    if(sss_node.conf.community_file)
+        load_allowed_sn_community(&sss_node);
+
+#ifndef _WIN32
+    if(sss_node.conf.background) {
+        setUseSyslog(1); /* traceEvent output now goes to syslog. */
+
+        if(-1 == daemon(0, 0)) {
+            traceEvent(TRACE_ERROR, "failed to become daemon");
+            exit(-5);
+        }
+    }
+#endif
 
     HASH_ADD_STR(sss_node.communities, community, sss_node.federation);
 
