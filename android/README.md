@@ -153,6 +153,19 @@ The GitHub workflow `Android` (`.github/workflows/android.yml`) builds the
 debug APK on every change to `android/`, `src/`, `include/` or `libs/`, and
 keeps it as the artifact `n3n-android-debug` of the run.
 
+The app has the version of the core, from `VERSION` (3.4.8 is versionCode
+304080).  `./gradlew assembleRelease` builds the release APK, signed with
+the key the environment names, as the workflow `Release` has it:
+
+```sh
+N3N_ANDROID_KEYSTORE=/path/to/release.jks \
+N3N_ANDROID_KEYSTORE_PASSWORD=... N3N_ANDROID_KEY_ALIAS=... \
+N3N_ANDROID_KEY_PASSWORD=... ./gradlew assembleRelease
+```
+
+Without `N3N_ANDROID_KEYSTORE` it comes out unsigned.  See
+[Releasing](../docs/develop/Releasing.md) for the key.
+
 ### Checking the native part without the NDK
 
 `CMakeLists.txt` also builds on a Linux host, with the JDK's JNI headers
