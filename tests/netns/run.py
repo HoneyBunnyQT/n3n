@@ -213,6 +213,10 @@ def main():
     if os.path.isdir(settings.workdir):
         shutil.rmtree(settings.workdir)
     os.makedirs(settings.workdir)
+    # The daemons' session directories go below it.  n3n makes it when it
+    # is not there, but releases before 3.4.7 (interop) give up when
+    # another daemon made it between their check and their mkdir().
+    os.makedirs("/run/n3n", mode=0o755, exist_ok=True)
 
     print_lock = threading.Lock()
 
