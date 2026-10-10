@@ -185,6 +185,15 @@ tests and `make lint` pass after each.
       from the community; epoll and batched I/O; no alloc per
       packet; fewer privileges (CAP_NET_ADMIN only, Landlock); packages for
       the single binary; tools init / tools qr
+- [~] Releases of n3n BE (see [Releasing](Releasing.md)): the packages
+      are `n3n-be` (.deb, .rpm, and a PKGBUILD for Arch), the user `n3n`
+      from sysusers.d, the app's version that of the core and its release
+      build signed from the environment; `release.yml`, started by hand,
+      builds them all from a tag, with a draft GitHub Release if asked;
+      `tests.yml` no longer reacts to releases.  Not run yet.  Open: the
+      app's ID (`dev.n3n.android` is upstream's domain), the signing key,
+      the channels (apt repository, AUR, COPR, Obtainium / IzzyOnDroid),
+      OpenWrt, Windows and macOS in the release
 - [x] TUN mode (layer 3 device): `tuntap.type = tun`, `src/tun.c`, netns
       scenarios `tun-tap` and `tun-tun`.  Open: IPv6 unicast out (neighbour
       discovery), other systems than Linux; see [Mobile and TUN](MobileAndTun.md)
@@ -379,6 +388,9 @@ while `peer` keeps getting what does not touch the wire, merged into
   some setups may hold elsewhere, e.g. on a smart card, not in the config.
   Performance work (epoll, batched I/O, no alloc per packet) from
   2026-10-11 on.
+- 2026-10-10: Development goes on on `main`, which has all of `peer`;
+  `peer` is not worked on any more and goes.  The fork's packages are
+  named `n3n-be`.
 
 ## Scratchpad
 
