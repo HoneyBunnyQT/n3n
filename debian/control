@@ -7,15 +7,9 @@ Build-Depends:
  autoconf,
  debhelper,
  debhelper-compat (= 10),
- devscripts,
  dh-python,
- flake8,
- gcovr,
- jq,
- shellcheck,
- yamllint,
 
-Package: n3n
+Package: n3n-be
 Architecture: any
 Depends:
  ${misc:Depends},
