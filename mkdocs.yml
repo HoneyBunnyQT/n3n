@@ -1,10 +1,10 @@
 ---
 
-site_name: 'n3n: A peer-to-peer VPN'
+site_name: 'n3n BE: a peer-to-peer VPN'
 theme: readthedocs
 
-repo_url: https://github.com/n42n/n3n
-edit_uri: https://github.com/n42n/n3n/blob/main/docs/
+repo_url: https://github.com/HoneyBunnyQT/n3n
+edit_uri: https://github.com/HoneyBunnyQT/n3n/blob/main/docs/
 
 use_directory_urls: false
 
@@ -63,4 +63,4 @@ nav:
           - Windows: build/windows.md
           - OpenWrt: build/openwrt.md
   - Links:
-      - Bug Tracker: 'https://github.com/n42n/n3n/issues'
+      - Bug Tracker: 'https://github.com/HoneyBunnyQT/n3n/issues'

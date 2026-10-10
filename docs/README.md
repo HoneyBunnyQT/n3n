@@ -1,66 +1,77 @@
 SPDX-License-Identifier: GPL-3.0-only
 SPDX-FileCopyrightText: Copyright 2022 n2n contributors
 SPDX-FileCopyrightText: Copyright Hamish Coleman
+SPDX-FileCopyrightText: Copyright Honey Bunny QT
 
 # n3n BE (Bunny Edition)
 
-[![Testing](https://github.com/n42n/n3n/actions/workflows/tests.yml/badge.svg)](https://github.com/n42n/n3n/actions/workflows/tests.yml)
-[![Latest Release](https://img.shields.io/github/v/release/n42n/n3n)](https://github.com/n42n/n3n/releases/latest)
+[![Quick Tests](https://github.com/HoneyBunnyQT/n3n/actions/workflows/quick.yml/badge.svg)](https://github.com/HoneyBunnyQT/n3n/actions/workflows/quick.yml)
+[![netns](https://github.com/HoneyBunnyQT/n3n/actions/workflows/netns.yml/badge.svg)](https://github.com/HoneyBunnyQT/n3n/actions/workflows/netns.yml)
+[![Sanitizers](https://github.com/HoneyBunnyQT/n3n/actions/workflows/sanitizers.yml/badge.svg)](https://github.com/HoneyBunnyQT/n3n/actions/workflows/sanitizers.yml)
+[![Interop](https://github.com/HoneyBunnyQT/n3n/actions/workflows/interop.yml/badge.svg)](https://github.com/HoneyBunnyQT/n3n/actions/workflows/interop.yml)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE.md)
 
-n3n is a lightweight Peer-to-Peer VPN that creates virtual networks.
+A lightweight peer-to-peer VPN: computers anywhere become one virtual
+Ethernet network, a _community_, and reach each other directly wherever
+their NATs let them - and through a supernode where they do not.
 
-In order to start using n3n, two elements are required:
+![Two edges behind NATs reach each other directly, or relayed through a supernode](images/overview.svg)
 
-- A _supernode_: it allows edge nodes to announce and discover other nodes. It
-  must have a port publicly accessible on internet.
-- _edge_ nodes: the nodes which will be a part of the virtual networks
+- An **edge** joins a community with a virtual network device (TAP, or TUN)
+  and an address in it; what it sends is encrypted with the community's
+  key, which a supernode does not need to relay it.
+- A **supernode** is where the edges register and find each other, and it
+  relays what cannot go directly.  One supernode serves many communities,
+  and supernodes federate.  A supernode can be an edge of its own as well.
 
-A virtual network shared between multiple edge nodes in n3n is called a
-_community_. A single supernode can relay multiple communities and a single
-computer can be part of multiple communities at the same time (by running
-multiple _edge_ daemons). An encryption key can be used by the edge nodes to
-encrypt the packets within their community.
+Both are one program, `n3n`, installed also as `n3n-edge` and
+`n3n-supernode`.
 
-Both daemons are one program, `n3n`, installed under the names `n3n-edge` and
-`n3n-supernode` as well.  Started under one of those names it is that daemon;
-started as `n3n`, its first argument says which: `n3n edge start` is the same
-as `n3n-edge start`.
+## The Bunny Edition
 
-n3n tries to establish a direct peer-to-peer connection via udp between the
-edge nodes when possible. When this is not possible (usually due to special NAT
-devices), the supernode is also used to relay the packets.
+n3n BE is a special edition of [n3n](https://github.com/n42n/n3n), which
+grew out of [n2n](https://github.com/ntop/n2n).  It speaks their protocol -
+its edges and supernodes work together with those of n3n and of n2n 3.x -
+and adds a good deal on top:
 
+- **More NATs get through:** each edge tells the class of its NAT, and
+  guesses the ports of a peer behind a hard (symmetric) NAT, with a pool of
+  sockets for the peer to meet
+- **Networks change:** IPv6 next to IPv4, roaming from one network to
+  another without losing the peers, TCP when UDP is blocked and back
+- **Faster:** packet threads, and datagrams sent and received several at a
+  time - up to a third more throughput for small packets
+- **Easier to run:** reload on SIGHUP, systemd notify and watchdog, a
+  management page, communities in the configuration file
+- **More places:** TUN mode, and an [Android app](https://github.com/HoneyBunnyQT/n3n/tree/main/android)
+
+Experimental in what it tries, not in how it is tested: every push runs
+dozens of NAT scenarios in network namespaces, the same under the
+sanitizers, and interop tests with the last releases of n3n and n2n (see
+[Testing](develop/testing.md)).
+
+## Building
+
+```sh
+./autogen.sh && ./configure && make
+make test
 ```
-    [edge-A] ──────────────────── [edge-B]
-          \      direct p2p        /
-           \                      /
-            └──── [supernode] ────┘
-                (discovery + relay)
-```
 
-n3n was originally based on an older n2n project and hopes to keep protocol
-compatibility with that.
+See [Building from Source](build/index.md) for the options and other
+systems.
 
-Note that some distributions have very old versions of n2n packaged that are
-incompatible with the protocol used by n3n.  At the least, Debian has a n2n
-version 1.3.1 which uses a protocol from 2008 and has not been compatible with
-the stable releases of n2n for many years - thus will definitely not
-interoperate with n3n)
+## Documentation
 
-# Documentation
-
-- [Quick Start Guides](quick_start/Config.md): a first configuration, and
-  [on Debian or Ubuntu](quick_start/Debian.md)
-- [Configuration](configure/index.md): edges, supernodes, communities, all
+- [Quick Start](quick_start/Config.md): a first configuration
+- [Configuration](configure/index.md), with all the
   [options](configure/Options.md)
 - [Advanced Topics](advanced/index.md): NAT traversal, threads, routing,
   bridging, filtering
-- [Building from Source](build/index.md), with the options of `./configure`
-- [Tools](Tools.md) and [Scripts](Scripts.md), like `n3nctl`
-- [Internals](internals/index.md): the management API, cryptography, design
-- [Developing](develop/index.md): coding style, tests, the roadmap
-- Answers to [frequently asked questions](FAQ.md) (FAQ)
-- [Contributing](Contributing.md) and the [License](LICENSE.md)
+- [Internals](internals/index.md) and [Developing](develop/index.md), with
+  the [Roadmap](develop/Roadmap.md)
+- [FAQ](FAQ.md), [Contributing](Contributing.md), [License](LICENSE.md)
 
 The man pages `n3n(8)`, `n3n-edge(8)`, `n3n-supernode(8)` and `n3n(7)` come
-with the package.
+with the program.  The documentation is also a website, built with
+[MkDocs](https://www.mkdocs.org/): `pip install mkdocs`, then `make docs`
+(into `site/`) or `make docs_serve` to read it at http://127.0.0.1:8000.

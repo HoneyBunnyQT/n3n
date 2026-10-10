@@ -45,7 +45,7 @@ contributions.
 
 ## Other ways to Contribute
 
-- Update an [open issue](https://github.com/n42n/n3n/issues) or create a new
+- Update an [open issue](https://github.com/HoneyBunnyQT/n3n/issues) or create a new
   one with detailed information
 - Propose new features
 - Improve the documentation

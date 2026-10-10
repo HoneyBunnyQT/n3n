@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 290" width="720" height="290" role="img" aria-labelledby="title desc">
+  <title id="title">How n3n BE connects edges</title>
+  <desc id="desc">Two edges, each behind a NAT, register with a supernode. They reach each other directly through their NATs where they can; otherwise the supernode relays their packets.</desc>
+  <!-- SPDX-License-Identifier: GPL-3.0-only -->
+  <!-- SPDX-FileCopyrightText: Copyright Honey Bunny QT -->
+  <style>
+    .box   { fill: #ffffff; stroke: #5c5c69; stroke-width: 1.5; }
+    .sn    { fill: #fdf0f6; stroke: #c2185b; stroke-width: 1.5; }
+    .nat   { fill: none; stroke: #9a9aa6; stroke-width: 1.2; stroke-dasharray: 5 4; }
+    .title { font: 600 15px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #1e1e24; }
+    .small { font: 12px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #5c5c69; }
+    .p2p   { stroke: #c2185b; stroke-width: 3; fill: none; }
+    .relay { stroke: #7b7b88; stroke-width: 2; stroke-dasharray: 7 5; fill: none; }
+    .dot   { fill: #c2185b; }
+    .rdot  { fill: #7b7b88; }
+    @media (prefers-color-scheme: dark) {
+      .box   { fill: #23232b; stroke: #a3a3ae; }
+      .sn    { fill: #3a1f2c; stroke: #f06ba4; }
+      .nat   { stroke: #6f6f7b; }
+      .title { fill: #ececf1; }
+      .small { fill: #a9a9b4; }
+      .p2p   { stroke: #f06ba4; }
+      .relay { stroke: #9c9ca8; }
+      .dot   { fill: #f06ba4; }
+      .rdot  { fill: #9c9ca8; }
+    }
+  </style>
+
+  <!-- the relayed way, through the supernode -->
+  <path class="relay" d="M 120 186 L 120 120 Q 120 60 180 60 L 286 60"/>
+  <path class="relay" d="M 434 60 L 540 60 Q 600 60 600 120 L 600 186"/>
+  <circle class="rdot" cx="120" cy="186" r="4"/>
+  <circle class="rdot" cx="600" cy="186" r="4"/>
+
+  <!-- the supernode -->
+  <rect class="sn" x="286" y="28" width="148" height="64" rx="10"/>
+  <text class="title" x="360" y="56" text-anchor="middle">supernode</text>
+  <text class="small" x="360" y="76" text-anchor="middle">register · find · relay</text>
+  <text class="small" x="360" y="114" text-anchor="middle">relayed, where the NATs leave no direct way</text>
+
+  <!-- the sites, each behind a NAT -->
+  <rect class="nat" x="22" y="164" width="196" height="108" rx="12"/>
+  <text class="small" x="34" y="182">NAT</text>
+  <rect class="box" x="40" y="190" width="160" height="62" rx="10"/>
+  <text class="title" x="120" y="216" text-anchor="middle">edge A</text>
+  <text class="small" x="120" y="237" text-anchor="middle">tap · 10.0.0.1</text>
+
+  <rect class="nat" x="502" y="164" width="196" height="108" rx="12"/>
+  <text class="small" x="514" y="182">NAT</text>
+  <rect class="box" x="520" y="190" width="160" height="62" rx="10"/>
+  <text class="title" x="600" y="216" text-anchor="middle">edge B</text>
+  <text class="small" x="600" y="237" text-anchor="middle">tap · 10.0.0.2</text>
+
+  <!-- the direct way, through both NATs -->
+  <path class="p2p" d="M 200 221 L 520 221"/>
+  <circle class="dot" cx="200" cy="221" r="4.5"/>
+  <circle class="dot" cx="520" cy="221" r="4.5"/>
+  <text class="small" x="360" y="210" text-anchor="middle">direct peer-to-peer, through the NATs</text>
+  <text class="small" x="360" y="242" text-anchor="middle">one virtual Ethernet: the community</text>
+</svg>
