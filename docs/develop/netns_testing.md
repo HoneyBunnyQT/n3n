@@ -227,7 +227,7 @@ ports from all of it.
 | hard-hard-threads | as hard-hard, the supernodes with daemon.threads=3 | relayed |
 | easy-hard-threads | as easy-hard, edges and supernodes with daemon.threads=3 | direct |
 | header-enc | easy-kept / hard-range, encrypted headers | direct |
-| userpw | as header-enc, with user/password authentication (ChaCha20) | direct |
+| userpw | as header-enc, with user/password authentication (ChaCha20); the supernodes start 1.1 s apart, with different key times | direct |
 | userpw-relayed | hard-range / hard-range, user/password, each edge at its own supernode | relayed, across the federation |
 | userpw-conf | as userpw-relayed, the community and users in `[community NAME]` sections | relayed, across the federation |
 | sn-tap | hard-range / the TAP device of sn2 (`supernode.tap`), the edge at sn2 | relayed |

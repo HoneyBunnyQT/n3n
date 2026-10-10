@@ -417,9 +417,10 @@ SCENARIOS = [
         "direct", auth="header", tags=["quick"]),
     Scenario(
         "userpw",
-        "encrypted headers and user/password authentication",
+        "encrypted headers and user/password authentication; the "
+        "supernodes start a second apart, with different key times",
         Site(["easy-kept"]), Site(["hard-range"]),
-        "direct", auth="userpw", tags=["quick"]),
+        "direct", auth="userpw", sn_start_gap=1.1, tags=["quick"]),
     Scenario(
         "userpw-relayed",
         "user/password authentication, relayed by the federation",

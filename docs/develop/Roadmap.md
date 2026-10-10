@@ -547,6 +547,17 @@ runs, one scenario each), and reproduced with `-v 3` in a loop:
   mkdir_p() checks first and then makes the directory, so of two daemons
   starting at once one may give up.  Fixed in n3n since 3.4.7 (7c5817b);
   the harness now makes `/run/n3n` before the daemons start.
+- `userpw` (quick tests, 2026-10-10): both edges stayed "unknown" and
+  relayed.  With user/password, the header key of a community changes
+  with a key time, at first the second the supernode started in; two
+  federated supernodes agree on the newer one.  But the supernode made
+  the keys at start before it knew the federation's name, with a name of
+  zeros, and the one that took the newer time made them again with the
+  name: a key no edge had.  Its PINGs dropped, the edges heard one
+  supernode only.  Locally both supernodes started in the same second
+  and never made the keys again.  Fixed in n3n-supernode.c (also an
+  upstream bug); `userpw` now starts its supernodes 1.1 s apart.  Maybe
+  the `sn-tap-userpw` ASan case below as well.
 - Not explained yet, the logs of CI were not at hand: `dual-stack` (2 moves
   of the peer, 1 allowed, the last from IPv4 to IPv6; once in 23 runs,
   and see "Network changes" above for UML) and `sn-tap-userpw` under

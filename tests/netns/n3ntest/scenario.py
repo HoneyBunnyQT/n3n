@@ -167,7 +167,7 @@ class Scenario:
                  roam=None, roam_max_gap=None, roam_direct=True,
                  size=None, outage=False, outage_then=None,
                  outage_max_gap=None, reload=None, sn_versions=None,
-                 direct_ok=None, sn_peer_family=4):
+                 direct_ok=None, sn_peer_family=4, sn_start_gap=0):
         self.name = name
         self.desc = desc
         self.sites = {"a": a, "b": b}
@@ -252,6 +252,10 @@ class Scenario:
         # how the supernodes know each other (supernode.peer): 4, 6, or
         # 46 for both addresses of each (6 and 46 need ipv6)
         self.sn_peer_family = sn_peer_family
+        # seconds between the starts of the supernodes: each takes the
+        # second it started in as its key time (user/password), so they
+        # start out with different ones and have to agree on the newer
+        self.sn_start_gap = sn_start_gap
 
     def directions(self):
         return {
@@ -770,6 +774,8 @@ class Run:
             d.start()
             self._log_left_out(name, d)
             sn["daemon"] = d
+            if self.sc.sn_start_gap and i < len(names):
+                time.sleep(self.sc.sn_start_gap)
         for name in names:
             d = self.supernodes[name]["daemon"]
             if not d.wait_mgmt():
