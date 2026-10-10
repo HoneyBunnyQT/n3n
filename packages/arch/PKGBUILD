@@ -1,0 +1,36 @@
+# Maintainer: Honey Bunny QT <honeybunnyqt.official@proton.me>
+#
+# n3n BE from this tree, as release.yml builds it (see
+# docs/develop/Releasing.md):
+#
+#   cd packages/arch && makepkg
+#
+# An AUR package would take the source of a release instead of the tree.
+
+_top=$(realpath "$startdir/../..")
+
+pkgname=n3n-be
+pkgver=$(cat "$_top/VERSION")
+pkgrel=1
+pkgdesc="Peer-to-peer layer 2 VPN: n3n BE (Bunny Edition), a fork of n3n"
+arch=(x86_64 aarch64)
+url="https://github.com/HoneyBunnyQT/n3n"
+license=(GPL-3.0-only)
+depends=(glibc python)
+makedepends=(autoconf automake)
+provides=(n3n)
+conflicts=(n3n)
+
+build() {
+    cd "$_top"
+    ./autogen.sh
+    ./configure --prefix=/usr
+    make
+}
+
+package() {
+    cd "$_top"
+    # Arch has no /usr/sbin of its own: it is a link to /usr/bin, so the
+    # units find /usr/sbin/n3n-edge all the same
+    make DESTDIR="$pkgdir" CONFIG_SBINDIR="$pkgdir/usr/bin" install
+}
