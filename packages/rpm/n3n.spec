@@ -34,8 +34,9 @@ cd %TOPDIR
 %install
 
 cd %TOPDIR
-%make_install
-chmod u+w $RPM_BUILD_ROOT/usr/sbin/*
+# where the system has its sbin: /usr/bin since Fedora 42
+%make_install CONFIG_SBINDIR=$RPM_BUILD_ROOT%{_sbindir}
+chmod u+w $RPM_BUILD_ROOT%{_sbindir}/*
 
 #find $RPM_BUILD_ROOT -name ".git" | xargs /bin/rm -rf
 #find $RPM_BUILD_ROOT -name ".svn" | xargs /bin/rm -rf
@@ -51,9 +52,9 @@ rm -fr $RPM_BUILD_ROOT
 /usr/lib/systemd/system/n3n-edge@.service
 /usr/lib/systemd/system/n3n-supernode.service
 /usr/lib/sysusers.d/n3n.conf
-/usr/sbin/n3n
-/usr/sbin/n3n-edge
-/usr/sbin/n3n-supernode
+%{_sbindir}/n3n
+%{_sbindir}/n3n-edge
+%{_sbindir}/n3n-supernode
 /usr/share/doc/n3n/Contributing.md
 /usr/share/doc/n3n/FAQ.md
 /usr/share/doc/n3n/LICENSE.md
