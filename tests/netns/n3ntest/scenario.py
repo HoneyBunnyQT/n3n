@@ -74,6 +74,13 @@ ROAM_WATCH = 30
 # and after the supernodes are gone, see Scenario.outage: longer than
 # REGISTRATION_TIMEOUT (60s) and a purge round (30s)
 OUTAGE_WATCH = 90
+# Why edges behind hard NATs on both sides may go direct after all: an edge
+# that knows its NAT is hard, while the peer's REGISTERs do not tell the
+# peer's class yet (or never do, from an older version), opens a pool of
+# sockets towards it (connection.punch_sockets), each with a random public
+# port, and now and then one of them meets the port the peer's NAT opened.
+LUCKY_HARD_HARD = "hard NATs on both sides, but a socket of the pool " \
+    "towards a peer whose class is not known yet may meet its port"
 # what drops IPv4 fragments, before the defragmentation of conntrack
 NOFRAG = """table ip nofrag {
     chain pre {
@@ -234,8 +241,14 @@ class Scenario:
         # class is not checked then, older supernodes do not tell it
         self.sn_versions = sn_versions or {}
         # expected relayed, but direct by luck is fine too (why, as a
-        # string): the rest of the checks then go for direct
-        self.direct_ok = direct_ok
+        # string): the rest of the checks then go for direct, and the
+        # scenario passes with a plus (PASS+).  By default so for edges
+        # behind hard NATs on both sides, see LUCKY_HARD_HARD; False for
+        # none at all.
+        if direct_ok is None and expect == "relayed" and \
+                all(nat.is_hard(s.nat) for s in self.sites.values()):
+            direct_ok = LUCKY_HARD_HARD
+        self.direct_ok = direct_ok or None
         # how the supernodes know each other (supernode.peer): 4, 6, or
         # 46 for both addresses of each (6 and 46 need ipv6)
         self.sn_peer_family = sn_peer_family
@@ -1049,8 +1062,11 @@ class Run:
                     break
                 time.sleep(0.5)
             if went_direct is not None and self.sc.direct_ok:
-                # lucky: from here on, the checks are those of direct
+                # lucky: from here on, the checks are those of direct,
+                # and a pass is a PASS+
                 self.expect = "direct"
+                self.result["lucky"] = {"after": went_direct,
+                                        "why": self.sc.direct_ok}
                 self.check("path", True,
                            "went direct after {}s, which may happen: {}"
                            .format(went_direct, self.sc.direct_ok))

@@ -157,6 +157,11 @@ def expected_class(layers):
     return KINDS["easy-changed"].expect
 
 
+def is_hard(layers):
+    """Whether one of these NATs maps a new port for every destination"""
+    return any(name in ("hard-range", "hard-wide") for name in layers)
+
+
 def hard_range_ok(nat4):
     """For a single hard-range NAT: is the range seen within the block?"""
     m = re.match(r"^hard \(ports (\d+)-(\d+)\)$", nat4)

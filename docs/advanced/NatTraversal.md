@@ -89,7 +89,7 @@ shows the hint of a peer it does not reach directly yet as `nat` in
 | easy or unknown | hard, range up to 4096 ports | direct after some rounds of guessing, see below; a few with `punch_sockets` on the hard side |
 | hard, range up to 4096 ports | easy or unknown | the same, the peer guesses |
 | any | hard, wider range | through the supernode |
-| hard | hard | through the supernode |
+| hard | hard | through the supernode, now and then direct by luck (see below) |
 | any | several addresses | through the supernode, mostly (see below) |
 
 An edge with several addresses still gets through directly where the
@@ -156,6 +156,12 @@ is closed too when its peer has not been tried for two rounds, and a socket
 that got through when nothing came from the peer for two minutes.  All pools
 together hold at most 64 sockets: a NAT that gives every customer a block of
 ports is not to be emptied by one edge.  0 turns this off.
+
+A peer whose class is not known - an older edge, which sends no hint, or
+one that has not heard from its supernodes yet, as in the first seconds -
+may be easy, so it gets a pool too.  When that peer is behind a hard NAT
+as well, one of the pool's ports now and then meets the one its NAT opened
+towards us, and the two get through directly after all.
 
 Only the edge behind the hard NAT needs this version; the peer guesses as
 before.  It shows in the log:

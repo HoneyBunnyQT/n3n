@@ -59,11 +59,25 @@ def fmt_frames(result):
     return ", ".join(parts) or "-"
 
 
+def status(result):
+    """PASS, PASS+ (relayed expected, direct by luck), FLAKY (failed, then
+    passed when run again) or FAIL"""
+    if not result["ok"]:
+        return "FAIL"
+    if result.get("flaky"):
+        return "FLAKY"
+    if result.get("lucky"):
+        return "PASS+"
+    return "PASS"
+
+
 def fmt_path(result):
     checks = {c["name"]: c for c in result.get("checks", [])}
     path = checks.get("path")
     if not path:
         return "-"
+    if result.get("lucky"):
+        return "lucky {}s".format(result["lucky"]["after"])
     if result["expect"] == "direct":
         t = result.get("time_to_direct")
         return "direct {}s".format(t) if t is not None else "NOT direct"
@@ -84,8 +98,7 @@ def print_summary(results, out=sys.stdout):
         nat4 = r.get("nat4", {})
         rows.append((
             r["scenario"], r["nat"], nat4.get("a", "-"), nat4.get("b", "-"),
-            fmt_path(r), fmt_frames(r), str(relayed_count(r)),
-            "PASS" if r["ok"] else "FAIL",
+            fmt_path(r), fmt_frames(r), str(relayed_count(r)), status(r),
         ))
     widths = [max(len(row[i]) for row in rows) for i in range(len(rows[0]))]
     for i, row in enumerate(rows):
@@ -93,6 +106,59 @@ def print_summary(results, out=sys.stdout):
                   .rstrip() + "\n")
         if i == 0:
             out.write("  ".join("-" * w for w in widths) + "\n")
+
+
+def failed_checks(checks):
+    return "; ".join("{}: {}".format(c["name"], c["detail"])
+                     for c in checks if not c["ok"])
+
+
+def report_github(results):
+    """In GitHub Actions: an annotation for each scenario that did not
+    just pass, which the page of the run shows, and a table in the
+    job's summary"""
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        return
+    for r in results:
+        s = status(r)
+        if s == "FAIL":
+            print("::error title=netns {} failed::{}".format(
+                r["scenario"], failed_checks(r.get("checks", []))))
+        elif s == "FLAKY":
+            print("::warning title=netns {} is flaky::failed, then passed "
+                  "on try {}: {}".format(r["scenario"], r["flaky"]["tries"],
+                                         failed_checks(r["flaky"]["checks"])))
+        elif s == "PASS+":
+            print("::notice title=netns {} PASS+::relayed expected, went "
+                  "direct after {}s: {}".format(r["scenario"],
+                                                r["lucky"]["after"],
+                                                r["lucky"]["why"]))
+    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not path:
+        return
+    counts = {}
+    for r in results:
+        counts[status(r)] = counts.get(status(r), 0) + 1
+    with open(path, "a") as f:
+        f.write("### netns scenarios: {}\n\n".format(", ".join(
+            "{} {}".format(n, s) for s, n in sorted(counts.items()))))
+        odd = [r for r in results if status(r) != "PASS"]
+        if odd:
+            f.write("| scenario | result | path | why |\n|---|---|---|---|\n")
+            for r in odd:
+                s = status(r)
+                if s == "FAIL":
+                    why = failed_checks(r.get("checks", []))
+                elif s == "FLAKY":
+                    why = "first: " + failed_checks(r["flaky"]["checks"])
+                else:
+                    why = r["lucky"]["why"]
+                f.write("| {} | {} | {} | {} |\n".format(
+                    r["scenario"], s, fmt_path(r),
+                    why.replace("|", "\\|")))
+        f.write("\n<details><summary>all scenarios</summary>\n\n```\n")
+        print_summary(results, f)
+        f.write("```\n</details>\n\n")
 
 
 def chown_to_sudo_user(path):
@@ -152,6 +218,10 @@ def main():
     ap.add_argument("--workdir",
                     default=os.path.join(HERE, "out"),
                     help="logs, configs and results (default tests/netns/out)")
+    ap.add_argument("--retry", type=int, default=0, metavar="N",
+                    help="run a failed scenario up to N times more: one "
+                    "that passes then is FLAKY, which passes the run "
+                    "but is reported (default 0)")
     ap.add_argument("--skip-missing", action="store_true",
                     help="exit 0 if root, ip, nft or TUN are missing")
     ap.add_argument("--cleanup", action="store_true",
@@ -229,41 +299,85 @@ def main():
         prefix = "{}{}-".format(PREFIX, index)
         return Run(scenario, settings, prefix, log).execute()
 
-    t0 = time.monotonic()
-    results = [None] * len(scenarios)
-    with concurrent.futures.ThreadPoolExecutor(max(1, args.jobs)) as pool:
-        futures = {pool.submit(one, i, s): i for i, s in enumerate(scenarios)}
-        for fut in concurrent.futures.as_completed(futures):
-            i = futures[fut]
-            try:
-                results[i] = fut.result()
-            except Exception as e:
-                results[i] = {"scenario": scenarios[i].name,
+    def batch(indices):
+        """Run these scenarios, at most args.jobs at once"""
+        out = {}
+        with concurrent.futures.ThreadPoolExecutor(max(1, args.jobs)) as pool:
+            futures = {pool.submit(one, i, scenarios[i]): i for i in indices}
+            for fut in concurrent.futures.as_completed(futures):
+                i = futures[fut]
+                try:
+                    out[i] = fut.result()
+                except Exception as e:
+                    out[i] = {"scenario": scenarios[i].name,
                               "nat": scenarios[i].nat_summary(),
                               "expect": scenarios[i].expect,
                               "ok": False, "checks": [{
                                   "name": "harness", "ok": False,
                                   "detail": "{}: {}".format(
                                       type(e).__name__, e)}]}
-            r = results[i]
-            log("[{}] {} in {}s".format(r["scenario"],
-                                        "PASS" if r["ok"] else "FAIL",
-                                        r.get("seconds", "?")))
+                r = out[i]
+                log("[{}] {} in {}s".format(r["scenario"], status(r),
+                                            r.get("seconds", "?")))
+        return out
+
+    t0 = time.monotonic()
+    results = [None] * len(scenarios)
+    for i, r in batch(range(len(scenarios))).items():
+        results[i] = r
+
+    # Each failed scenario once more, up to --retry times, each try with
+    # the logs of the one before kept next to it (NAME.try1, ...)
+    first_failure = {}
+    for attempt in range(1, args.retry + 1):
+        again = [i for i, r in enumerate(results) if not r["ok"]]
+        if not again:
+            break
+        labmod.cleanup_stale(PREFIX)
+        for i in again:
+            first_failure.setdefault(i, results[i].get("checks", []))
+            wd = os.path.join(settings.workdir, scenarios[i].name)
+            if os.path.isdir(wd):
+                os.rename(wd, "{}.try{}".format(wd, attempt))
+            log("[{}] failed, running it again".format(scenarios[i].name))
+        for i, r in batch(again).items():
+            if r["ok"]:
+                r["flaky"] = {"tries": attempt + 1,
+                              "checks": first_failure[i]}
+            results[i] = r
 
     with open(os.path.join(settings.workdir, "results.json"), "w") as f:
         json.dump(results, f, indent=2, sort_keys=True)
+    flaky = [r for r in results if r.get("flaky")]
+    if flaky:
+        # for CI, which keeps the logs of a run with flaky scenarios too
+        with open(os.path.join(settings.workdir, "flaky.txt"), "w") as f:
+            for r in flaky:
+                f.write("{}\n".format(r["scenario"]))
 
     print()
     print_summary(results)
     failed = [r for r in results if not r["ok"]]
+    for r in flaky:
+        print("\n{} is flaky: passed on try {}, the first failed (its logs "
+              "in {}.try1):".format(r["scenario"], r["flaky"]["tries"],
+                                    r.get("workdir", "?")))
+        for c in r["flaky"]["checks"]:
+            if not c["ok"]:
+                print("  {}: {}".format(c["name"], c["detail"]))
     for r in failed:
         print("\n{} failed (logs in {}):".format(
             r["scenario"], r.get("workdir", "?")))
         for c in r.get("checks", []):
             if not c["ok"]:
                 print("  {}: {}".format(c["name"], c["detail"]))
-    print("\n{} of {} scenarios passed in {:.0f}s".format(
-        len(results) - len(failed), len(results), time.monotonic() - t0))
+    extra = ", ".join("{} {}".format(n, s) for s, n in (
+        ("PASS+", sum(1 for r in results if status(r) == "PASS+")),
+        ("FLAKY", len(flaky))) if n)
+    print("\n{} of {} scenarios passed{} in {:.0f}s".format(
+        len(results) - len(failed), len(results),
+        " ({})".format(extra) if extra else "", time.monotonic() - t0))
+    report_github(results)
     chown_to_sudo_user(settings.workdir)
     return 1 if failed else 0
 

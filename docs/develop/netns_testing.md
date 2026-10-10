@@ -27,7 +27,9 @@ they should for their NATs.
 CI runs all the scenarios on every push (`netns.yml`; the runners' kernel
 has IPv6), but those tagged `limits`, and the interop ones with the other
 versions built (`interop.yml`); `sanitizers.yml` runs them with the
-sanitizers built in.  A failed run uploads the logs of the scenarios.
+sanitizers built in.  There a failed scenario runs once more
+(`--retry 1`): one that passes then is FLAKY, see below.  A run with a
+failed or flaky scenario uploads the logs of the scenarios.
 
 It needs root (namespaces, TAP devices, nftables), iproute2, nft and
 `/dev/net/tun`, and Python 3 without further modules.
@@ -41,6 +43,7 @@ sudo tests/netns/run.py @quick -j 2
 sudo tests/netns/run.py easy-hard -v 3 --punch-ports 16 --register-interval 20
 sudo tests/netns/run.py --wrap 'valgrind --error-exitcode=99' easy-easy
 sudo tests/netns/run.py --cleanup   # namespaces left by a killed run
+sudo tests/netns/run.py --retry 1   # a failed scenario once more
 ```
 
 `make test` runs it through sudo unless make runs as root already, and
@@ -50,6 +53,26 @@ all of them a few minutes (the outage ones run 90 seconds without
 supernodes).  The scenarios tagged `limits` show what n3n cannot do (yet):
 they fail, and a run without names leaves them out (`run.py @limits` runs
 them).
+
+Each scenario ends with one of:
+
+- `PASS`: as expected
+- `PASS+`: expected relayed, but the edges reached each other directly
+  after all, and the rest of the checks passed as for direct: n3n did
+  better than it has to.  Allowed where it can happen by luck: edges
+  behind hard NATs on both sides (a socket of the pool towards a peer
+  whose NAT class is not known yet may meet the port the peer's NAT
+  opened, see [NAT Traversal](../advanced/NatTraversal.md)), and
+  `no-punch`
+- `FLAKY`: failed, then passed when run again (`--retry`); the run passes,
+  but the scenario is listed with what failed the first time, whose logs
+  stay next to the others (`out/NAME.try1`)
+- `FAIL`
+
+In GitHub Actions (`GITHUB_ACTIONS`), each `PASS+`, `FLAKY` and `FAIL`
+becomes an annotation on the page of the run, and the job's summary
+(`GITHUB_STEP_SUMMARY`) gets a table of them: the flaky ones stay visible
+from run to run, without turning the run red.
 
 ### Other versions (interop)
 
@@ -277,7 +300,8 @@ To keep runs short, the edges use `connection.register_interval=5` and
 2. a trickle of frames each way (10 per second) until the edges list each
    other as `p2p` in `get_edges` (within `--connect-timeout`, 90 seconds)
    - or, for the relayed ones, that they do not for 4 rounds of
-   registration
+   registration; where luck may bring them together anyway (see
+   `PASS+` above), the rest of the checks then go for direct
    - `description:` direct, each edge lists the other with its
    description (from the other's REGISTER, an edge of this tree only)
 3. a counted burst, 500 frames each way at 200 per second (`--frames`,

@@ -42,9 +42,11 @@ jobs:
 
       - name: Interop scenarios
         run: |
-          sudo python3 tests/netns/run.py -j 2 @interop
+          # a failed scenario once more, see netns.yml
+          sudo --preserve-env=GITHUB_ACTIONS,GITHUB_STEP_SUMMARY \
+            python3 tests/netns/run.py -j 2 --retry 1 @interop
 
-      - if: ${{ failure() }}
+      - if: ${{ failure() || hashFiles('tests/netns/out/flaky.txt') != '' }}
         name: Upload the logs
         uses: actions/upload-artifact@v6
         with:

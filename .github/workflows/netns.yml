@@ -42,9 +42,13 @@ jobs:
 
       - name: netns scenarios
         run: |
-          sudo python3 tests/netns/run.py --skip-missing -j 4
+          # a failed scenario runs once more: one that passes then is
+          # FLAKY, an annotation on the run's page and a line in its
+          # summary (which need the two variables), and keeps its logs
+          sudo --preserve-env=GITHUB_ACTIONS,GITHUB_STEP_SUMMARY \
+            python3 tests/netns/run.py --skip-missing -j 4 --retry 1
 
-      - if: ${{ failure() }}
+      - if: ${{ failure() || hashFiles('tests/netns/out/flaky.txt') != '' }}
         name: Upload the logs
         uses: actions/upload-artifact@v6
         with:

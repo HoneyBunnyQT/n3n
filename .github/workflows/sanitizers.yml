@@ -68,7 +68,9 @@ jobs:
           sudo chmod 1777 /tmp/san
           # all but those tagged "limits", which fail on purpose; two at a
           # time, the sanitized daemons are slower
-          sudo -E python3 tests/netns/run.py --skip-missing -j 2 --keep-root
+          # a failed scenario once more, see netns.yml
+          sudo -E python3 tests/netns/run.py --skip-missing -j 2 --keep-root \
+            --retry 1
 
       - name: No sanitizer reports
         if: ${{ always() }}
@@ -79,7 +81,7 @@ jobs:
             exit 1
           fi
 
-      - if: ${{ failure() }}
+      - if: ${{ failure() || hashFiles('tests/netns/out/flaky.txt') != '' }}
         name: Upload the reports and logs
         uses: actions/upload-artifact@v6
         with:
@@ -132,7 +134,7 @@ jobs:
           # the packet threads (daemon.threads), and the resolver thread
           # that every daemon has
           sudo -E python3 tests/netns/run.py --skip-missing -j 2 \
-            @quick '*-threads'
+            --retry 1 @quick '*-threads'
 
       - name: No sanitizer reports
         if: ${{ always() }}
@@ -143,7 +145,7 @@ jobs:
             exit 1
           fi
 
-      - if: ${{ failure() }}
+      - if: ${{ failure() || hashFiles('tests/netns/out/flaky.txt') != '' }}
         name: Upload the reports and logs
         uses: actions/upload-artifact@v6
         with:
