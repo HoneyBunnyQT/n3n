@@ -1,5 +1,7 @@
+<!--
 SPDX-License-Identifier: GPL-3.0-only
 SPDX-FileCopyrightText: Copyright Honey Bunny QT
+-->
 
 # Releasing n3n BE
 

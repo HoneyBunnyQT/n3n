@@ -1,5 +1,7 @@
+<!--
 SPDX-License-Identifier: GPL-3.0-only
 SPDX-FileCopyrightText: Copyright Hamish Coleman
+-->
 
 # Linting
 
@@ -22,3 +24,16 @@ sudo cp uncrustify/build/uncrustify /usr/local/bin/
 ```
 
 `scripts/indent.sh -i <file>` reformats a file in place.
+
+A Markdown file carries its SPDX tags (licence and copyright) in an HTML
+comment at its top, so that they stay in the source without showing on
+the rendered page, on GitHub as in the docs built by MkDocs:
+
+```
+<!--
+SPDX-License-Identifier: GPL-3.0-only
+SPDX-FileCopyrightText: Copyright ...
+-->
+
+# Title
+```

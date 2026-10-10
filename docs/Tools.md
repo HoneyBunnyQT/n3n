@@ -1,6 +1,8 @@
+<!--
 SPDX-License-Identifier: GPL-3.0-only
 SPDX-FileCopyrightText: Copyright 2023 n2n contributors
 SPDX-FileCopyrightText: Copyright Hamish Coleman
+-->
 
 # Tools
 

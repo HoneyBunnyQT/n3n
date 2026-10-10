@@ -1,6 +1,8 @@
+<!--
 SPDX-License-Identifier: GPL-2.0-only
 SPDX-FileCopyrightText: Copyright 2022 n2n contributors
 SPDX-FileCopyrightText: Copyright Hamish Coleman
+-->
 
 # Contributing to the n3n project
 

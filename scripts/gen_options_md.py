@@ -26,8 +26,10 @@ MACHINE = {
 UNSET = ("0.0.0.0/0", "0.0.0.0/24", "00:00:00:00:00:00", "")
 
 HEADER = """\
+<!--
 SPDX-License-Identifier: GPL-3.0-only
 SPDX-FileCopyrightText: Copyright Hamish Coleman
+-->
 
 # Configuration Options
 

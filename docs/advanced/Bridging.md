@@ -1,6 +1,8 @@
+<!--
 SPDX-License-Identifier: GPL-3.0-only
 SPDX-FileCopyrightText: Copyright Dylan Yee
 SPDX-FileCopyrightText: Copyright Hamish Coleman
+-->
 
 # Bridging (Linux)
 

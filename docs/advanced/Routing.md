@@ -1,7 +1,9 @@
+<!--
 SPDX-License-Identifier: GPL-3.0-only
 SPDX-FileCopyrightText: Copyright 2022 n2n contributors
 SPDX-FileCopyrightText: Copyright Logan oos Even
 SPDX-FileCopyrightText: Copyright Hamish Coleman
+-->
 
 # IPv4 Routing (Linux)
 

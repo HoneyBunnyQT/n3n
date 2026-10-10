@@ -1,5 +1,7 @@
+<!--
 SPDX-License-Identifier: GPL-3.0-only
 SPDX-FileCopyrightText: Copyright 2020 n2n contributors
+-->
 
 # Setting up a Custom Supernode
 
