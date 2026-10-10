@@ -272,8 +272,11 @@ tests and `make lint` pass after each.
       whether Speck NEON can be on by default on newer cores
 - [ ] Runtime selection of the implementations (Hamish is working on it):
       then distribution builds get the ARMv8 AES too, without the flag
-- [~] epoll in the mainloop instead of `select()` (`mainloop.c` TODO), lifts
-      the limit on TCP connections
+- [x] epoll in the mainloop instead of `select()` on Linux (`mainloop.c`),
+      which lifts the limit of FD_SETSIZE (1024) on its fds - a
+      supernode's TCP connections - to what the process may open; other
+      systems keep `select()`.  Open: a test with more than 1024 TCP
+      connections
 - [x] Batched I/O: `recvmmsg()` / `sendmmsg()` on Linux (`sock.c`,
       `udp_drain()`, `sock_batch_begin()`), the edge's sends of a tap batch
       and all receives on the sockets of `connection.bind`: up to a third

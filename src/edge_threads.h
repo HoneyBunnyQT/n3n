@@ -13,8 +13,9 @@
  * for the main thread.
  *
  * The two sides are kept apart by one read-write lock. The main thread holds
- * the write side whenever it is awake and lets go of it only while it waits in
- * select(); a worker takes the read side for each batch of packets. So
+ * the write side whenever it is awake and lets go of it only while it waits
+ * (epoll or select(), see mainloop.c); a worker takes the read side for each
+ * batch of packets. So
  * whatever the main thread does, no worker is in the middle of a batch.
  *
  * With one thread - the default - none of this is set up and nothing here
@@ -60,8 +61,8 @@ int edge_threads_possible (const n2n_edge_conf_t *conf);
 // daemon.threads=0 as many as edge_threads_possible() says
 int edge_threads_wanted (const n2n_edge_conf_t *conf);
 
-// Around the main thread's wait in select(). Both do nothing unless workers
-// are running.
+// Around the main thread's wait in the mainloop. Both do nothing unless
+// workers are running.
 void edge_threads_main_release (struct n3n_runtime_data *eee);
 void edge_threads_main_acquire (struct n3n_runtime_data *eee);
 

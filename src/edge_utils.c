@@ -1506,9 +1506,9 @@ int run_edge_loop (struct n3n_runtime_data *eee) {
 
     /* Main loop
      *
-     * select() is used to wait for input on either the TAP fd or the UDP/TCP
-     * socket. When input is present the data is read and processed by either
-     * readFromIPSocket() or edge_read_from_tap()
+     * The mainloop waits (epoll, or select() on other systems than Linux)
+     * for input on the TAP fd, the UDP/TCP sockets and the management
+     * connections, and hands what comes to the edge, see mainloop.c
      */
     mainloop_run(eee);
 

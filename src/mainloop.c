@@ -24,6 +24,15 @@
 #include <unistd.h>             // for close
 #endif
 
+// On Linux the mainloop waits with epoll: the kernel keeps the set of fds,
+// instead of being handed all of them each time, and there is no limit of
+// FD_SETSIZE (1024) on them - a supernode's TCP connections.  Elsewhere
+// with select().
+#ifdef __linux__
+#define MAINLOOP_EPOLL 1
+#include <sys/epoll.h>          // for epoll_create1, epoll_ctl, epoll_wait
+#endif
+
 #ifdef DEBUG_MALLOC
 #ifdef __GLIBC__
 #include <malloc.h>             // for mallinfo2, malloc_info
@@ -60,10 +69,10 @@
 #define FD_DRAIN_MAX 1
 #else
 // How many packets to take from one fd before returning to the mainloop.
-// select() only tells us that at least one packet is waiting, but under load
+// The wait only tells us that at least one packet is waiting, but under load
 // there is usually a queue behind it and reading the queue out in one go
-// avoids a select() call per packet.  The cap is what stops a busy fd from
-// starving the other fds, the management interface and the timers
+// avoids a wait per packet.  The cap is what stops a busy fd from starving
+// the other fds, the management interface and the timers
 #define FD_DRAIN_MAX 32
 #endif
 
@@ -128,14 +137,26 @@ struct fd_info {
     int8_t connnr;              // which connlist[] is being used as buffer
     bool close_after;           // http: close once the reply is sent
     struct n3n_runtime_data *rt;    // whose it is, NULL: of mainloop_run()
+#ifdef MAINLOOP_EPOLL
+    uint32_t events;            // what epoll waits for on it, 0: not added
+    uint32_t gen;               // tells this fd from one the slot had before
+#endif
 };
 
 // The known file descriptors.  The table starts big enough for an edge's own
 // sockets, the management connections and the sockets it opens behind a hard
 // NAT (NAT_PUNCH_POOL_MAX + NAT_PUNCH_BOUND), and grows when it is full - a
-// supernode's TCP connections need more - up to what select() can take.
+// supernode's TCP connections need more - up to what select() can take, or
+// with epoll up to what the process may open.
 #define FDLIST_INITIAL 96
+#ifdef MAINLOOP_EPOLL
+#define FDLIST_MAX 65536
+// The fd epoll keeps the set in, and how many ready ones one wait gives
+static int epfd = -1;
+#define EPOLL_EVENTS_MAX 64
+#else
 #define FDLIST_MAX FD_SETSIZE
+#endif
 static struct fd_info *fdlist;
 static int fdlist_size;
 static int fdlist_next_search;
@@ -363,6 +384,9 @@ static void fdlist_clear (int from, int to) {
         fdlist[slot].proto = fd_info_proto_unknown;
         fdlist[slot].stats_reads = 0;
         fdlist[slot].close_after = false;
+#ifdef MAINLOOP_EPOLL
+        fdlist[slot].events = 0;
+#endif
     }
 }
 
@@ -397,7 +421,7 @@ static bool fdlist_grow () {
 }
 
 static int fdlist_allocslot (int fd, enum fd_info_proto proto, struct n3n_runtime_data *rt) {
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(MAINLOOP_EPOLL)
     if(fd >= FD_SETSIZE) {
         // FD_SET() would write beyond the end of the fd_set
         traceEvent(TRACE_ERROR, "fd %i is too high for select()", fd);
@@ -425,6 +449,12 @@ static int fdlist_allocslot (int fd, enum fd_info_proto proto, struct n3n_runtim
             fdlist[slot].connnr = connnr;
             fdlist[slot].close_after = false;
             fdlist[slot].rt = rt;
+#ifdef MAINLOOP_EPOLL
+            // added to the epoll set before the next wait, see
+            // fdlist_epoll_sync()
+            fdlist[slot].events = 0;
+            fdlist[slot].gen++;
+#endif
 
             fdlist_next_search = slot + 1;
             return slot;
@@ -464,6 +494,14 @@ static void fdlist_freefd (int fd) {
             continue;
         }
         metrics.unregister_fd++;
+#ifdef MAINLOOP_EPOLL
+        if(fdlist[slot].events) {
+            // fails if the fd is closed already, which took it out of the
+            // set anyway
+            epoll_ctl(epfd, EPOLL_CTL_DEL, fd, NULL);
+            fdlist[slot].events = 0;
+        }
+#endif
         if(fdlist[slot].connnr != -1) {
             connlist_free(fdlist[slot].connnr);
             fdlist[slot].connnr = -1;
@@ -506,47 +544,82 @@ static void v3tcp_closed (struct n3n_runtime_data *eee, int slot, time_t now) {
     read_proto3_tcp(eee, fd, NULL, 0, now);
 }
 
+// What to wait for on a slot's fd now
+static void fdlist_wanted (int slot, time_t now, bool *rd, bool *wr) {
+    *rd = false;
+    *wr = false;
+
+    if((fdlist[slot].proto == fd_info_proto_listen_v3tcp) && (now < listen_pause_until)) {
+        return;
+    }
+    if(fdlist[slot].connnr == -1) {
+        *rd = true;
+        return;
+    }
+    // Only wait for reading if we have finished the previous write
+    // FIXME:
+    // this check assumes that the conn_write() that kicks off a sending
+    // event will have made at least some progress
+    *rd = (connlist[fdlist[slot].connnr]->reply_sendpos == 0);
+    *wr = conn_iswriter(connlist[fdlist[slot].connnr]);
+}
+
+#ifdef MAINLOOP_EPOLL
+// Bring the epoll set in line with what each fd waits for now.  An fd that
+// waits for nothing comes out of the set, as epoll would tell its errors
+// and hang ups all the same, again and again.
+static void fdlist_epoll_sync (time_t now) {
+    for(int slot = 0; slot < fdlist_size; slot++) {
+        bool rd, wr;
+
+        if(fdlist[slot].fd == -1) {
+            continue;
+        }
+        fdlist_wanted(slot, now, &rd, &wr);
+        uint32_t events = (rd ? EPOLLIN : 0) | (wr ? EPOLLOUT : 0);
+        if(events == fdlist[slot].events) {
+            continue;
+        }
+
+        struct epoll_event ev = { .events = events };
+        ev.data.u64 = ((uint64_t)fdlist[slot].gen << 32) | (uint32_t)slot;
+        int op = !events ? EPOLL_CTL_DEL : (fdlist[slot].events ? EPOLL_CTL_MOD : EPOLL_CTL_ADD);
+        int rc = epoll_ctl(epfd, op, fdlist[slot].fd, &ev);
+        if((rc != 0) && (op == EPOLL_CTL_ADD) && (errno == EEXIST)) {
+            // still in the set from a slot that had the same fd before
+            rc = epoll_ctl(epfd, EPOLL_CTL_MOD, fdlist[slot].fd, &ev);
+        }
+        if((rc != 0) && (op != EPOLL_CTL_DEL)) {
+            // select() takes any fd, epoll not all: this one is not waited
+            // for - said once, not before every wait
+            traceEvent(TRACE_ERROR, "epoll_ctl(%s fd %i): %s", proto_str[fdlist[slot].proto],
+                       fdlist[slot].fd, strerror(errno));
+        }
+        fdlist[slot].events = events;
+    }
+}
+#else
 static int fdlist_fd_set (fd_set *rd, fd_set *wr, time_t now) {
     int max_sock = 0;
-    int slot = 0;
-    while(slot < fdlist_size) {
+
+    for(int slot = 0; slot < fdlist_size; slot++) {
+        bool want_rd, want_wr;
+
         if(fdlist[slot].fd == -1) {
-            slot++;
             continue;
         }
-
-        if((fdlist[slot].proto == fd_info_proto_listen_v3tcp) && (now < listen_pause_until)) {
-            slot++;
-            continue;
-        }
-
-        if(fdlist[slot].connnr == -1) {
+        fdlist_wanted(slot, now, &want_rd, &want_wr);
+        if(want_rd) {
             FD_SET(fdlist[slot].fd, rd);
             max_sock = MAX(max_sock, fdlist[slot].fd);
-        } else {
-            if(connlist[fdlist[slot].connnr]->reply_sendpos == 0) {
-                // Only select for reading if we have finished previous write
-                // FIXME:
-                // this check assumes that the conn_write() that kicks off
-                // a sending event will have made at least some progress
-                FD_SET(fdlist[slot].fd, rd);
-                max_sock = MAX(max_sock, fdlist[slot].fd);
-            }
         }
-
-        if(fdlist[slot].connnr == -1) {
-            slot++;
-            continue;
-        }
-
-        if(conn_iswriter(connlist[fdlist[slot].connnr])) {
+        if(want_wr) {
             FD_SET(fdlist[slot].fd, wr);
         }
-
-        slot++;
     }
     return max_sock;
 }
+#endif
 
 // A PDU that came in on a v3tcp connection; buf NULL: the connection is gone,
 // fd is closed already
@@ -556,14 +629,19 @@ static void read_proto3_tcp (struct n3n_runtime_data *eee, int fd,
 }
 
 #ifndef _WIN32
-// The highest fd a TCP connection can be accepted on, see TCP_FD_HEADROOM
+// The highest fd a TCP connection can be accepted on, see TCP_FD_HEADROOM:
+// what the process may open, and with select() FD_SETSIZE at most
 static int tcp_fd_limit () {
-    int limit = FD_SETSIZE;
+#ifdef MAINLOOP_EPOLL
+    rlim_t limit = FDLIST_MAX;
+#else
+    rlim_t limit = FD_SETSIZE;
+#endif
     struct rlimit nofile;
-    if((getrlimit(RLIMIT_NOFILE, &nofile) == 0) && (nofile.rlim_cur < (rlim_t)FD_SETSIZE)) {
+    if((getrlimit(RLIMIT_NOFILE, &nofile) == 0) && (nofile.rlim_cur < limit)) {
         limit = nofile.rlim_cur;
     }
-    return limit - TCP_FD_HEADROOM;
+    return (int)limit - TCP_FD_HEADROOM;
 }
 #endif
 
@@ -832,8 +910,7 @@ static void fdlist_closeidle_slot (const time_t now, int slot, struct n3n_runtim
  * to an alloc without matching free
  */
 static void fdlist_closeidle (const time_t now, struct n3n_runtime_data *eee) {
-    // A linear scan is not ideal, but until we support things other than
-    // select() it will need to suffice
+    // only after an error, so a linear scan will do
     for(int slot = 0; slot < fdlist_size; slot++) {
         if(fdlist[slot].fd != -1) {
             fdlist_closeidle_slot(now, slot, eee);
@@ -841,54 +918,56 @@ static void fdlist_closeidle (const time_t now, struct n3n_runtime_data *eee) {
     }
 }
 
+// A slot's fd is ready to be read from (rd) and/or written to (wr)
+static void fdlist_ready (int slot, bool rd, bool wr, const time_t now, struct n3n_runtime_data *rt) {
+    int fd = fdlist[slot].fd;
+
+    if(rd) {
+        fdlist[slot].stats_reads++;
+        handle_fd(now, slot, rt);
+    }
+    if(wr && (fdlist[slot].fd == fd)) {
+        // We should not be listening on this socket if there is no
+        // connnr assigned, but paranoia..
+        if(fdlist[slot].connnr == -1) {
+            traceEvent(TRACE_DEBUG, "writer bad connnr");
+            return;
+        }
+
+        struct conn *conn = connlist[fdlist[slot].connnr];
+
+        // TODO: track the stats on writes?
+        conn_write(conn, fd);
+
+        if(conn->reply_sendpos == 0) {
+            // Looks like we have finished a write, so we can clean up
+            sb_zero(conn->request);
+        }
+        if(fdlist[slot].close_after && !conn_iswriter(conn)) {
+            fdlist_close_slot(slot);
+        }
+    }
+}
+
+#ifndef MAINLOOP_EPOLL
 static void fdlist_check_ready (fd_set *rd, fd_set *wr, const time_t now, struct n3n_runtime_data *eee) {
-    int slot = 0;
-    // A linear scan is not ideal, but until we support things other than
-    // select() it will need to suffice
-    while(slot < fdlist_size) {
+    // A linear scan is not ideal, but select() leaves nothing better
+    for(int slot = 0; slot < fdlist_size; slot++) {
         int fd = fdlist[slot].fd;
         if(fd == -1) {
-            slot++;
             continue;
         }
         // the runtime the fd belongs to
         struct n3n_runtime_data *rt = fdlist[slot].rt ? fdlist[slot].rt : eee;
 
-        if(FD_ISSET(fd, rd)) {
-            fdlist[slot].stats_reads++;
-            handle_fd(now, slot, rt);
-        }
-        if((fdlist[slot].fd == fd) && FD_ISSET(fd, wr)) {
-            // We should not be listening on this socket if there is no
-            // connnr assigned, but paranoia..
-            if(fdlist[slot].connnr == -1) {
-                traceEvent(TRACE_DEBUG, "writer bad connnr");
-                slot++;
-                continue;
-            }
-
-            struct conn *conn = connlist[fdlist[slot].connnr];
-
-            // TODO: track the stats on writes?
-            conn_write(conn, fd);
-
-            if(conn->reply_sendpos == 0) {
-                // Looks like we have finished a write, so we can clean up
-                sb_zero(conn->request);
-            }
-            if(fdlist[slot].close_after && !conn_iswriter(conn)) {
-                fdlist_close_slot(slot);
-                slot++;
-                continue;
-            }
-        }
+        fdlist_ready(slot, FD_ISSET(fd, rd), FD_ISSET(fd, wr), now, rt);
 
         if(fdlist[slot].fd == fd) {
             fdlist_closeidle_slot(now, slot, rt);
         }
-        slot++;
     }
 }
+#endif
 
 #ifdef DEBUG_MALLOC
 #ifdef __GLIBC__
@@ -896,11 +975,72 @@ static time_t last_mallinfo;
 #endif
 #endif
 
+#ifdef MAINLOOP_EPOLL
+// When the idle connections were last looked for, see mainloop_runonce()
+static time_t last_closeidle;
+#endif
+
 int mainloop_runonce (struct n3n_runtime_data *eee) {
+    metrics.mainloop++;
+
+#ifdef MAINLOOP_EPOLL
+    struct epoll_event events[EPOLL_EVENTS_MAX];
+
+    fdlist_epoll_sync(time(NULL));
+
+    int wait_ms = 1000 * (eee->client.sn_wait ? (SOCKET_TIMEOUT_INTERVAL_SECS / 10 + 1)
+                                               : SOCKET_TIMEOUT_INTERVAL_SECS);
+
+    // Packet threads, if any, may run only while the main thread waits
+    edge_threads_main_release(eee);
+    int ready = epoll_wait(epfd, events, EPOLL_EVENTS_MAX, wait_ms);
+    edge_threads_main_acquire(eee);
+
+    // One timestamp to use for this entire loop iteration
+    time_t now = time(NULL);
+
+    if((ready == -1) && (errno == EINTR)) {
+        // a signal: SIGHUP for a reload, or one to stop
+        return 0;
+    }
+    if(ready == -1) {
+        traceEvent(TRACE_ERROR, "epoll_wait errno=%i", errno);
+        fdlist_closeidle(now, eee);
+        return -1;
+    }
+
+    for(int i = 0; i < ready; i++) {
+        int slot = (int)(uint32_t)events[i].data.u64;
+        uint32_t gen = events[i].data.u64 >> 32;
+
+        // gone or taken by another fd while an earlier event of this wait
+        // was handled
+        if((slot >= fdlist_size) || (fdlist[slot].fd == -1) || (fdlist[slot].gen != gen)) {
+            continue;
+        }
+        // an error or a hang up goes to what the fd waits for, as select()
+        // gives it
+        uint32_t ev = events[i].events;
+        uint32_t want = fdlist[slot].events;
+        bool rd = (want & EPOLLIN) && (ev & (EPOLLIN | EPOLLERR | EPOLLHUP | EPOLLRDHUP));
+        bool wr = (want & EPOLLOUT) && (ev & (EPOLLOUT | EPOLLERR | EPOLLHUP));
+        struct n3n_runtime_data *rt = fdlist[slot].rt ? fdlist[slot].rt : eee;
+
+        fdlist_ready(slot, rd, wr, now, rt);
+    }
+
+    // the connections idle for too long, once a second
+    if(now != last_closeidle) {
+        last_closeidle = now;
+        for(int slot = 0; slot < fdlist_size; slot++) {
+            if(fdlist[slot].fd != -1) {
+                fdlist_closeidle_slot(now, slot, fdlist[slot].rt ? fdlist[slot].rt : eee);
+            }
+        }
+    }
+#else
     fd_set rd;
     fd_set wr;
-
-    metrics.mainloop++;
 
     FD_ZERO(&rd);
     FD_ZERO(&wr);
@@ -944,6 +1084,7 @@ int mainloop_runonce (struct n3n_runtime_data *eee) {
     }
 
     fdlist_check_ready(&rd, &wr, now, eee);
+#endif
 
 #ifdef DEBUG_MALLOC
 #ifdef __GLIBC__
@@ -1121,6 +1262,15 @@ void mainloop_run (struct n3n_runtime_data *rt) {
 void n3n_initfuncs_mainloop () {
     connlist_init();
     fdlist_zero();
+#ifdef MAINLOOP_EPOLL
+    if(epfd == -1) {
+        epfd = epoll_create1(EPOLL_CLOEXEC);
+        if(epfd == -1) {
+            traceEvent(TRACE_ERROR, "epoll_create1: %s", strerror(errno));
+            abort();
+        }
+    }
+#endif
     n3n_metrics_register(&metrics_module_dynamic);
 #ifdef DEBUG_MALLOC
 #ifdef __GLIBC__
@@ -1149,6 +1299,13 @@ void n3n_deinitfuncs_mainloop () {
     free(fdlist);
     fdlist = NULL;
     fdlist_size = 0;
+#ifdef MAINLOOP_EPOLL
+    if(epfd != -1) {
+        close(epfd);
+        epfd = -1;
+    }
+    last_closeidle = 0;
+#endif
     // the ticks carry the runtime they belong to, which edge_term() is
     // about to free: an embedded edge that runs again (the Android app,
     // reconnecting) would otherwise keep the dead ones here - the dedup in
