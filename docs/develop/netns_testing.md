@@ -316,7 +316,9 @@ To keep runs short, the edges use `connection.register_interval=5` and
    - `description after:` the edges still list each other with their
      descriptions: also after an edge lost its peer and found it again
      (idle, moved, restarted), when only the ACK to its REGISTER may
-     come back, which tells nothing of who the peer is
+     come back, which tells nothing of who the peer is; relayed too,
+     from the REGISTERs through the supernodes - also of the supernode's
+     own edge (`sn-tap...`), which has no p2p
    - `roam:` (roam) whether the edges are direct again after the move,
      and each way the longest time without a frame of the flow that ran
      across it

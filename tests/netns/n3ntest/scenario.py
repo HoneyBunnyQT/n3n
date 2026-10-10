@@ -1001,8 +1001,10 @@ class Run:
         return out
 
     def check_descriptions(self, name="description"):
-        """A direct peer shows with its description, whichever of the two
-        REGISTERs got through first, and keeps it when it moves"""
+        """A peer shows with its description - direct, whichever of the
+        two REGISTERs got through first, and keeps it when it moves;
+        relayed, from its REGISTER through the supernode, which also an edge
+        without p2p sends, as a supernode's own (supernode.tap)"""
         pairs = [(s, d) for s, d in self.sc.directions()
                  if "daemon" in self.edges[s]
                  and not self.sc.sites[s].version]
@@ -1013,7 +1015,7 @@ class Run:
             out = {}
             for s, d in pairs:
                 mode, row = self.edges[s]["daemon"].peer(self.edges[d]["mac"])
-                if mode == "p2p":
+                if mode in ("p2p", "pSp"):
                     out[(s, d)] = row.get("desc", "")
             return out
         wait_for(lambda: all(descs().values()), 5, interval=0.5)

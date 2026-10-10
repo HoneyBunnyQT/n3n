@@ -1572,7 +1572,12 @@ void send_register (struct n3n_runtime_data * eee,
     size_t idx;
     n3n_sock_str_t sockbuf;
 
-    if(!eee->conf.client.allow_p2p) {
+    // Without p2p, the REGISTER through the supernode still goes: it is what
+    // tells a peer who we are (description, address), and as no
+    // REGISTER_ACK of ours answers the peer's, no direct way comes of it.
+    // The edge of a supernode (local_link) is one of these.
+    if(!eee->conf.client.allow_p2p
+       && !(eee->client.curr_sn && sock_equal(remote_peer, &eee->client.curr_sn->sock))) {
         traceEvent(TRACE_DEBUG, "skipping register as P2P is disabled");
         return;
     }

@@ -150,7 +150,9 @@ static struct n3n_conf_option section_connection[] = {
         .help = "Defaulting to true, this setting can be used to enable or "
                 "disable the use of peer-to-peer connections.  This might "
                 "be used if the network is known to be hostile to p2p.  See "
-                "also the connect_tcp setting as they are used together.",
+                "also the connect_tcp setting as they are used together.  "
+                "Without p2p the edge still tells its peers who it is "
+                "(description, address), through the supernode.",
     },
     {
         .name = "bind",
