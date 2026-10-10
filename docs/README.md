@@ -11,6 +11,7 @@ SPDX-FileCopyrightText: Copyright Honey Bunny QT
 [![netns](https://github.com/HoneyBunnyQT/n3n/actions/workflows/netns.yml/badge.svg)](https://github.com/HoneyBunnyQT/n3n/actions/workflows/netns.yml)
 [![Sanitizers](https://github.com/HoneyBunnyQT/n3n/actions/workflows/sanitizers.yml/badge.svg)](https://github.com/HoneyBunnyQT/n3n/actions/workflows/sanitizers.yml)
 [![Interop](https://github.com/HoneyBunnyQT/n3n/actions/workflows/interop.yml/badge.svg)](https://github.com/HoneyBunnyQT/n3n/actions/workflows/interop.yml)
+[![Version](https://img.shields.io/github/v/tag/HoneyBunnyQT/n3n?label=version&color=c2185b)](https://github.com/HoneyBunnyQT/n3n/tags)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE.md)
 
 A lightweight peer-to-peer VPN: computers anywhere become one virtual
