@@ -24,6 +24,12 @@
 int sn_read_proto3_udp (struct n3n_runtime_data *sss, SOCKET sock,
                         struct n3n_pktbuf *pktbuf, time_t now);
 
+// Handle a datagram that came in on sock, from a read of it or several at
+// once, see udp_drain()
+void sn_rx_udp (struct n3n_runtime_data *sss, SOCKET sock,
+                struct sockaddr *from, socklen_t from_len,
+                uint8_t *buf, size_t len, time_t now);
+
 // Handle a PDU that came in on a TCP connection.  pktbuf NULL: the connection
 // is gone, its socket closed already.
 void sn_read_proto3_tcp (struct n3n_runtime_data *sss, SOCKET sock,

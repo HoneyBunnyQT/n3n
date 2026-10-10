@@ -26,6 +26,7 @@ tests-wire-fuzz
 tests-wire-numsn
 tests-regex
 tests-decode-bounds
+tests-sock
 tests-auth.exe
 tests-compress.exe
 tests-elliptic.exe
@@ -38,3 +39,4 @@ tests-cc20.exe
 tests-wire-fuzz.exe
 tests-wire-numsn.exe
 tests-decode-bounds.exe
+tests-sock.exe

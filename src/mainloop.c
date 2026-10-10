@@ -38,6 +38,7 @@
 #include "netwatch.h"           // for netwatch_read
 #include "notify.h"             // for n3n_notify_tick
 #include "reload.h"             // for n3n_reload_pending
+#include "sock.h"               // for udp_drain
 #include "role_client.h"        // for edge_network_change
 #include "minmax.h"             // for min, max
 #include "portable_endian.h"    // for htobe16
@@ -547,12 +548,6 @@ static int fdlist_fd_set (fd_set *rd, fd_set *wr, time_t now) {
     return max_sock;
 }
 
-// A PDU waits on a v3 socket: the role of the runtime takes it
-static int read_proto3_udp (struct n3n_runtime_data *eee, int fd,
-                            struct n3n_pktbuf *pkt, time_t now) {
-    return eee->ops->read_udp(eee, fd, pkt, now);
-}
-
 // A PDU that came in on a v3tcp connection; buf NULL: the connection is gone,
 // fd is closed already
 static void read_proto3_tcp (struct n3n_runtime_data *eee, int fd,
@@ -701,10 +696,8 @@ static void handle_fd (const time_t now, int slot, struct n3n_runtime_data *eee)
             }
             pkt->owner = n3n_pktbuf_owner_rx_pdu;
 
-            int drain = FD_DRAIN_MAX;
-            while(drain && (read_proto3_udp(eee, info.fd, pkt, now) > 0)) {
-                drain--;
-            }
+            udp_drain(eee, info.fd, pkt, FD_DRAIN_MAX, now, eee->ops->read_udp,
+                      eee->ops->rx_udp);
 
             n3n_pktbuf_free(pkt);
             return;

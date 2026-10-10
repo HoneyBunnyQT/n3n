@@ -15,7 +15,9 @@
 #define N3N_SOCK_H
 
 #include <stddef.h>          // for size_t
+#include <stdint.h>          // for uint8_t
 #include <sys/types.h>       // for ssize_t
+#include <time.h>            // for time_t
 
 #include "n2n.h"             // for n3n_runtime_data, SOCKET
 
@@ -45,5 +47,30 @@ ssize_t sendto_logged (SOCKET sock, const void *buf, size_t len,
 // address.  The bytes sent, or -1.
 ssize_t sendto_bind (struct n3n_runtime_data *rt, int i, const void *buf,
                      size_t len, const struct sockaddr *dest);
+
+// While a batch is open on the calling thread, what sendto_logged() is given
+// is copied and collected instead of sent, and goes out with one sendmmsg()
+// for as many as there are for the same socket in a row, when the batch
+// ends - or is full.  Batches nest: the outermost end sends.  Where there is
+// no sendmmsg() (other systems than Linux), each goes at once as before.
+void sock_batch_begin (void);
+void sock_batch_end (void);
+
+struct n3n_pktbuf;
+// A role's read of one datagram off sock, as n3n_role_ops.read_udp: 1 if
+// one was taken, 0 if not
+typedef int (*udp_read_fn)(struct n3n_runtime_data *rt, SOCKET sock,
+                           struct n3n_pktbuf *pkt, time_t now);
+// A role's handling of a datagram that came in on sock
+typedef void (*udp_rx_fn)(struct n3n_runtime_data *rt, SOCKET sock,
+                          struct sockaddr *from, socklen_t from_len,
+                          uint8_t *buf, size_t len, time_t now);
+
+// Take up to max datagrams off sock and hand each to rx: with one
+// recvmmsg() for several on a socket of connection.bind, else one by one
+// with read into pkt, as also where there is no recvmmsg() or it fails
+// other than for want of datagrams.  How many were taken.
+int udp_drain (struct n3n_runtime_data *rt, SOCKET sock, struct n3n_pktbuf *pkt,
+               int max, time_t now, udp_read_fn read, udp_rx_fn rx);
 
 #endif

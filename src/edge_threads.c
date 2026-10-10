@@ -161,6 +161,7 @@ int edge_threads_wanted (const n2n_edge_conf_t *conf) {
 
 #include "edge_utils.h"      // for edge_read_proto3_udp
 #include "role_tap.h"        // for edge_read_from_tap_batch
+#include "sock.h"            // for udp_drain
 
 
 #ifndef _WIN32
@@ -497,11 +498,8 @@ static void *worker_main (void *arg) {
         now = time(NULL);
         for(int i = 0; i < w->nsock; i++) {
             if(pfd[i].revents & POLLIN) {
-                int drain = WORKER_DRAIN_MAX;
-                while(drain && (t->ops->read_udp(eee, w->sock[i], pkt, now) > 0)) {
-                    drain--;
-                }
-                w->packets += WORKER_DRAIN_MAX - drain;
+                w->packets += udp_drain(eee, w->sock[i], pkt, WORKER_DRAIN_MAX, now,
+                                        t->ops->read_udp, t->ops->rx_udp);
             }
         }
         if(tap->revents) {

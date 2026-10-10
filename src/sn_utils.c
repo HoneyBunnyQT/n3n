@@ -904,12 +904,20 @@ int sn_read_proto3_udp (struct n3n_runtime_data *sss,
         return 0;
     }
 
+    sn_rx_udp(sss, sock, (struct sockaddr *)&sas, ss_size,
+              n3n_pktbuf_getbufptr(*pktbuf), bread, now);
+    return 1;
+}
+
+
+void sn_rx_udp (struct n3n_runtime_data *sss, SOCKET sock,
+                struct sockaddr *from, socklen_t from_len,
+                uint8_t *buf, size_t len, time_t now) {
+
     // what comes in on a thread's socket is handled as if it came in on the
     // main thread's for the same address, which is what gets remembered
     int i = bind_entry_of_sock(sss, sock);
-    process_pdu(sss, (struct sockaddr *)&sas, ss_size, sss->bind_sock[(i < 0) ? 0 : i],
-                n3n_pktbuf_getbufptr(*pktbuf), bread, now);
-    return 1;
+    process_pdu(sss, from, from_len, sss->bind_sock[(i < 0) ? 0 : i], buf, len, now);
 }
 
 
@@ -967,6 +975,7 @@ void sn_accepted_proto3_tcp (struct n3n_runtime_data *sss,
 
 static const struct n3n_role_ops sn_role_ops = {
     .read_udp = sn_read_proto3_udp,
+    .rx_udp = sn_rx_udp,
     .read_tcp = sn_read_proto3_tcp,
     .accepted_tcp = sn_accepted_proto3_tcp,
     .local_pdu = sn_process_local_pdu,
@@ -976,6 +985,7 @@ static const struct n3n_role_ops sn_role_ops = {
 
 static const struct edge_thread_ops sn_thread_ops = {
     .read_udp = sn_read_proto3_udp,
+    .rx_udp = sn_rx_udp,
     .process_pdu = process_pdu_handed_over,
 };
 

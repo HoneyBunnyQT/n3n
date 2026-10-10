@@ -35,6 +35,7 @@
 #include "tun.h"              // for tun_to_frame, tun_from_frame
 #include "role_tap.h"
 #include "sn_selection.h"
+#include "sock.h"             // for sock_batch_begin, sock_batch_end
 #include "edge_threads.h"
 #include "stats.h"
 #include "n2n_define.h"
@@ -978,6 +979,9 @@ static void edge_tx_flush (struct n3n_runtime_data *eee, struct edge_tx_batch *b
         }
     }
 
+    // one sendmmsg() for all of them that go out of the same socket, see
+    // sock_batch_begin()
+    sock_batch_begin();
     for(i = 0; i < b->count; i++) {
         struct edge_tx_slot *s = &b->slot[i];
         size_t idx = s->head;
@@ -988,6 +992,7 @@ static void edge_tx_flush (struct n3n_runtime_data *eee, struct edge_tx_batch *b
             send_packet(eee, s->dest, s->pdu, idx); /* to peer or supernode */
         }
     }
+    sock_batch_end();
 
     b->count = 0;
 }

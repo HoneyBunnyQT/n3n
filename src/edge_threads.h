@@ -39,6 +39,10 @@ struct edge_thread_ops {
     // take one PDU off sock and handle it; 1 if there was one, 0 if not
     int (*read_udp)(struct n3n_runtime_data *eee, SOCKET sock,
                     struct n3n_pktbuf *pkt, time_t now);
+    // handle a datagram that came in on sock, see udp_drain()
+    void (*rx_udp)(struct n3n_runtime_data *eee, SOCKET sock,
+                   struct sockaddr *from, socklen_t from_len,
+                   uint8_t *buf, size_t len, time_t now);
     // on the main thread: a PDU that a worker handed over with
     // edge_threads_post_pdu(), its buf, size, sender_sock and sock_size set
     // again to the copies

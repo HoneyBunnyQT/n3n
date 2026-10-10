@@ -950,11 +950,13 @@ int peer_seen_fast (struct n3n_runtime_data *eee,
 // what the workers of an edge do
 static const struct n3n_role_ops edge_role_ops = {
     .read_udp = edge_read_proto3_udp,
+    .rx_udp = edge_rx_udp,
     .read_tcp = edge_read_proto3_tcp,
 };
 
 static const struct edge_thread_ops edge_thread_ops = {
     .read_udp = edge_read_proto3_udp,
+    .rx_udp = edge_rx_udp,
     .process_pdu = process_pdu_control,
     .tap = 1,
 };
@@ -1220,24 +1222,23 @@ int edge_read_proto3_udp (struct n3n_runtime_data *eee,
     // - detect when pktbuf is too small for the packet and add that to stats
     //   (could switch to using recvmsg() for that)
 
+    edge_rx_udp(eee, sock, sender_sock, ss_size, n3n_pktbuf_getbufptr(*pktbuf),
+                n3n_pktbuf_getbufsize(*pktbuf), now);
+    return 1;
+}
+
+
+void edge_rx_udp (struct n3n_runtime_data *eee, SOCKET sock,
+                  struct sockaddr *from, socklen_t from_len,
+                  uint8_t *buf, size_t len, time_t now) {
+
     // behind a hard NAT, a peer may have got through to one of the sockets
     // opened for it, which only the main thread reads
     if((eee->client.punch_pool_fds || eee->client.punch_bound_count) && !n3n_thread_slot) {
-        punch_note_rx(eee, sock, sender_sock, now);
+        punch_note_rx(eee, sock, from, now);
     }
 
-    // we have a datagram to process...
-    // ...and the datagram has data (not just a header)
-    //
-    edge_process_pdu(
-        eee,
-        sender_sock,
-        sock,
-        n3n_pktbuf_getbufptr(*pktbuf),
-        n3n_pktbuf_getbufsize(*pktbuf),
-        now
-    );
-    return 1;
+    edge_process_pdu(eee, from, sock, buf, len, now);
 }
 
 void edge_read_proto3_tcp (struct n3n_runtime_data *eee,

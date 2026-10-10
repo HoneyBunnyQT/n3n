@@ -764,6 +764,11 @@ struct n3n_role_ops {
     // a PDU waits on a UDP socket: 1 if one was taken, 0 if not
     int (*read_udp)(struct n3n_runtime_data *rt, SOCKET sock,
                     struct n3n_pktbuf *pktbuf, time_t now);
+    // a datagram came in on a UDP socket, several are taken at once where
+    // the system can, see udp_drain()
+    void (*rx_udp)(struct n3n_runtime_data *rt, SOCKET sock,
+                   struct sockaddr *from, socklen_t from_len,
+                   uint8_t *buf, size_t len, time_t now);
     // a PDU came in on a TCP connection; buf NULL: the connection is gone
     void (*read_tcp)(struct n3n_runtime_data *rt, SOCKET sock,
                      uint8_t *buf, ssize_t size, time_t now);

@@ -73,6 +73,11 @@ int edge_read_proto3_udp (struct n3n_runtime_data *eee,
                           SOCKET sock,
                           struct n3n_pktbuf *pktbuf,
                           time_t now);
+// A datagram that came in on sock, from a read of it or several at once,
+// see udp_drain()
+void edge_rx_udp (struct n3n_runtime_data *eee, SOCKET sock,
+                  struct sockaddr *from, socklen_t from_len,
+                  uint8_t *buf, size_t len, time_t now);
 void edge_read_proto3_tcp (struct n3n_runtime_data *eee,
                            SOCKET sock,
                            uint8_t *pktbuf,

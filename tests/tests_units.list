@@ -9,6 +9,7 @@ tests-decode-bounds
 tests-elliptic
 tests-peers
 tests-regex
+tests-sock
 tests-transform
 tests-wire
 tests-wire-fuzz
