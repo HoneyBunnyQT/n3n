@@ -1,3 +1,6 @@
 
 # Artifacts of the dpkg build
 *.buildinfo
+
+# not a dependency file of the build (*.d), the directory of sysusers.d(5)
+!/lib/sysusers.d/

@@ -87,6 +87,7 @@ MAN7DIR=$(CONFIG_MANDIR)/man7
 MAN8DIR=$(CONFIG_MANDIR)/man8
 CONFIG_DOCDIR?=$(PREFIX)/share/doc/n3n
 CONFIG_SYSTEMDDIR?=$(PREFIX)/lib/systemd/system
+CONFIG_SYSUSERSDIR?=$(PREFIX)/lib/sysusers.d
 
 CFLAGS+=-DCONFIG_RUNDIR='"$(CONFIG_RUNDIR)"'
 
@@ -521,6 +522,8 @@ install.systemd:
 	$(INSTALL_DOC) packages/lib/systemd/system/n3n-edge@.service $(CONFIG_SYSTEMDDIR)
 	$(INSTALL_DOC) packages/lib/systemd/system/n3n-edge.service $(CONFIG_SYSTEMDDIR)
 	$(INSTALL_DOC) packages/lib/systemd/system/n3n-supernode.service $(CONFIG_SYSTEMDDIR)
+	$(INSTALL) -d $(CONFIG_SYSUSERSDIR)
+	$(INSTALL_DOC) packages/lib/sysusers.d/n3n.conf $(CONFIG_SYSUSERSDIR)
 
 .PHONY: install.doc
 install: $(MANS)
