@@ -217,59 +217,13 @@ All message encoding and decoding is contained in wire.c. The PACKET message is
 of main concern as it is the most frequently transferred as it contains
 encapsulated ethernet packets.
 
-```
-Version 3
+![The PACKET: version, TTL, flags, community, the MAC addresses, the socket a supernode adds, compression and transform, the payload](../images/packet.svg)
 
-    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-   ! Version=3     ! TTL           ! Flags                         !
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
- 4 ! Community                                                     :
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
- 8 ! ... Community ...                                             :
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-12 ! ... Community ...                                             :
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-16 ! ... Community ...                                             :
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-20 ! ... Community ...                                             !
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-24 ! Source MAC Address                                            :
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-28 :                               ! Destination MAC Address       :
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-32 :                                                               !
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-36 ! Socket Flags (v=IPv4)         ! Destination UDP Port          !
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-40 ! Destination IPv4 Address                                      !
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-44 ! Compress'n ID !  Transform ID !
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-48 ! Payload
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-```
-
-So each n3n PACKET has a 48 byte overhead. For a 1500 byte ethernet packet this
+So a PACKET has 38 bytes of header, 46 when a supernode relays it and adds
+where it came from (the dashed fields). For a 1500 byte ethernet packet this
 is roughly 3%.
 
 Socket flags provides support for IPv6. In this case the PACKET message ends as
 follows:
 
-```
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-36 ! Socket Flags (v=IPv6)         ! Destination UDP Port          !
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-40 ! Destination IPv6 Address                                      :
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-44 :                                                               :
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-48 :                                                               :
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-52 :                                                               !
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-56 ! Compress'n ID !  Transform ID !
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-60 ! Encapsulated ethernet payload
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-```
+![The end of a PACKET relayed from an IPv6 address](../images/packet-ipv6-tail.svg)

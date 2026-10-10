@@ -14,15 +14,7 @@ the NAT class each edge sees (see [NAT Traversal](../advanced/NatTraversal.md))
 and whether the edges reached each other directly or stayed relayed, as
 they should for their NATs.
 
-```
-                      "internet" 203.0.113.0/24
-      +-----------+-----------+-----------+-----------+
-     sn1         sn2       router a    router b    (edges without NAT
-  .1:7654      .2:7654       .11         .12        sit here, at .101+)
-     federated supernodes      |           |
-                            edge a      edge b
-                        10.99.0.1/24  10.99.0.2/24
-```
+![Two federated supernodes and two sites, each an edge behind a NAT router, on one "internet"](../images/netns-lab.svg)
 
 ## Running
 

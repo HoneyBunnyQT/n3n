@@ -402,6 +402,7 @@ lint.python:
 		tests/netns/run.py \
 		tests/netns/n3ntest/ \
 		scripts/gen_options_md.py \
+		scripts/gen_doc_images.py \
 
 lint.ccode:
 	scripts/indent.sh -e '$(LINT_EXCLUDE)' $(LINT_CCODE)

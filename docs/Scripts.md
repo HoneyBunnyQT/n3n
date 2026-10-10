@@ -61,6 +61,14 @@ Writes [the reference of all options](configure/Options.md) from what the
 built program says about them: `make options` runs it, `make options.check` tells
 whether the reference is up to date.
 
+### `gen_doc_images.py`
+
+Draws the packet layouts of [Hacking](internals/Hacking.md) and
+[Crypto](internals/Crypto.md) and the lab of
+[netns testing](develop/netns_testing.md) as SVG into `docs/images/`, for
+light and dark themes.  The fields are written down in the script: change
+them there and run it again (`scripts/gen_doc_images.py`).
+
 ### `version.sh`
 
 This script is used to determine the current version number during the

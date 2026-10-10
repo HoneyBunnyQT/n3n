@@ -116,43 +116,11 @@ Packet's header consist of a COMMON section followed by a packet-type specific s
 
 The COMMON section is built as follows:
 
-```
-0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-   ! Version = 3   ! TTL           ! Flags                         !
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
- 4 ! Community ...                                                 :
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
- 8 ! ... Community ...                                             :
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-12 ! ... Community ...                                             :
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-16 ! ... Community ...                                             :
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-20 ! ... Community                                                 !
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-```
+![The common part: version, TTL, flags, and the 20 bytes of the community](../images/header-common.svg)
 
 In case of a PACKET-type, it is succeeded by the fields depicted below:
 
-```
-    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-24 ! Source MAC Address                                            :
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-28 :                               ! Destination MAC Address       :
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-32 :                                                               !
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-36 ! Socket Flags (v=IPv4)         ! Destination UDP Port          !
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-40 ! Destination IPv4 Address                                      !
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-44 ! Compress'n ID !  Transform ID ! Payload ...                   !
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+                               +
-48 !                                                               !
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+...
-```
+![The fields of a PACKET after the common part](../images/packet-fields.svg)
 
 ### Encryption
 
@@ -168,42 +136,12 @@ The scheme applied tries to maintain compatibility with current packet format an
 
 - First line of 4 bytes (Version, TTL, Flags) goes to sixth line:
 
-```
-    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-   ! Community ...                                                 :
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
- 4 ! ... Community ...                                             :
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
- 8 ! ... Community ...                                             :
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-12 ! ... Community ...                                             :
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-16 ! ... Community                                                 !
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-20 ! Version = 3   ! TTL           ! Flags                         !
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-```
+![The community first, version, TTL and flags in the sixth row](../images/header-encryption-order.svg)
 - To be able to identify a correctly decrpyted header later on, a magic number is stamped in fifth line starting at byte number 16. We use "n2" string and add the 16-bit header length to be able to stop header decryption right before an eventually following ethernet data payload begins – in case of PACKET-type, header-length does not equal packet-length. 16-bit length is required because REGISTER_SUPER_ACK packets consist of header only and could grow quite large due to their payload (other supernodes of federation) – don't mix up this kind of payload (part of the header) with the ethernet data payload of PACKET messages.
 
 - The rest of the community field, namely the first 16 bytes, is reframed towards a 128-bit IV for the header encryption.
 
-```
-    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-   ! IV ...                                                        :
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
- 4 ! ... IV ...                                                    :
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
- 8 ! ... IV ...                                                    :
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-12 ! ... IV                                                        !
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-16 ! Magic Number "n2" = 0x6E32    ! Header Length                 !
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-20 ! Version = 3   ! TTL           ! Flags                         !
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-```
+![The IV, the magic number and the header length, version, TTL and flags](../images/header-encryption-iv.svg)
 
 - As we use a stream cipher, the IV should be a nonce. The IV plays an additional role sketched later, see the following sections on checksum and replay protection.
 
@@ -234,15 +172,7 @@ The checksum is calculated by the edges and the supernode. Changes to the payloa
 
 The aforementioned 128-bit pre-IV can be depicted as follows:
 
-```
-    01234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567
-   +----------------------------------------------------------------+-------------------------------+-------------------------------+
-   ! 64-bit checksum of the whole packet                            ! 0x00                          !                               !
-   + - - - - - - - - - - - - - - - - - - - - - - - XOR - - - - - - - - - - - - - - - - - - - - - - -! 32 pseudo-random bits         !
-   ! 0x00                          ! 52-bit time stamp with microsecond-accuracy       ! countr ! F !                               !
-   +------------------------------------------------------------------------------------------------+-------------------------------+
-
-```
+![The 128-bit pre-IV: checksum XOR time stamp, and 32 random bits](../images/header-encryption-preiv.svg)
 
 The time stamp consists of the 52-bit microsecond value, an 8-bit counter in case of equal following time stamps and, a 4-bit flag field F (accuracy indicator in last bit). edge and supernode monitor their own time stamps for doublets which would indicate an accuracy issue. If the counter overflows on the same time stamp, the sub-second part of the time stamp will also become counter. In this case, the whole stamp carries the accuracy bit flag (lowest bit) set so other edges and supernodes can handle this stamp appropriately.
 
