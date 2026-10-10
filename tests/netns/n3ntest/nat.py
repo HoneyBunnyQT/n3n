@@ -14,7 +14,9 @@ differ in how they map the inside port to a public one:
   easy-changed  the same public port for every destination, but another
                 one than inside (a carrier NAT with one port per user)
   hard-range    a new random port for every destination, from a block of
-                256 ports (a peer can guess it, see NatTraversal.md)
+                256 ports (a peer can guess it, see NatTraversal.md);
+                towards each supernode from a slice of the block of its
+                own, so that the supernodes never see the same port
   hard-wide     a new random port for every destination, from all ports
   several       three uplinks: one public address towards sn1, one
                 towards sn2, and a third towards everything else, so
@@ -60,10 +62,22 @@ def _easy_changed(wan, ctx):
 
 
 def _hard_range(wan, ctx):
-    return (
-        "meta l4proto udp snat ip to {}:{}-{} random\n"
-        "        masquerade"
-    ).format(wan[0], HARD_RANGE_LO, HARD_RANGE_HI)
+    # Towards each supernode, a slice of the block of its own.  Drawn from
+    # the whole block, the ports towards two supernodes would be the same
+    # one time in 256 - and the edge, which sees just those two, would
+    # rightly take its NAT for easy.  So each supernode sees a port of
+    # another slice, still random, and the peers ports of the whole block.
+    rules = []
+    sns = sorted(ctx)
+    size = (HARD_RANGE_HI - HARD_RANGE_LO + 1) // max(1, len(sns))
+    for k, sn in enumerate(sns):
+        lo = HARD_RANGE_LO + k * size
+        rules.append("ip daddr {} meta l4proto udp snat ip to {}:{}-{} random"
+                     .format(ctx[sn], wan[0], lo, lo + size - 1))
+    rules.append("meta l4proto udp snat ip to {}:{}-{} random"
+                 .format(wan[0], HARD_RANGE_LO, HARD_RANGE_HI))
+    rules.append("masquerade")
+    return "\n        ".join(rules)
 
 
 def _hard_wide(wan, ctx):

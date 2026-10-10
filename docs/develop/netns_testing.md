@@ -154,13 +154,21 @@ connection made from inside, as home routers and carrier NATs do.
 | (none) | the edge is on the internet itself | easy (port kept) |
 | easy-kept | the inside port, for every destination (masquerade) | easy (port kept) |
 | easy-changed | one other public port for every destination | easy (port changed) |
-| hard-range | a random port per destination from 20224-20479 | hard (ports ...) |
+| hard-range | a random port per destination from 20224-20479, towards each supernode from a slice of it of its own | hard (ports ...) |
 | hard-wide | a random port per destination from 1024-65535 | hard (ports ...) |
 | several | one public address towards sn1, one towards sn2, a third towards peers | several addresses |
 
 A site can have several routers in a row, outermost first, like a home
 router behind a carrier NAT.  The block of hard-range ends at a multiple of
 1024, so the range an edge tells its peers covers all of it.
+
+An edge sees how its NAT maps from the ports its supernodes see (two
+here).  Drawn from the whole block of 256 ports, those two would be the
+same one time in 256, and the edge would rightly see an easy NAT - with
+a few dozen hard-range edges in a full run, a failed run every tenth time
+or so.  So towards sn1 the hard-range router takes a port from the lower
+half of the block, towards sn2 from the upper half; the peers still get
+ports from all of it.
 
 ## The scenarios
 
