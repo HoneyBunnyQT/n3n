@@ -1,6 +1,7 @@
 <!--
 SPDX-License-Identifier: GPL-2.0-only
 SPDX-FileCopyrightText: Copyright Hamish Coleman
+SPDX-FileCopyrightText: Copyright Honey Bunny QT
 -->
 
 # Release Process

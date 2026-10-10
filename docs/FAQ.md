@@ -2,6 +2,7 @@
 SPDX-License-Identifier: GPL-3.0-only
 SPDX-FileCopyrightText: Copyright Logan oos Even
 SPDX-FileCopyrightText: Copyright Hamish Coleman
+SPDX-FileCopyrightText: Copyright Honey Bunny QT
 -->
 
 # n3n Frequently Asked Questions

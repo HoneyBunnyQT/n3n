@@ -2,6 +2,7 @@
 SPDX-License-Identifier: GPL-3.0-only
 SPDX-FileCopyrightText: Copyright 2020 n2n contributors
 SPDX-FileCopyrightText: Copyright Hamish Coleman
+SPDX-FileCopyrightText: Copyright Honey Bunny QT
 -->
 
 # Cryptography in n3n
