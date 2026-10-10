@@ -167,7 +167,8 @@ class Scenario:
                  roam=None, roam_max_gap=None, roam_direct=True,
                  size=None, outage=False, outage_then=None,
                  outage_max_gap=None, reload=None, sn_versions=None,
-                 direct_ok=None, sn_peer_family=4, sn_start_gap=0):
+                 direct_ok=None, sn_peer_family=4, sn_start_gap=0,
+                 tcp_burst=0):
         self.name = name
         self.desc = desc
         self.sites = {"a": a, "b": b}
@@ -256,6 +257,10 @@ class Scenario:
         # second it started in as its key time (user/password), so they
         # start out with different ones and have to agree on the newer
         self.sn_start_gap = sn_start_gap
+        # this many TCP connections to the supernode a is registered at,
+        # opened at once after the warm-up and held while the frames go:
+        # it is to stay up and pass them
+        self.tcp_burst = tcp_burst
 
     def directions(self):
         return {
@@ -1137,6 +1142,49 @@ class Run:
             self.log("{}: its version does not know {}".format(
                 who, ", ".join(sorted(set(d.left_out)))))
 
+    def tcp_burst_phase(self):
+        """Open sc.tcp_burst TCP connections to the supernode of edge a,
+        from the namespace of another one, and keep them open"""
+        at = self.edges["a"]["daemon"].current_supernode() or ""
+        target = [n for n, sn in self.supernodes.items()
+                  if at.startswith(sn["ip"] + ":")]
+        others = [n for n in sorted(self.supernodes) if n not in target]
+        if not target or not others:
+            raise LabError("tcp burst: no supernode of a ({}) or no other "
+                           "one to connect from".format(at))
+        ip = self.supernodes[target[0]]["ip"]
+        ready = os.path.join(self.workdir, "tcp-burst.ready")
+        script = (
+            "import socket, sys, time, resource\n"
+            "n = int(sys.argv[1])\n"
+            "resource.setrlimit(resource.RLIMIT_NOFILE, (n + 64, n + 64))\n"
+            "socks = []\n"
+            "for i in range(n):\n"
+            "    s = socket.socket()\n"
+            "    s.settimeout(5)\n"
+            "    try:\n"
+            "        s.connect((sys.argv[2], int(sys.argv[3])))\n"
+            "    except OSError:\n"
+            "        s.close()\n"
+            "        continue\n"
+            "    socks.append(s)\n"
+            "open(sys.argv[4], 'w').write(str(len(socks)))\n"
+            "time.sleep(3600)\n")
+        self.lab.spawn("tcp-burst", self.supernodes[others[0]]["ns"],
+                       [sys.executable, "-c", script, str(self.sc.tcp_burst),
+                        ip, str(SN_PORT), ready])
+        if not wait_for(lambda: os.path.exists(ready), 60):
+            raise LabError("tcp burst: the connections did not get through")
+        time.sleep(0.5)
+        with open(ready) as f:
+            opened = f.read().strip()
+        self.log("tcp burst: {} of {} connections to {} open".format(
+            opened, self.sc.tcp_burst, target[0]))
+        self.result["tcp_burst"] = {"supernode": target[0],
+                                    "opened": int(opened or 0)}
+        # let the supernode go through them before the frames
+        time.sleep(2)
+
     def reload_phase(self):
         """Change an edge's configuration file, SIGHUP it: it drops the
         supernode it is at, and moves to the other one"""
@@ -1426,6 +1474,8 @@ class Run:
                 self.failover()
             if self.sc.reload and self.check_alive("warm-up"):
                 self.reload_phase()
+            if self.sc.tcp_burst and self.check_alive("warm-up"):
+                self.tcp_burst_phase()
             if self.check_alive("warm-up"):
                 n, sent, deltas, modes = self.measure()
                 received = self.stop_receivers()

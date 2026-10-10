@@ -134,7 +134,7 @@ struct fd_info {
     int fd;                     // The file descriptor for this connection
     int stats_reads;            // The number of ready to read events
     enum fd_info_proto proto;   // What protocol to use on a read event
-    int8_t connnr;              // which connlist[] is being used as buffer
+    int connnr;                 // which connlist[] is being used as buffer, -1: none
     bool close_after;           // http: close once the reply is sent
     struct n3n_runtime_data *rt;    // whose it is, NULL: of mainloop_run()
 #ifdef MAINLOOP_EPOLL

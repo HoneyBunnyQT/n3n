@@ -435,6 +435,12 @@ SCENARIOS = [
         Site(["hard-range"], supernodes=["sn2"]),
         "relayed", auth="userpw", community_conf=True, tags=["quick"]),
     Scenario(
+        "sn-tcp-burst",
+        "as hard-hard, and 300 TCP connections to the supernode of a "
+        "at once, held while the frames go: it stays up and relays",
+        Site(["hard-range"]), Site(["hard-range"]),
+        "relayed", tcp_burst=300),
+    Scenario(
         "sn-tap",
         "an edge behind a NAT and the TAP device of its supernode "
         "(supernode.tap)",
