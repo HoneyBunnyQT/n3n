@@ -14,7 +14,7 @@ LDLIBS+=$(LDLIBS_LOCAL)
 LDLIBS+=$(LDLIBS_EXTRA)
 CFLAGS+=-I$(abspath ../../src)
 
-TARGETS=fuzz-wire fuzz-header fuzz-transop fuzz-tcp
+TARGETS=fuzz-wire fuzz-header fuzz-transop fuzz-tcp fuzz-mgmt
 
 ifeq ($(FUZZ),libfuzzer)
 TARGET_LINK=-fsanitize=fuzzer

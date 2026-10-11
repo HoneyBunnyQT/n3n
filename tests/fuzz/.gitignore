@@ -3,6 +3,7 @@ fuzz-wire
 fuzz-header
 fuzz-transop
 fuzz-tcp
+fuzz-mgmt
 fuzz-seeds
 fuzz-spray
 *.exe

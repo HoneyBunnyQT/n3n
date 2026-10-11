@@ -339,6 +339,61 @@ static void transops (void) {
     }
 }
 
+// Requests to the management interface, for the mgmt target: a byte for
+// the runtime (0 the supernode, 1 the edge), then the request
+static void mgmt (void) {
+
+    static const char *gets[] = {
+        "/", "/unlock", "/debug/slots", "/events/peer", "/help", "/metrics",
+        "/script.js", "/status"
+    };
+    static const char *methods[] = {
+        "get_communities", "get_edges", "get_info", "get_mac", "get_packetstats",
+        "get_supernodes", "get_timestamps", "get_verbose", "help", "help.events",
+        "post.test", "reload", "reload_communities", "set_verbose", "stop"
+    };
+    static const char *paths[] = {"/v1", "/v1/edge", "/v1/supernode"};
+    // "fuzz:n3n", the default password
+    static const char *auth = "Authorization: Basic ZnV6ejpuM24=\r\n";
+    char req[1024];
+    char name[128];
+    unsigned i, j;
+    int role, a;
+
+    for(role = 0; role < 2; role++) {
+        for(i = 0; i < sizeof(gets) / sizeof(gets[0]); i++) {
+            int n = snprintf(req, sizeof(req), "%cGET %s HTTP/1.1\r\nHost: localhost\r\n"
+                             "Connection: keep-alive\r\n%s\r\n", role, gets[i], i == 1 ? auth : "");
+            snprintf(name, sizeof(name), "%d-get-%u", role, i);
+            put("mgmt", name, (uint8_t *)req, n);
+        }
+        for(i = 0; i < sizeof(methods) / sizeof(methods[0]); i++) {
+            for(a = 0; a < 2; a++) {
+                char body[256];
+                int blen = snprintf(body, sizeof(body),
+                                    "{\"jsonrpc\":\"2.0\",\"method\":\"%s\",\"id\":%u,"
+                                    "\"params\":%s}", methods[i], i,
+                                    !strcmp(methods[i], "set_verbose") ? "3"
+                                    : !strcmp(methods[i], "post.test") ? "\"hello\""
+                                    : "{\"limit\":2,\"offset\":1}");
+                j = i % (sizeof(paths) / sizeof(paths[0]));
+                int n = snprintf(req, sizeof(req), "%cPOST %s HTTP/1.1\r\nHost: localhost\r\n"
+                                 "Origin: http://localhost\r\n%sContent-Length: %d\r\n\r\n%s",
+                                 role, paths[j], a ? auth : "", blen, body);
+                snprintf(name, sizeof(name), "%d-rpc-%s-%d", role, methods[i], a);
+                put("mgmt", name, (uint8_t *)req, n);
+            }
+        }
+        {
+            static const char *page = "do=more";
+            int n = snprintf(req, sizeof(req), "%cPOST /page HTTP/1.0\r\n%s"
+                             "Content-Length: %zu\r\n\r\n%s", role, auth, strlen(page), page);
+            snprintf(name, sizeof(name), "%d-page", role);
+            put("mgmt", name, (uint8_t *)req, n);
+        }
+    }
+}
+
 int main (int argc, char *argv[]) {
 
     if(argc != 2) {
@@ -350,5 +405,6 @@ int main (int argc, char *argv[]) {
     packet_header_setup_key((char *)fuzz_community, &ctx_static, &ctx_dynamic, &iv_static, &iv_dynamic);
     pdus();
     transops();
+    mgmt();
     return 0;
 }

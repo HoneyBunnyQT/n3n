@@ -1,0 +1,6 @@
+POST /v1/edge HTTP/1.1
+Host: localhost
+Origin: http://localhost
+Content-Length: 77
+
+{"jsonrpc":"2.0","method":"get_edges","id":1,"params":{"limit":so"2ff,et":1}}
