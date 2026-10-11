@@ -2529,8 +2529,11 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
             }
 
             if(ret_value == update_edge_auth_fail) {
-                // send REGISTER_SUPER_NAK
+                // send REGISTER_SUPER_NAK: no auth of its own (the edge does not
+                // look at it), so a token of none - not the length and the bytes
+                // that happened to be on the stack, which the encoder copied
                 cmn2.pc = MSG_TYPE_REGISTER_SUPER_NAK;
+                memset(&nak, 0, sizeof(nak));
                 nak.cookie = reg.cookie;
                 memcpy(nak.srcMac, reg.edgeMac, sizeof(n2n_mac_t));
 
