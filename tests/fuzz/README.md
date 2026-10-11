@@ -46,5 +46,16 @@ generated, not committed; `make clean` removes them.
 ## Regression corpus
 
 `regress/<target>/` holds inputs that once triggered a crash, kept so the
-fix stays fixed. When a fuzzer finds one, minimise it and drop the file
-in the matching directory; `make test.fuzz` then replays it every run.
+fix stays fixed. When a fuzzer finds one, minimise it
+(`tests/fuzz/fuzz-TARGET -minimize_crash=1 -runs=100000 FILE`) and drop
+the file in the matching directory, under a name that says what it was;
+`make test.fuzz` then replays it every run.
+
+What is there, each crashing the code before its fix under
+AddressSanitizer:
+
+| file | the bug | fixed in |
+|------|---------|----------|
+| `header/header-len-4` | a header whose decrypted magic gives a length below 16: the header decryption wrapped and ran past the packet | 3.4.7, 053b220 |
+| `transop/cc20-iv-in-length` | ChaCha20 decrypted the IV's 16 bytes more than the cipher text | 3.4.7, dce44be |
+| `transop/aes-past-assembly`, `transop/tf-past-assembly` | AES and Twofish took a cipher text a block longer than their work buffer | after 3.4.7, 24681cd |
