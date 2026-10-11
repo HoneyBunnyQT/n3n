@@ -178,7 +178,8 @@ tests and `make lint` pass after each.
       ICMP back into the TAP).  Candidates: ICMP "fragmentation needed" /
       "packet too big" into the TAP for the inner sender, as kernel
       tunnels do; TCP MSS clamping per peer; a TAP MTU derived from the
-      path
+      path.  A draft to discuss before any code, in-band only (no new
+      message types): [Path MTU](PathMtu.md)
 - [x] Reload: SIGHUP (not in a terminal), `n3nctl reload` (method
       `reload`), `ExecReload` in the units (`RELOADING=1`/`READY=1`).
       `src/reload.c` loads the configuration as at the start, compares
