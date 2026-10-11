@@ -76,10 +76,12 @@ tests and `make lint` pass after each.
         Scratchpad); `struct n3n_conf_community`, `conf.communities`
   - [x] 5b: `struct pdu_ctx` (`pdu_in.h`) for both roles, also what a
         packet thread hands to the main thread
-  - [ ] Later: the steps before the dispatch (decode the common header,
-        static key check, supernode lookup, TTL) are still one function per
-        role, `process_pdu()` and `process_pdu_body()`; the handlers still
-        copy the fields of the `pdu_ctx` into locals of the old names
+  - [x] Later (2026-10-11): the steps before the dispatch in one place,
+        `pdu_in_common()` (decode the common header, the static key check,
+        the supernode lookup), with what differs between the roles as its
+        arguments; the community check (edge) and the TTL (supernode) stay
+        with the role.  The handlers read the `pdu_ctx` instead of copies
+        of its fields in locals (c07b12b, 27128bb)
 - [x] Step 6: dispatch through a table per message type with a handler per
       role instead of the two big `switch` statements: `edge_pdu_handlers`,
       `sn_pdu_handlers`, `pdu_dispatch()`

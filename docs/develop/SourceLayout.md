@@ -16,7 +16,7 @@ role and by concern.
 |------|------|
 | `mainloop.c` | the one `select()` loop: file descriptors, TCP connections, the management connections, ticks for the regular work |
 | `sock.c` | the sockets of `connection.bind`, sending from the right one |
-| `pdu_in.c` | the first steps with a received PDU: header decryption, `struct pdu_ctx`, the dispatch to the handler of its message type |
+| `pdu_in.c` | the first steps with a received PDU: header decryption, `struct pdu_ctx`, the common header, the check of the keys and of the supernode it comes from (`pdu_in_common()`), the dispatch to the handler of its message type |
 | `wire.c` | encoding and decoding the PDUs |
 | `edge_threads.c` | the packet threads, and the queue to the main thread |
 | `local_link.c` | the link between a supernode and its own edge (`supernode.tap`) in the same process: PDUs without sockets |
