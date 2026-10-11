@@ -1279,6 +1279,18 @@ void n3n_initfuncs_mainloop () {
     connlist_init();
     fdlist_zero();
 #ifdef MAINLOOP_EPOLL
+    // epoll knows no FD_SETSIZE: as many fds as the process may have, which
+    // are a supernode's TCP connections.  The soft limit is often 1024, for
+    // programs that use select() (as systemd sets it), the hard one far
+    // above: up to that, as systemd asks of programs that do not
+    struct rlimit nofile;
+    if(getrlimit(RLIMIT_NOFILE, &nofile) == 0) {
+        rlim_t want = MIN(nofile.rlim_max, (rlim_t)FDLIST_MAX);
+        if(nofile.rlim_cur < want) {
+            nofile.rlim_cur = want;
+            setrlimit(RLIMIT_NOFILE, &nofile);
+        }
+    }
     if(epfd == -1) {
         epfd = epoll_create1(EPOLL_CLOEXEC);
         if(epfd == -1) {

@@ -41,6 +41,12 @@ UDP.  Tell the edges about the TCP port with a second line for the same host,
 `supernode=tcp://sn.example.org:443`, next to `supernode=sn.example.org:7654`:
 they then fall back to TCP on 443 when UDP does not get through.
 
+Each TCP connection is an open file.  On Linux the supernode takes as many
+as the process may open: it raises its soft limit of open files to the
+hard one (systemd starts services with a soft limit of 1024 and a hard one
+far above); `LimitNOFILE=` in its unit raises the hard one, if that is not
+enough.
+
 ## A Supernode That Is an Edge Too
 
 A supernode can also be a member of one community, with a TAP device of its
