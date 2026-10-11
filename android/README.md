@@ -37,9 +37,18 @@ what comes next.
   own traffic does not go into the VPN.
 - The management API is there as on other systems, on the unix socket in
   the app's private directory (session `app`); `management.port`, if
-  configured, opens the TCP port as well.  The main screen asks it for
-  the state: connecting or connected, the supernode with its round trip,
-  the peers.
+  configured, opens the TCP port as well.  The service asks it for the
+  state - every second while connecting, every two while the main screen
+  shows it, every ten else - and the notification and the main screen
+  show what it says, nothing else: starting, connecting (registering with
+  the supernode, over TCP, no supernode answers yet), connected,
+  reconnecting, disconnecting; the supernode with its round trip, the
+  peers.  The notification has a Disconnect action.
+- The connect button holds the state: what it is doing, or what a tap
+  does, and an LED let into it that tells the state without depending on
+  colour - dark when off, yellow stripes running while on the way, lit
+  green when connected - as a night mode in black and white keeps
+  colours apart no better than some eyes do.
 - The name shown is the peer's own (`description` in `[connection]`),
   never the community's: with header encryption, that is the key of the
   headers.
@@ -107,6 +116,8 @@ android/
     cpp/n3n_jni.c                         the JNI glue to n3n_edge_run()
     java/dev/n3n/android/
       MainActivity.kt                     the main screen: state, connect
+      ConnectButton.kt                    the connect button, with its LED
+      Connection.kt                       what the connection is doing
       EditActivity.kt                     the configuration: edit, import, scan
       ShareActivity.kt                    the configuration as a QR code
       LogActivity.kt                      the edge's log
@@ -115,9 +126,12 @@ android/
       Seal.kt                             sealed codes, from libn3n
       Status.kt                           the edge's state, from its API
       Store.kt                            where the configuration is kept
-      N3nVpnService.kt                    the VPN and the edge's thread
+      N3nVpnService.kt                    the VPN, the edge's thread, the
+                                          state and the notification
       Config.kt                           reads address and MTU of a .conf
-    res/                                  layout, strings, icon
+    res/                                  layouts, strings, icons (the
+                                          launcher's adaptive, with a
+                                          monochrome layer)
 ```
 
 - **libn3n.so** is the edge-only build of the core, as

@@ -209,14 +209,18 @@ tests and `make lint` pass after each.
       [Mobile and TUN](MobileAndTun.md).  Done: `android/` next to the
       core, built from `src/` by the NDK, CI artifact; import a file or a
       QR code (`tools/n3n-qr`), connect, log, state view, network
-      changes.  Open: auto addresses, IPv6.  Next, a revamp (asked
-      2026-10-11): a slightly more modern UI; the status line (what it
-      is doing, "connecting") merged into the connect button, which
-      shows the state already, with more of a button look (slight 3D);
-      text or symbols beside colours, which a black and white night mode
-      does not show; the icon; notifications that are out of step (shown
-      while not connected); and the QR code again, with a fuzz target for
-      `qr_seal` and the configuration it opens
+      changes.  Open: auto addresses, IPv6.  The revamp (asked
+      2026-10-11), done: the state in one place, the service, which asks
+      the edge; the notification follows it (it said "connected" before
+      the edge was registered), with a Disconnect action and a small
+      icon of its own; the connect button holds the state and what it is
+      doing, looks raised, and has an LED (dark, running yellow stripes,
+      lit green) so that the state does not hang on colour, which a black
+      and white night mode does not show; an adaptive launcher icon with
+      a monochrome layer; icons on the tiles.  Open: try it on a phone;
+      the QR code again, with a fuzz target for `qr_seal` and the
+      configuration it opens; maybe a navigation bar instead of the four
+      tiles, should the app get more screens (several networks, peers)
 - [x] `n3n-edge help transform`: lists the ciphers and compressions built
       in, with the implementation of each (`*_IMPL` in `src/crypto/*.h`,
       `desc` of the transforms); also on `fixes`
