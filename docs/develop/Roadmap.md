@@ -658,8 +658,17 @@ runs, one scenario each), and reproduced with `-v 3` in a loop:
   supernode slowed down by ASan that leaves a dozen of them waiting runs
   out of time.  Fixed in the harness: the client tells how far it got
   every 50 connections, and the harness waits as long as it gets on (no
-  further for 30s is a failure, 10 minutes at most); and as long as the
-  supernode takes more of them (it had 15s, and once took 513 by then).
+  further for 30s is a failure); and as long as the supernode takes
+  more of them (it had 15s, and once took 513 by then).  But the cause
+  was another: the supernode's listen backlog was 3, so with the client
+  connecting one after the other and the supernode slowed down by ASan,
+  the kernel dropped SYNs, the client waited for the retries, and the
+  burst took over 200s - longer than the supernode's idle timeout of
+  60s, which closed the first connections before the last came ("0
+  taken").  Now the backlog is 128, and the client opens them 50 every
+  quarter second, waited for together - all at once, they overran the
+  accept queue, and those the kernel left half open came in only with
+  its retries of the SYN-ACK, seconds apart.
 
 What is left gets one more try in CI (`--retry 1`): a scenario that passes
 then is `FLAKY`, which does not turn the run red but shows as an

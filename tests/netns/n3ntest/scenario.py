@@ -1234,31 +1234,49 @@ class Run:
         before = self._sockets(pid)
         ready = os.path.join(self.workdir, "tcp-burst.ready")
         progress = os.path.join(self.workdir, "tcp-burst.progress")
-        # the connections one after the other, and how far it got every
-        # 50 of them: a supernode slowed down by the sanitizers takes
-        # longer than a fixed time would allow, but keeps getting on
+        # the connections non-blocking, 50 every quarter second (200/s),
+        # waited for together, and how many are through, as they come.
+        # One after the other, with a supernode slowed down by the
+        # sanitizers, they took longer than its idle timeout (60s), which
+        # then closed the first ones while the last were still coming; all
+        # at once, they overran its accept queue, and those the kernel left
+        # half open came in only with its retries, seconds apart.
         script = (
-            "import socket, sys, time, resource\n"
+            "import selectors, socket, sys, time, resource\n"
             "n = int(sys.argv[1])\n"
             "resource.setrlimit(resource.RLIMIT_NOFILE, (n + 64, n + 64))\n"
+            "sel = selectors.DefaultSelector()\n"
             "socks = []\n"
+            "\n"
+            "def through(timeout):\n"
+            "    for key, _ in sel.select(timeout=timeout):\n"
+            "        s = key.fileobj\n"
+            "        sel.unregister(s)\n"
+            "        if s.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR):\n"
+            "            s.close()\n"
+            "        else:\n"
+            "            socks.append(s)\n"
+            "    open(sys.argv[5], 'w').write(str(len(socks)))\n"
+            "\n"
+            "start = time.monotonic()\n"
             "for i in range(n):\n"
-            "    if i % 50 == 0:\n"
-            "        open(sys.argv[5], 'w').write(str(i))\n"
             "    s = socket.socket()\n"
-            "    s.settimeout(5)\n"
-            "    try:\n"
-            "        s.connect((sys.argv[2], int(sys.argv[3])))\n"
-            "    except OSError:\n"
-            "        s.close()\n"
-            "        continue\n"
-            "    socks.append(s)\n"
+            "    s.setblocking(False)\n"
+            "    s.connect_ex((sys.argv[2], int(sys.argv[3])))\n"
+            "    sel.register(s, selectors.EVENT_WRITE)\n"
+            "    if i % 50 == 49:\n"
+            "        nxt = start + (i // 50 + 1) * 0.25\n"
+            "        while time.monotonic() < nxt:\n"
+            "            through(max(nxt - time.monotonic(), 0))\n"
+            "end = time.monotonic() + 60\n"
+            "while sel.get_map() and time.monotonic() < end:\n"
+            "    through(1)\n"
             "open(sys.argv[4], 'w').write(str(len(socks)))\n"
             "time.sleep(3600)\n")
         self.lab.spawn("tcp-burst", self.supernodes[others[0]]["ns"],
                        [sys.executable, "-c", script, str(self.sc.tcp_burst),
                         ip, str(SN_PORT), ready, progress])
-        # done, or no further for 30s (at most 10 minutes in all)
+        # done, or no further for 30s (at most 2 minutes in all)
         seen = {"at": None, "since": time.monotonic()}
 
         def burst_done():
@@ -1274,7 +1292,7 @@ class Run:
             elif time.monotonic() - seen["since"] > 30:
                 return "stuck"
             return None
-        if wait_for(burst_done, 600, interval=0.5) != "done":
+        if wait_for(burst_done, 120, interval=0.5) != "done":
             raise LabError("tcp burst: the connections did not get through "
                            "(no further than {} of {})".format(
                                seen["at"] or 0, self.sc.tcp_burst))
