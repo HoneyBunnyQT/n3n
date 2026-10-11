@@ -1064,17 +1064,7 @@ int edge_read_from_tap_batch (struct n3n_runtime_data * eee, int max) {
 /* MSG_TYPE_PACKET */
 void edge_rx_packet (struct n3n_runtime_data *eee, struct pdu_ctx *c) {
 
-    n2n_common_t cmn = c->cmn;
-    uint8_t *udp_buf = c->buf;
-    size_t udp_size = c->size;
-    size_t rem = c->rem;
-    size_t idx = c->idx;
-    n3n_sock_t sender = c->sender;
-    n3n_sock_t *orig_sender = &sender;
-    uint8_t from_supernode = c->from_supernode;
-    uint8_t via_multicast = c->via_multicast;
-    uint64_t stamp = c->stamp;
-    struct peer_info *sn = c->sn;
+    n3n_sock_t *orig_sender = &c->sender;
     n3n_sock_str_t sockbuf1;
     macstr_t mac_buf1;
 
@@ -1083,7 +1073,7 @@ void edge_rx_packet (struct n3n_runtime_data *eee, struct pdu_ctx *c) {
 
     // whatever follows the header is the payload, its length is
     // not checked here
-    if(decode_PACKET(&pkt, &cmn, udp_buf, &rem, &idx) < 0) {
+    if(decode_PACKET(&pkt, &c->cmn, c->buf, &c->rem, &c->idx) < 0) {
         traceEvent(TRACE_INFO, "PACKET section in N2N_UDP too short");
         return;
     }
@@ -1092,9 +1082,9 @@ void edge_rx_packet (struct n3n_runtime_data *eee, struct pdu_ctx *c) {
         if(!find_peer_time_stamp_and_verify(
                eee->client.pending_peers,
                eee->client.known_peers,
-               sn,
+               c->sn,
                pkt.srcMac,
-               stamp,
+               c->stamp,
                TIME_STAMP_ALLOW_JITTER)) {
             traceEvent(TRACE_DEBUG, "dropped PACKET due to time stamp error");
             return;
@@ -1107,7 +1097,7 @@ void edge_rx_packet (struct n3n_runtime_data *eee, struct pdu_ctx *c) {
         return;
     }
 
-    if(!from_supernode) {
+    if(!c->from_supernode) {
         /* This is a P2P packet from the peer. We purge a pending
          * registration towards the possibly nat-ted peer address as we now have
          * a valid channel. We still use check_peer_registration_needed in
@@ -1129,21 +1119,21 @@ void edge_rx_packet (struct n3n_runtime_data *eee, struct pdu_ctx *c) {
 
         traceEvent(TRACE_DEBUG, "[pSp] from %s via [%s]",
                    macaddr_str(mac_buf1, pkt.srcMac),
-                   sock_to_cstr(sockbuf1, &sender));
+                   sock_to_cstr(sockbuf1, &c->sender));
     }
 
     /* Update the sender in peer table entry */
     {
         // REVISIT: also consider PORT_REG_COOKIEs when implemented
-        n2n_cookie_t cookie = from_supernode ? N2N_FORWARDED_REG_COOKIE : N2N_REGULAR_REG_COOKIE;
+        n2n_cookie_t cookie = c->from_supernode ? N2N_FORWARDED_REG_COOKIE : N2N_REGULAR_REG_COOKIE;
 
-        if(!peer_seen_fast(eee, from_supernode, via_multicast, pkt.srcMac, cookie)) {
+        if(!peer_seen_fast(eee, c->from_supernode, c->via_multicast, pkt.srcMac, cookie)) {
             struct edge_event ev = {
                 .type = EDGE_EVENT_PEER_SEEN,
                 .sock = *orig_sender,
                 .cookie = cookie,
-                .from_supernode = from_supernode,
-                .via_multicast = via_multicast,
+                .from_supernode = c->from_supernode,
+                .via_multicast = c->via_multicast,
             };
 
             memcpy(ev.mac, pkt.srcMac, sizeof(n2n_mac_t));
@@ -1151,5 +1141,5 @@ void edge_rx_packet (struct n3n_runtime_data *eee, struct pdu_ctx *c) {
         }
     }
 
-    handle_PACKET(eee, from_supernode, &pkt, orig_sender, udp_buf + idx, udp_size - idx);
+    handle_PACKET(eee, c->from_supernode, &pkt, orig_sender, c->buf + c->idx, c->size - c->idx);
 }
