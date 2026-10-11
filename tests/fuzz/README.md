@@ -4,8 +4,8 @@ SPDX-License-Identifier: GPL-3.0-only
 -->
 # Fuzz targets
 
-The targets that found the receive-path out-of-bounds bugs fixed in 3.4.7.
-Each is a [libFuzzer](https://llvm.org/docs/LibFuzzer.html) target
+The fuzz targets of the receive path; the first three found the
+out-of-bounds bugs fixed in 3.4.7.  Each is a [libFuzzer](https://llvm.org/docs/LibFuzzer.html) target
 (`LLVMFuzzerTestOneInput`), over a different layer of what an edge or a
 supernode does with a packet it receives:
 
@@ -14,6 +14,7 @@ supernode does with a packet it receives:
 | `fuzz-header`  | a PDU's first steps: is the header plain, else the header decryption with a community's keys (`src/pdu_in.c`, `src/header_encryption.c`), then the decoders on what comes out |
 | `fuzz-transop` | the payload of a PACKET as a transform's `rev()` takes it apart — first byte picks the cipher or compression, the rest is its input (`src/transform_*.c`) |
 | `fuzz-wire`    | the PDU decoders on an already-plain header (`src/wire.c`); whatever decodes is encoded again |
+| `fuzz-tcp`     | a v3tcp connection: bytes in pieces through a socket, put together by `conn_read()` (`libs/connslot`) and split into PDUs by `mainloop_v3tcp_pdus()` (`src/mainloop.c`), which then go to the decoders |
 
 ## Running
 
@@ -63,8 +64,10 @@ n3n's own random numbers, seeded with `-s`: the same seed, the same PDUs.
 ## Seeds
 
 `fuzz-seeds DIR` writes valid starting inputs into `DIR/header`,
-`DIR/transop` and `DIR/wire` — PDUs of every message type, the same with
-encrypted headers, and payloads as each transform makes them. They are
+`DIR/transop`, `DIR/wire` and `DIR/tcp` — PDUs of every message type, the
+same with encrypted headers, payloads as each transform makes them, and
+PDUs with their length in front, cut into pieces (a piece is a byte with
+its length, then as many bytes). They are
 generated, not committed; `make clean` removes them.
 
 ## Regression corpus

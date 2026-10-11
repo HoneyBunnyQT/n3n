@@ -2,6 +2,7 @@
 fuzz-wire
 fuzz-header
 fuzz-transop
+fuzz-tcp
 fuzz-seeds
 fuzz-spray
 *.exe

@@ -3,9 +3,10 @@
  * SPDX-License-Identifier: GPL-3.0-only
  *
  * The seeds of the fuzz targets: "fuzz-seeds DIR" writes into DIR/wire,
- * DIR/header and DIR/transop valid inputs of each - PDUs of every type,
- * the same with encrypted headers, and payloads as each transform makes
- * them - for the fuzzer to start from.  See README.md.
+ * DIR/header, DIR/transop and DIR/tcp valid inputs of each - PDUs of every
+ * type, the same with encrypted headers, payloads as each transform makes
+ * them, and PDUs as a TCP connection brings them - for the fuzzer to start
+ * from.  See README.md.
  */
 
 #include <n3n/edge.h>            // for edge_init_conf_defaults
@@ -74,12 +75,44 @@ static void sock6 (n3n_sock_t *s, uint8_t seed) {
     fill(s->addr.v6, 16, seed);
 }
 
+// A PDU on a v3tcp connection, for the tcp target: its length in front,
+// in pieces of a byte with their length and then as many bytes - pieces of
+// at most step bytes, and copies of the frame one after the other
+static void tcp (const char *name, const char *how, const uint8_t *buf, size_t len,
+                 size_t step, int copies) {
+
+    static uint8_t out[4 * (N2N_PKT_BUF_SIZE + 2) * 2];
+    uint8_t frame[N2N_PKT_BUF_SIZE + 2];
+    size_t n = 0;
+    char tname[256];
+    int c;
+
+    frame[0] = (uint8_t)(len >> 8);
+    frame[1] = (uint8_t)len;
+    memcpy(frame + 2, buf, len);
+    for(c = 0; c < copies; c++) {
+        size_t at = 0;
+        while(at < len + 2) {
+            size_t piece = (len + 2 - at < step) ? len + 2 - at : step;
+            out[n++] = (uint8_t)piece;
+            memcpy(out + n, frame + at, piece);
+            n += piece;
+            at += piece;
+        }
+    }
+    snprintf(tname, sizeof(tname), "%s-%s", name, how);
+    put("tcp", tname, out, n);
+}
+
 // a PDU, plain for the decoders and the header target, and with an
-// encrypted header for the header target
+// encrypted header for the header target; framed for the tcp target
 static void pdu (const char *name, uint8_t *buf, size_t len, size_t header_len) {
 
     uint8_t enc[N2N_PKT_BUF_SIZE];
 
+    tcp(name, "whole", buf, len, 255, 1);
+    tcp(name, "split", buf, len, 1, 1);    // a byte at a time
+    tcp(name, "two", buf, len, 100, 2);    // two, cut across
     put("wire", name, buf, len);
     put("header", name, buf, len);
     memcpy(enc, buf, len);

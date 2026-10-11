@@ -384,7 +384,7 @@ fuzz: $(SUBDIR_LIBS)
 
 test.fuzz: fuzz
 	tests/fuzz/fuzz-seeds tests/fuzz/seeds
-	for t in header transop wire; do \
+	for t in header transop wire tcp; do \
 	    tests/fuzz/fuzz-$$t tests/fuzz/regress/$$t tests/fuzz/seeds/$$t || exit 1; \
 	done
 

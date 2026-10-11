@@ -240,9 +240,10 @@ tests and `make lint` pass after each.
       `fuzz-spray`, mutated PDUs at running daemons over UDP and TCP, in
       the netns scenarios tagged `spray`, which found a supernode's NAK
       encoded with a token from the stack (a crash; upstream since 3.4.6)
-      and a negative shift in `bitlen2mask()`.  Open: targets for the TCP
-      framing, the management interface, `tun.c`, and `qr_seal` with the
-      configuration it opens (with the Android revamp)
+      and a negative shift in `bitlen2mask()`.  The TCP framing:
+      `fuzz-tcp`.  Open: targets for the management interface, `tun.c`,
+      and `qr_seal` with the configuration it opens (with the Android
+      revamp)
 - [x] Interop: netns scenarios with edges and supernodes of the last
       release of upstream n3n (3.4.6) next to this tree: old edge, old
       supernodes (also with port guessing), a mixed federation, relayed,
