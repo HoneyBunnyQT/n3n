@@ -1233,12 +1233,18 @@ class Run:
         pid = self.supernodes[target[0]]["daemon"].proc.popen.pid
         before = self._sockets(pid)
         ready = os.path.join(self.workdir, "tcp-burst.ready")
+        progress = os.path.join(self.workdir, "tcp-burst.progress")
+        # the connections one after the other, and how far it got every
+        # 50 of them: a supernode slowed down by the sanitizers takes
+        # longer than a fixed time would allow, but keeps getting on
         script = (
             "import socket, sys, time, resource\n"
             "n = int(sys.argv[1])\n"
             "resource.setrlimit(resource.RLIMIT_NOFILE, (n + 64, n + 64))\n"
             "socks = []\n"
             "for i in range(n):\n"
+            "    if i % 50 == 0:\n"
+            "        open(sys.argv[5], 'w').write(str(i))\n"
             "    s = socket.socket()\n"
             "    s.settimeout(5)\n"
             "    try:\n"
@@ -1251,9 +1257,27 @@ class Run:
             "time.sleep(3600)\n")
         self.lab.spawn("tcp-burst", self.supernodes[others[0]]["ns"],
                        [sys.executable, "-c", script, str(self.sc.tcp_burst),
-                        ip, str(SN_PORT), ready])
-        if not wait_for(lambda: os.path.exists(ready), 60):
-            raise LabError("tcp burst: the connections did not get through")
+                        ip, str(SN_PORT), ready, progress])
+        # done, or no further for 30s (at most 10 minutes in all)
+        seen = {"at": None, "since": time.monotonic()}
+
+        def burst_done():
+            if os.path.exists(ready):
+                return "done"
+            try:
+                with open(progress) as f:
+                    at = f.read().strip()
+            except OSError:
+                at = None
+            if at != seen["at"]:
+                seen["at"], seen["since"] = at, time.monotonic()
+            elif time.monotonic() - seen["since"] > 30:
+                return "stuck"
+            return None
+        if wait_for(burst_done, 600, interval=0.5) != "done":
+            raise LabError("tcp burst: the connections did not get through "
+                           "(no further than {} of {})".format(
+                               seen["at"] or 0, self.sc.tcp_burst))
         time.sleep(0.5)
         with open(ready) as f:
             opened = f.read().strip()
@@ -1261,11 +1285,22 @@ class Run:
             opened, self.sc.tcp_burst, target[0]))
         opened = int(opened or 0)
         # what the supernode took (accept()), not what waits in the
-        # kernel's queue: its own sockets
-        accepted = wait_for(
-            lambda: max(self._sockets(pid) - before, 0)
-            if self._sockets(pid) - before >= opened else None, 15) \
-            or max(self._sockets(pid) - before, 0)
+        # kernel's queue: its own sockets - as long as it takes more, as
+        # under the sanitizers it is slow at it (no more for 15s: that is
+        # what it took)
+        took = {"n": -1, "since": time.monotonic()}
+
+        def taken():
+            n = max(self._sockets(pid) - before, 0)
+            if n >= opened:
+                return "all"
+            if n != took["n"]:
+                took["n"], took["since"] = n, time.monotonic()
+            elif time.monotonic() - took["since"] > 15:
+                return "stuck"
+            return None
+        wait_for(taken, 300, interval=0.5)
+        accepted = max(self._sockets(pid) - before, 0)
         self.result["tcp_burst"] = {"supernode": target[0],
                                     "opened": opened, "accepted": accepted}
         self.check("tcp burst", opened == self.sc.tcp_burst
