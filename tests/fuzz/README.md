@@ -15,6 +15,8 @@ supernode does with a packet it receives:
 | `fuzz-transop` | the payload of a PACKET as a transform's `rev()` takes it apart — first byte picks the cipher or compression, the rest is its input (`src/transform_*.c`) |
 | `fuzz-wire`    | the PDU decoders on an already-plain header (`src/wire.c`); whatever decodes is encoded again |
 | `fuzz-tcp`     | a v3tcp connection: bytes in pieces through a socket, put together by `conn_read()` (`libs/connslot`) and split into PDUs by `mainloop_v3tcp_pdus()` (`src/mainloop.c`), which then go to the decoders |
+| `fuzz-mgmt`    | a request to the management interface (local only): the HTTP request and, for the JSON-RPC endpoints, the body (`src/management.c`, `libs/connslot/jsonrpc.c`); first byte picks the edge's or the supernode's runtime |
+| `fuzz-tun`     | the TUN edge playing kernel for Ethernet and ARP (`src/tun.c`): a frame from a peer in, or an IP packet from the device out; first byte picks the direction |
 
 ## Running
 

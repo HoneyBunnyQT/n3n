@@ -394,6 +394,85 @@ static void mgmt (void) {
     }
 }
 
+// Inputs for the tun target: a byte for the direction (0 a frame from the
+// network for tun_from_frame, 1 an IP packet from the device for
+// tun_to_frame), then the frame or packet
+static void tun (void) {
+
+    uint8_t b[256];
+    uint8_t own[6] = {0x02, 0, 0, 0, 0, 0x01};
+    uint8_t peer[6] = {0x02, 0, 0, 0, 0, 0x02};
+
+    // --- frames from the network (direction 0) ---
+
+    // an ARP request for the edge's address (10.0.0.1)
+    {
+        size_t n = 0;
+        b[n++] = 0;                                 // direction
+        memcpy(b + n, "\xff\xff\xff\xff\xff\xff", 6); n += 6;   // dst broadcast
+        memcpy(b + n, peer, 6); n += 6;             // src
+        b[n++] = 0x08; b[n++] = 0x06;               // ARP
+        b[n++] = 0; b[n++] = 1; b[n++] = 0x08; b[n++] = 0x00;
+        b[n++] = 6; b[n++] = 4; b[n++] = 0; b[n++] = 1;   // request
+        memcpy(b + n, peer, 6); n += 6;             // sha
+        b[n++] = 10; b[n++] = 0; b[n++] = 0; b[n++] = 2;  // spa 10.0.0.2
+        memcpy(b + n, "\0\0\0\0\0\0", 6); n += 6;      // tha
+        b[n++] = 10; b[n++] = 0; b[n++] = 0; b[n++] = 1;  // tpa 10.0.0.1
+        put("tun", "arp-request", b, n);
+        b[9] = 2;                                   // op reply
+        put("tun", "arp-reply", b, n);
+    }
+
+    // an IPv4 packet to the edge
+    {
+        size_t n = 0;
+        b[n++] = 0;
+        memcpy(b + n, own, 6); n += 6;              // dst the edge
+        memcpy(b + n, peer, 6); n += 6;             // src
+        b[n++] = 0x08; b[n++] = 0x00;               // IPv4
+        size_t ip = n;
+        memset(b + n, 0, 20);
+        b[ip] = 0x45;                               // v4, ihl 5
+        b[ip + 9] = 17;                             // UDP
+        b[ip + 12] = 10; b[ip + 13] = 0; b[ip + 14] = 0; b[ip + 15] = 2;  // src
+        b[ip + 16] = 10; b[ip + 17] = 0; b[ip + 18] = 0; b[ip + 19] = 1;  // dst
+        n += 20;
+        n += 8;                                     // a little payload
+        put("tun", "ipv4-in", b, n);
+    }
+
+    // --- IP packets from the device (direction 1) ---
+
+    // IPv4 to a peer in the subnet
+    {
+        size_t n = 0;
+        b[n++] = 1;
+        size_t ip = n;
+        memset(b + n, 0, 20);
+        b[ip] = 0x45;
+        b[ip + 16] = 10; b[ip + 17] = 0; b[ip + 18] = 0; b[ip + 19] = 2;  // dst in subnet
+        n += 20 + 8;
+        put("tun", "ipv4-out", b, n);
+        b[1 + 16] = 0xff; b[1 + 17] = 0xff; b[1 + 18] = 0xff; b[1 + 19] = 0xff;
+        put("tun", "ipv4-out-broadcast", b, n);
+        b[1 + 16] = 0xe0; b[1 + 17] = 0; b[1 + 18] = 0; b[1 + 19] = 1;     // 224.0.0.1
+        put("tun", "ipv4-out-multicast", b, n);
+    }
+
+    // IPv6 multicast from the device
+    {
+        size_t n = 0;
+        b[n++] = 1;
+        size_t ip = n;
+        memset(b + n, 0, 40);
+        b[ip] = 0x60;                               // v6
+        b[ip + 24] = 0xff; b[ip + 25] = 0x02;       // ff02::...
+        b[ip + 36] = 0; b[ip + 37] = 0; b[ip + 38] = 0; b[ip + 39] = 1;
+        n += 40;
+        put("tun", "ipv6-out-multicast", b, n);
+    }
+}
+
 int main (int argc, char *argv[]) {
 
     if(argc != 2) {
@@ -406,5 +485,6 @@ int main (int argc, char *argv[]) {
     pdus();
     transops();
     mgmt();
+    tun();
     return 0;
 }
