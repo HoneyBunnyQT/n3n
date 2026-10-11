@@ -208,8 +208,15 @@ tests and `make lint` pass after each.
 - [ ] Android app (`VpnService`, configuration by QR code), see
       [Mobile and TUN](MobileAndTun.md).  Done: `android/` next to the
       core, built from `src/` by the NDK, CI artifact; import a file or a
-      QR code (`tools/n3n-qr`), connect, log.  Open: state view, auto addresses, network
-      changes, IPv6
+      QR code (`tools/n3n-qr`), connect, log, state view, network
+      changes.  Open: auto addresses, IPv6.  Next, a revamp (asked
+      2026-10-11): a slightly more modern UI; the status line (what it
+      is doing, "connecting") merged into the connect button, which
+      shows the state already, with more of a button look (slight 3D);
+      text or symbols beside colours, which a black and white night mode
+      does not show; the icon; notifications that are out of step (shown
+      while not connected); and the QR code again, with a fuzz target for
+      `qr_seal` and the configuration it opens
 - [x] `n3n-edge help transform`: lists the ciphers and compressions built
       in, with the implementation of each (`*_IMPL` in `src/crypto/*.h`,
       `desc` of the transforms); also on `fixes`
