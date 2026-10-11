@@ -29,3 +29,7 @@ generate_shared_secret: output:
 000: 5d 94 7b 0b db 54 e8 70  8a 09 b0 db 6f 0b 0d 31   |] {  T p    o  1|
 010: 1b b8 5f ba 57 74 34 bd  3b c5 c4 6c d5 ae a4 84   |  _ Wt4 ;  l    |
 
+calculate_dynamic_key: input: time = 1760000000, community = home, federation = *Federation
+calculate_dynamic_key: output:
+000: 08 21 dc bd 96 76 d5 ea  d1 ed 66 36 77 c5 19 03   | !   v    f6w   |
+
