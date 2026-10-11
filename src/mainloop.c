@@ -645,6 +645,61 @@ static int tcp_fd_limit () {
 }
 #endif
 
+int mainloop_v3tcp_pdus (struct conn *conn, mainloop_pdu_fn fn, void *arg) {
+
+    // the buffer can hold several PDUs: hand over each one that is complete
+    while(conn->state == CONN_READY) {
+        uint16_t be_size;
+        memcpy(&be_size, conn->request->str, sizeof(be_size));
+        int size = ntohs(be_size);
+
+        if(fn(arg, (uint8_t *)&conn->request->str[2], size)) {
+            // the upper layer closed the connection meanwhile
+            return -1;
+        }
+
+        // TODO: this crosses layers by reaching inside the conn object
+        int more = sb_len(conn->request) - (size + 2);
+        if(more <= 0) {
+            // We read exactly one packet
+            sb_zero(conn->request);
+            conn->state = CONN_EMPTY;
+            return 0;
+        }
+
+        // Our buffer contains data beyond the single packet
+        traceEvent(TRACE_DEBUG, "packet has %i more bytes", more);
+        memmove(
+            conn->request->str,
+            &conn->request->str[size + 2],
+            more
+        );
+        conn->request->rd_pos = 0;
+        conn->request->wr_pos = more;
+        conn->state = CONN_READING;
+        conn_check_ready(conn);
+    }
+    return 0;
+}
+
+// What a PDU on a v3tcp connection goes to: the upper layer
+struct v3tcp_rx {
+    struct n3n_runtime_data *eee;
+    int slot;
+    int fd;
+    int connnr;
+    time_t now;
+};
+
+static int v3tcp_rx_pdu (void *arg, uint8_t *pdu, int size) {
+    struct v3tcp_rx *rx = arg;
+
+    read_proto3_tcp(rx->eee, rx->fd, pdu, size, rx->now);
+
+    // whether the upper layer closed the connection meanwhile
+    return (fdlist[rx->slot].fd != rx->fd) || (fdlist[rx->slot].connnr != rx->connnr);
+}
+
 static void accept_v3tcp (struct n3n_runtime_data *eee, int listen_fd, time_t now) {
     struct sockaddr_storage sas;
     socklen_t sas_len = sizeof(sas);
@@ -798,50 +853,11 @@ static void handle_fd (const time_t now, int slot, struct n3n_runtime_data *eee)
                     v3tcp_closed(eee, slot, now);
                     return;
 
-                case CONN_READY:
-                    // the buffer can hold several PDUs: hand over each one
-                    // that is complete
-                    while(conn->state == CONN_READY) {
-                        uint16_t be_size;
-                        memcpy(&be_size, conn->request->str, sizeof(be_size));
-                        int size = ntohs(be_size);
-
-                        read_proto3_tcp(
-                            eee,
-                            info.fd,
-                            (uint8_t *)&conn->request->str[2],
-                            size,
-                            now
-                        );
-
-                        if((fdlist[slot].fd != info.fd) || (fdlist[slot].connnr != info.connnr)) {
-                            // the upper layer closed the connection meanwhile
-                            return;
-                        }
-
-                        // TODO: this crosses layers by reaching inside the
-                        // conn object
-                        int more = sb_len(conn->request) - (size + 2);
-                        if(more <= 0) {
-                            // We read exactly one packet
-                            sb_zero(conn->request);
-                            conn->state = CONN_EMPTY;
-                            return;
-                        }
-
-                        // Our buffer contains data beyond the single packet
-                        traceEvent(TRACE_DEBUG, "packet has %i more bytes", more);
-                        memmove(
-                            conn->request->str,
-                            &conn->request->str[size + 2],
-                            more
-                        );
-                        conn->request->rd_pos = 0;
-                        conn->request->wr_pos = more;
-                        conn->state = CONN_READING;
-                        conn_check_ready(conn);
-                    }
+                case CONN_READY: {
+                    struct v3tcp_rx rx = {eee, slot, info.fd, info.connnr, now};
+                    mainloop_v3tcp_pdus(conn, v3tcp_rx_pdu, &rx);
                     return;
+                }
             }
             return;
         }

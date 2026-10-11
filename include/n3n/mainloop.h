@@ -44,6 +44,14 @@ bool mainloop_send_v3tcp (int, const void *, int);
 
 int mainloop_runonce (struct n3n_runtime_data *);
 
+// Hand each complete PDU in the buffer of a v3tcp connection that conn_read()
+// made ready to fn, which returns non-zero when it closed the connection;
+// what is left of a next one stays.  -1 if fn closed it, else 0.  (On its
+// own for the fuzz target tests/fuzz/fuzz-tcp.)
+struct conn;
+typedef int (*mainloop_pdu_fn)(void *arg, uint8_t *pdu, int size);
+int mainloop_v3tcp_pdus (struct conn *conn, mainloop_pdu_fn fn, void *arg);
+
 // the slot of the fd, or -1 if there is no free one.  The fd is handled
 // for the runtime given to mainloop_run(), or with _rt for the one given:
 // a process can have more than one, see local_link.h
