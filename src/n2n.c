@@ -468,6 +468,10 @@ uint32_t bitlen2mask (uint8_t bitlen) {
     uint8_t i;
     uint32_t mask = 0;
 
+    // the bit length comes from the wire too: more than 32 is all of them
+    if(bitlen > 32) {
+        bitlen = 32;
+    }
     for(i = 1; i <= bitlen; ++i) {
         mask |= 1u << (32 - i);
     }
