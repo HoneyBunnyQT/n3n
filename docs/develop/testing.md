@@ -16,6 +16,7 @@ SPDX-FileCopyrightText: Copyright Honey Bunny QT
 | integration tests: supernodes and edges on this host, checked with `n3nctl` | `make test.integration` | yes |
 | NAT tests: edges and supernodes in network namespaces behind emulated NATs, see [Testing behind NATs](netns_testing.md) | `make test.netns` (the quick ones), `make test.netns.full` (needs root) | yes, all of them on every push (`netns.yml`); the interop ones in `interop.yml` |
 | other CPUs: big endian, 32 bit, ARM, under qemu-user | `scripts/test_qemu.sh`, see below | yes |
+| other CPUs on the wire: an edge and a supernode built for s390x, mips or arm64 in the NAT tests, next to the host's | `run.py @cross`, see [Testing behind NATs](netns_testing.md#other-cpus-cross) | yes (`netns.yml`) |
 | an edge-only build (`./configure --disable-relay`) | the unit and builtin tests | yes |
 | the options reference is up to date | `make options.check` | yes |
 | sanitizers: all of the above but lint and qemu, with AddressSanitizer and UndefinedBehaviorSanitizer built in, every finding fatal | see below | yes, on every push (`sanitizers.yml`), the NAT tests too |
@@ -189,3 +190,8 @@ CI runs this for s390x (big endian, 64 bit), mips (big endian, 32 bit),
 aarch64 (also with the ARMv8 AES instructions and Speck with NEON) and 32
 bit ARM with NEON.  `tests-aes` and `tests-cc20` check known answers of
 whichever implementation of AES and ChaCha20 a build has.
+
+The unit tests check each side alone.  That two hosts of different byte
+order understand each other is what the netns scenarios tagged `cross`
+check: an edge and a supernode of such a build, under qemu-user, among
+those of the host, see [Testing behind NATs](netns_testing.md#other-cpus-cross).

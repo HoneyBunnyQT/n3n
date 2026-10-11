@@ -4,9 +4,10 @@ name: netns
 # On every push: all the netns scenarios (docs/develop/netns_testing.md) -
 # edges and supernodes behind NATs of several kinds, failovers, outages,
 # roaming, reloads, IPv6 - with a plain build, as it ships.  All but those
-# tagged "limits", which fail on purpose, and the interop ones, which
-# interop.yml runs with the other versions built.  The runners' kernel has
-# IPv6, so no UML is needed here.
+# tagged "limits", which fail on purpose, the interop ones, which
+# interop.yml runs with the other versions built, and the cross ones, which
+# the job "cross" runs.  The runners' kernel has IPv6, so no UML is needed
+# here.
 
 # yamllint disable-line rule:truthy
 on:
@@ -53,4 +54,48 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: netns
+          path: tests/netns/out
+
+  # The scenarios tagged "cross": an edge and a supernode of this tree
+  # built for another CPU, under qemu-user, next to the host's - big
+  # endian (s390x, mips) and ARM with its own versions of the ciphers
+  cross:
+    name: Across CPUs, under qemu
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Fix Checkout
+        run: |
+          git fetch --force --tags
+
+      - name: Build this tree, for the host and the others
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nftables iproute2 qemu-user \
+            gcc-s390x-linux-gnu libc6-dev-s390x-cross \
+            gcc-mips-linux-gnu libc6-dev-mips-cross \
+            gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+          ./autogen.sh
+          ./configure
+          make build-dep
+          make -j4 all
+          tests/netns/versions.sh cross s390x s390x
+          tests/netns/versions.sh cross mips mips
+          tests/netns/versions.sh cross arm64 arm64 \
+            "-march=armv8-a+crypto -DSPECK_ARM_NEON"
+
+      - name: Cross scenarios
+        run: |
+          # a failed scenario once more, see above
+          sudo --preserve-env=GITHUB_ACTIONS,GITHUB_STEP_SUMMARY \
+            python3 tests/netns/run.py -j 4 --retry 1 @cross
+
+      - if: ${{ failure() || hashFiles('tests/netns/out/flaky.txt') != '' }}
+        name: Upload the logs
+        uses: actions/upload-artifact@v6
+        with:
+          name: netns-cross
           path: tests/netns/out

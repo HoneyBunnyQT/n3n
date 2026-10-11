@@ -19,8 +19,9 @@ they should for their NATs.
 ## Running
 
 CI runs all the scenarios on every push (`netns.yml`; the runners' kernel
-has IPv6), but those tagged `limits`, and the interop ones with the other
-versions built (`interop.yml`); `sanitizers.yml` runs them with the
+has IPv6), but those tagged `limits`, the interop ones with the other
+versions built (`interop.yml`), and the cross ones with the builds for
+other CPUs (`netns.yml`, job `cross`); `sanitizers.yml` runs them with the
 sanitizers built in.  There a failed scenario runs once more
 (`--retry 1`): one that passes then is FLAKY, see below.  A run with a
 failed or flaky scenario uploads the logs of the scenarios.
@@ -127,6 +128,45 @@ gives the name in `N2N_FEDERATION` instead, which gets into the key.
 | interop-n2n-fed | sn1 n2n, sn2 this tree; a n2n knows only sn1, b only sn2 | direct, across the mixed federation |
 | interop-n2n-relayed | hard-range / hard-range, a and sn1 n2n | relayed |
 | interop-n2n-header-enc | encrypted headers, a n2n, b easy-changed | direct |
+
+### Other CPUs (cross)
+
+The scenarios tagged `cross` run an edge, and in some a supernode, of this
+tree built for another CPU, under qemu-user, next to the host's build:
+what goes over the wire has to come out the same whatever the byte order
+and whichever version of a cipher a build has.  `versions.sh cross` builds
+the tree as it is (with the changes not committed) into
+`tests/netns/versions/NAME`; the scenarios run its `n3n-edge` and
+`n3n-supernode`, small scripts that start the binary under qemu.  Unlike
+the interop ones, these are checked as this tree: NAT class, descriptions,
+and no IPv6 needed.
+
+```
+sudo apt install qemu-user gcc-s390x-linux-gnu libc6-dev-s390x-cross \
+    gcc-mips-linux-gnu libc6-dev-mips-cross \
+    gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+tests/netns/versions.sh cross s390x s390x      # big endian, 64 bit
+tests/netns/versions.sh cross mips mips        # big endian, 32 bit
+tests/netns/versions.sh cross arm64 arm64 "-march=armv8-a+crypto -DSPECK_ARM_NEON"
+sudo tests/netns/run.py @cross                 # or @cross-s390x, ...
+```
+
+For each of them (`ARCH` in the names):
+
+| scenario | on ARCH | expected |
+|----------|---------|----------|
+| cross-ARCH-aes, -chacha20, -speck, -twofish, -null | edge a, with that cipher (lzo with ChaCha20 and Twofish), frames of 1000 bytes | direct |
+| cross-ARCH-relayed | edge a and sn1, b knows only sn2 | relayed, across the federation |
+| cross-ARCH-header-enc | edge a and sn1, encrypted headers | direct |
+| cross-ARCH-userpw | edge a and sn1, user/password, each edge at a supernode of its own | direct |
+| cross-ARCH-tcp | edge a, over TCP | relayed |
+| cross-ARCH-tun | edge a, with a TUN device | direct |
+| cross-ARCH-sn-tap | sn2, with a TAP device (`supernode.tap`) | relayed |
+
+Found with them: federated supernodes of different byte order made other
+dynamic keys of a user/password community from the same key time, so edges
+at the one did not understand the others' (`calculate_dynamic_key()`).
+CI runs them in `netns.yml`, job `cross`.
 
 ### IPv6, in a kernel of its own
 

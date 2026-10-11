@@ -131,7 +131,8 @@ class Site:
         self.on_supernode = on_supernode
         # another version of n3n for this edge, as tests/netns/versions.sh
         # built it (interop): its NAT class is not checked, older ones do
-        # not tell it
+        # not tell it.  Or this tree for another CPU, under qemu-user
+        # (versions.sh cross): checked as this tree
         self.version = version
         # the MTU of the link between the edge and its (innermost) router,
         # as of a PPPoE or mobile link: larger packets get fragmented, or,
@@ -239,7 +240,8 @@ class Scenario:
         self.reload = reload
         # {supernode: version}: those supernodes another version of n3n,
         # as tests/netns/versions.sh built it (interop); the edges' NAT
-        # class is not checked then, older supernodes do not tell it
+        # class is not checked then, older supernodes do not tell it.  Or
+        # this tree for another CPU (cross), checked as this tree
         self.sn_versions = sn_versions or {}
         # expected relayed, but direct by luck is fine too (why, as a
         # string): the rest of the checks then go for direct, and the
@@ -289,6 +291,19 @@ def is_n2n(version):
     """Whether the version is one of n2n, which versions.sh built"""
     return bool(version) and os.path.exists(
         os.path.join(VERSIONS, version, "edge"))
+
+
+def is_cross(version):
+    """Whether the version is this tree for another CPU, under qemu-user
+    (versions.sh cross)"""
+    return bool(version) and os.path.exists(
+        os.path.join(VERSIONS, version, "ARCH"))
+
+
+def is_other(version):
+    """Whether the version is another one than this tree's: an older n3n
+    or n2n (interop), not this tree for another CPU"""
+    return bool(version) and not is_cross(version)
 
 
 class Settings:
@@ -382,7 +397,7 @@ class Run:
         # n2n has no IPv6 at all
         versioned = [v for v in list(self.sc.sn_versions.values()) +
                      [s.version for s in self.sc.sites.values()]
-                     if v and not is_n2n(v)]
+                     if is_other(v) and not is_n2n(v)]
         if versioned and not os.path.exists("/proc/sys/net/ipv6"):
             # 3.4.6 sends to IPv4 peers as IPv4-mapped IPv6 addresses
             raise LabError("this kernel has no IPv6, which older versions "
@@ -531,7 +546,9 @@ class Run:
             "overlay": OVERLAY_NET.format(i + 1),
             "mac": "02:00:00:99:00:{:02x}".format(i + 1),
             "expect_nat": (site.expect_nat if site.expect_nat is not None
-                           else ".*" if site.version or self.sc.sn_versions
+                           else ".*" if is_other(site.version) or any(
+                               is_other(v)
+                               for v in self.sc.sn_versions.values())
                            else nat.expected_class(layers)),
         }
 
@@ -1018,7 +1035,7 @@ class Run:
         without p2p sends, as a supernode's own (supernode.tap)"""
         pairs = [(s, d) for s, d in self.sc.directions()
                  if "daemon" in self.edges[s]
-                 and not self.sc.sites[s].version]
+                 and not is_other(self.sc.sites[s].version)]
         if not pairs:
             return
 

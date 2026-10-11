@@ -270,8 +270,16 @@ tests and `make lint` pass after each.
 - [ ] Endianness of the hand written SIMD versions (NEON on big endian ARM
       is rare) and of `src/crypto/speck.c`, which is not built at all -
       remove it?
-- [ ] Run a netns scenario between a big endian and a little endian edge
-      (qemu-user binaries in one namespace)
+- [x] netns scenarios between byte orders: an edge and a supernode of
+      this tree built for s390x, mips or arm64 (with the ARMv8 AES
+      instructions and NEON), under qemu-user, next to the host's - each
+      cipher, relayed, encrypted headers, user/password, TCP, TUN,
+      `supernode.tap` (`versions.sh cross`, tag `cross`, `netns.yml` job
+      `cross`).  Found and fixed: federated supernodes of different byte
+      order made other dynamic keys of a user/password community from the
+      same key time (`calculate_dynamic_key()` hashed it in the host's
+      order), so the edges of the one could not read what came from the
+      other (b00db25); also an upstream bug
 - [x] ARM: AES with the ARMv8 Cryptography Extension (`aes_armce.c`),
       ChaCha20 with NEON (`cc20_neon.c`), known answer tests for both
       (`tests-aes`, `tests-cc20`), CI under qemu for both

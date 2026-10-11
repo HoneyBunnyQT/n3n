@@ -16,6 +16,15 @@ OLD = "n3n-3.4.6"
 # The release of n2n they run against: IPv4 only, so a few basic ones
 # "tests/netns/versions.sh build n2n-3.1.1 3.1.1 https://github.com/ntop/n2n"
 N2N = "n2n-3.1.1"
+# This tree for other CPUs, under qemu-user, which the cross scenarios run
+# next to the host's build: big endian, 64 and 32 bit (the latter strict
+# about alignment), and ARM with its own versions of the ciphers (AES with
+# the ARMv8 instructions, ChaCha20 and Speck with NEON):
+#   tests/netns/versions.sh cross s390x s390x
+#   tests/netns/versions.sh cross mips mips
+#   tests/netns/versions.sh cross arm64 arm64 \
+#       "-march=armv8-a+crypto -DSPECK_ARM_NEON"
+CROSS = ("s390x", "mips", "arm64")
 
 SCENARIOS = [
     Scenario(
@@ -523,6 +532,84 @@ SCENARIOS = [
         "relayed"),
 ]
 
+
+def _cross(arch):
+    """An edge, and with some one supernode of the federation, of this
+    tree built for arch, the rest the host's: what goes over the wire
+    has to be the same, whatever the byte order and the versions of the
+    ciphers"""
+    tags = ["cross", "cross-" + arch]
+
+    def cipher(name, compression="none"):
+        return {"community": {"cipher": name, "compression": compression}}
+
+    out = []
+    for name, compression in (("AES", "none"), ("ChaCha20", "lzo"),
+                              ("Speck", "none"), ("Twofish", "lzo"),
+                              ("null", "none")):
+        out.append(Scenario(
+            "cross-{}-{}".format(arch, name.lower()),
+            "a is this tree on {}, the rest on the host: {}{}, "
+            "direct".format(arch, name, ", " + compression
+                            if compression != "none" else ""),
+            Site(["easy-kept"], version=arch), Site(["easy-changed"]),
+            # frames of several cipher blocks, as the vector versions
+            # take them, and a rest
+            "direct", conf=cipher(name, compression), size=1000,
+            tags=tags))
+    out += [
+        Scenario(
+            "cross-{}-relayed".format(arch),
+            "a and sn1 on {}: relayed between the byte orders, across the "
+            "federation (b knows only sn2)".format(arch),
+            Site(["hard-range"], supernodes=["sn1"], version=arch),
+            Site(["hard-range"], supernodes=["sn2"]),
+            "relayed", conf=cipher("AES"), sn_versions={"sn1": arch},
+            tags=tags),
+        Scenario(
+            "cross-{}-header-enc".format(arch),
+            "encrypted headers, a and sn1 on {}".format(arch),
+            Site(["easy-kept"], version=arch), Site(["hard-range"]),
+            "direct", auth="header", conf=cipher("Speck"),
+            sn_versions={"sn1": arch}, tags=tags),
+        Scenario(
+            "cross-{}-userpw".format(arch),
+            "user/password authentication, a and sn1 on {}, each edge at "
+            "a supernode of its own".format(arch),
+            Site(["easy-kept"], supernodes=["sn1"], version=arch),
+            Site(["easy-changed"], supernodes=["sn2"]),
+            "direct", auth="userpw", sn_start_gap=1.1,
+            sn_versions={"sn1": arch}, tags=tags),
+        Scenario(
+            "cross-{}-tcp".format(arch),
+            "a on {}, over TCP to its supernode".format(arch),
+            Site(["easy-kept"], tcp_only=True, expect_nat="unknown",
+                 version=arch),
+            Site([]),
+            "relayed", sn_tcp_port=4443, conf=cipher("ChaCha20"),
+            sn_versions={"sn1": arch}, tags=tags),
+        Scenario(
+            "cross-{}-tun".format(arch),
+            "a on {} with a TUN device, b with a TAP device: ARP and the "
+            "Ethernet header from the TUN edge".format(arch),
+            Site(["easy-kept"], conf={"tuntap": {"type": "tun"}},
+                 version=arch),
+            Site(["easy-changed"]),
+            "direct", conf=cipher("AES"), tags=tags),
+        Scenario(
+            "cross-{}-sn-tap".format(arch),
+            "sn2 on {} with a TAP device (supernode.tap), and an edge of "
+            "the host's".format(arch),
+            Site(["hard-range"], supernodes=["sn2"]),
+            Site(on_supernode="sn2"),
+            "relayed", sn_versions={"sn2": arch}, tags=tags),
+    ]
+    return out
+
+
+for _arch in CROSS:
+    SCENARIOS += _cross(_arch)
+
 BY_NAME = {s.name: s for s in SCENARIOS}
 
 
@@ -535,11 +622,11 @@ def _versions_built(sc):
 def select(patterns):
     """Scenarios by name, fnmatch pattern or @tag; for none all but those
     tagged limits, which show what n3n cannot do (yet), and fail, and the
-    interop ones of versions not built (tests/netns/versions.sh)"""
+    interop and cross ones of versions not built (tests/netns/versions.sh)"""
     import fnmatch
     if not patterns:
         return [s for s in SCENARIOS if "limits" not in s.tags
-                and ("interop" not in s.tags or _versions_built(s))]
+                and (not s.tags & {"interop", "cross"} or _versions_built(s))]
     out = []
     for pat in patterns:
         if pat.startswith("@"):
