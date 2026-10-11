@@ -35,6 +35,10 @@ void n3n_rand_le64 (uint8_t *out);
 // Only use when attempting to make a reproducible test case
 void n3n_srand_stable_default (void);
 
+// Seed the calling thread's generator: the same seed, the same numbers -
+// for a test that is to be repeated with a sequence of its own choosing
+int n3n_srand (uint64_t seed);
+
 uint32_t n3n_rand_sqr (uint32_t max_n);
 
 

@@ -113,7 +113,7 @@ void n3n_srand_stable_default () {
     rn_current_state.b = 0xBF58476D1CE4E5B9;
 }
 
-static int n3n_srand (uint64_t seed) {
+int n3n_srand (uint64_t seed) {
 
     uint8_t i;
     splitmix64_state_t smstate = { seed };
