@@ -274,7 +274,9 @@ tests and `make lint` pass after each.
       a moved one twice (one entry by its old address).  Now the edge keeps
       what REGISTERs told by MAC, answers a REGISTER from a peer it knows
       with one of its own, and keeps one entry per MAC.  netns checks
-      `description:` and `description after:`.  The federation's name (its
+      `description:` and `description after:`.  And one that comes back
+      relayed - as when the edge went on TCP - takes what the REGISTERs
+      told too (2026-10-11, found by `tcp-learned`)  The federation's name (its
       key) shows on the management page only when unlocked
 - [x] The supernode's own edge (`supernode.tap`) showed without its name
       and address on the other edges: an edge without p2p sent no

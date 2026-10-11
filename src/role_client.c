@@ -814,6 +814,9 @@ static void register_with_new_peer (struct n3n_runtime_data *eee,
         memcpy(&(scan->dev_addr), dev_addr, sizeof(n2n_ip_subnet_t));
     }
     if(dev_desc) memcpy(scan->dev_desc, dev_desc, N2N_DESC_SIZE);
+    // relayed for now, as when the edge went on TCP: who it is, from its
+    // REGISTERs of before, until one comes again
+    peer_who_fill(eee, scan);
 }
 
 
@@ -1833,6 +1836,7 @@ int check_query_peer_info (struct n3n_runtime_data *eee, time_t now, const n2n_m
 
         scan->timeout = eee->conf.client.register_interval; /* TODO: should correspond to the peer supernode registration timeout */
         scan->last_seen = now; /* Don't change this it marks the pending peer for removal. */
+        peer_who_fill(eee, scan);
 
         HASH_ADD_PEER(eee->client.pending_peers, scan);
     }
