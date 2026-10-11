@@ -31,7 +31,11 @@ static int letter2number (const char ch) {
 }
 
 char *base64decode (const char *in) {
-    int len = ((strlen(in) / 4) * 3) +1;
+    // three bytes out per four in, the quads rounded up so that an input
+    // whose length is not a multiple of four still fits, plus the NUL.
+    // ((strlen / 4) * 3) + 1 was a byte short of the trailing group and
+    // its NUL, and the loop below wrote past the buffer
+    int len = (((strlen(in) + 3) / 4) * 3) + 1;
     char *out = malloc(len);
     if(!out) {
         return NULL;
@@ -44,8 +48,12 @@ char *base64decode (const char *in) {
         int i3 = letter2number(*in++);
         int i4 = letter2number(*in++);
 
-        if(i1 == -1) return NULL;
-        if(i2 == -1) return NULL;
+        // a character that is not base64 (the end of the string among
+        // them): give up, and free what was allocated above
+        if(i1 == -1 || i2 == -1) {
+            free(out);
+            return NULL;
+        }
 
         *p++ = (i1 << 2) | (i2 >> 4);
         len--;
