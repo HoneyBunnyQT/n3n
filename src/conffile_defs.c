@@ -558,7 +558,11 @@ static struct n3n_conf_option section_supernode[] = {
                 "its own, set up by the [tuntap] options, as an edge would.  "
                 "It reaches the other edges of the community through itself, "
                 "without sockets of its own.  Needs the privileges to open "
-                "the TAP device at start.",
+                "the TAP device at start.  Its packets are handled on the "
+                "main thread, not on the supernode's packet threads, so it "
+                "suits the supernode's own light membership rather than a "
+                "heavily used edge; one code path for both roles is planned "
+                "for v4.",
     },
     {
         .name = "version",

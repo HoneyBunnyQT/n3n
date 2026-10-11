@@ -75,3 +75,12 @@ drops them.  The supernode's management interface answers for its edge as
 well: its web page has a section for each, and the JsonRPC methods are asked
 at `/v1/edge` (`n3nctl -r edge edges`); `get_edges` of the supernode lists it
 at `127.0.0.1:0`.  This is not available on Windows yet.
+
+The edge runs with less than a standalone one: its packets are handled on
+the supernode's main thread, not on its packet threads (see
+[Threads](../advanced/Threads.md)), so it is meant for the supernode's own
+light membership of a community - a management or monitoring host on the
+network, say - rather than a heavily used edge.  For that, run a separate
+edge next to the supernode.  Bringing the two roles together into one code
+path, with the same handling for both, is planned for the next wire version
+(v4); until then this stays a convenience with the limits above.

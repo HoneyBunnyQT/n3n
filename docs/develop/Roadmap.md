@@ -104,8 +104,14 @@ tests and `make lint` pass after each.
         section for each role, built by the daemon (`management_page.c`),
         readable in lynx
   - [ ] Windows (the TAP reader thread)
-  - [ ] the supernode's edge on packet threads; for now its PACKETs are
-        handled by the main thread
+  - [~] the supernode's edge on packet threads: not planned for v3.  Its
+        PACKETs stay on the main thread, which keeps the two roles'
+        runtimes apart and the change small; it makes `supernode.tap` a
+        convenience for the supernode's own light membership, not a
+        heavily used edge (noted in configure/Supernode.md).  The full
+        merge - one executable, one main code path, the same handling
+        (packet threads included) for edge and supernode alike - is a v4
+        goal, where the wire version opens up anyway
   - [x] after step 9: asked; we stay on v3 for now, with compatible work
         only (--disable-relay, tests, docs, the TCP fallback)
 - [x] `./configure --disable-relay` for small builds that only need an edge;
