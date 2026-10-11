@@ -76,7 +76,9 @@ This script is used to determine the current version number during the
 build process.
 
 It looks at both the VERSION file and the GIT tags and outputs the
-version number to use.
+version number to use.  In a checkout without tags, such as a shallow
+clone, it takes the VERSION file with the commit (`3.4.7-g608cc48`), and
+says so.
 
 ## Monitoring and statistics
 
