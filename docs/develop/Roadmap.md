@@ -602,6 +602,14 @@ runs, one scenario each), and reproduced with `-v 3` in a loop:
   of the peer, 1 allowed, the last from IPv4 to IPv6; once in 23 runs,
   and see "Network changes" above for UML) and `sn-tap-userpw` under
   ASan (the edge never registered; once in 16).
+- `sn-tcp-1100` under ASan (2026-10-11, once, on a commit that changed
+  only the Android app; the same C passed in the two runs after):
+  "tcp burst: the connections did not get through" - the harness gave
+  the 1100 connections 60s, and the client makes them one after the
+  other, each with a timeout of 5s, so a supernode slowed down by ASan
+  that leaves a dozen of them waiting runs out of time.  Candidates: a
+  longer wait under the sanitizers, or the client telling how far it
+  got.
 
 What is left gets one more try in CI (`--retry 1`): a scenario that passes
 then is `FLAKY`, which does not turn the run red but shows as an
