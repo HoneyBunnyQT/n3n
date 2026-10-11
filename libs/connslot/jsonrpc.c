@@ -51,7 +51,15 @@ char *json_extract_val(char *p) {
     if (*p == '"') {
         p++;
         e = p;
-        while (*e != '"') {e++;}
+        // stop at the end of the string too: a value whose closing quote
+        // is missing is not valid, and scanning for it alone ran past the
+        // end of the buffer
+        while (*e != '"') {
+            if (*e == '\0') {
+                return NULL;
+            }
+            e++;
+        }
         *e = '\0';
         return p;
     }
@@ -131,6 +139,13 @@ int jsonrpc_parse(char *p, jsonrpc_t *json) {
     json->method = json_extract_val(method);
     json->params = json_extract_val(params);
     json->id = json_extract_val(id);
+
+    // the fields were found, but a value that does not extract (a method
+    // or id that is not a string, number, ...) leaves these NULL, which
+    // the caller would hand to strcmp() or strncpy()
+    if (!json->method || !json->id) {
+        return -4;
+    }
     return 0;
 }
 

@@ -242,6 +242,12 @@ static void event_subscribe (struct n3n_runtime_data *eee, conn_t *conn) {
 
     enum n3n_event_topic topicid;
 
+    if(!topic) {
+        // nothing after "GET /events/", or only spaces
+        render_error(conn, "unknown topic");
+        return;
+    }
+
     int nr_topics = sizeof(mgmt_events) / sizeof(mgmt_events[0]);
     for( topicid=0; topicid < nr_topics; topicid++ ) {
         if(!strcmp(mgmt_events[topicid].topic,topic)) {
@@ -331,16 +337,21 @@ static void extract_pagination (char *params, int *limit, int *offset) {
     // do all the field finding first, since the value extractor will
     // insert nulls at the end of its strings
 
-    if(limitstr) {
-        *limit = atoi(json_extract_val(limitstr));
+    // the field may be present but hold a value that does not extract (not
+    // a number): json_extract_val() then returns NULL, which atoi() may not
+    // take.  Fall back to the default, as when the field is absent
+    char *val;
+
+    if(limitstr && (val = json_extract_val(limitstr))) {
+        *limit = atoi(val);
     } else {
         *limit = 2147483647; // default
     }
 
-    if(offsetstr) {
-        *offset = atoi(json_extract_val(offsetstr));
+    if(offsetstr && (val = json_extract_val(offsetstr))) {
+        *offset = atoi(val);
     } else {
-        offset = 0;
+        *offset = 0;
     }
 }
 
@@ -492,6 +503,12 @@ static void jsonrpc_set_verbose (char *id, struct n3n_runtime_data *eee, conn_t 
     char *params = strdup(params_in+1);
 
     char *arg1 = json_extract_val(params);
+
+    if(!arg1) {
+        jsonrpc_error(id, conn, 400, "expecting a value", 0);
+        free(params);
+        return;
+    }
 
     if(*arg1 == '"') {
         arg1++;
