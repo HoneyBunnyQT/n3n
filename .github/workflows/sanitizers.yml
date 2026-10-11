@@ -52,9 +52,9 @@ jobs:
           make -j4 all
           mkdir -p /tmp/san
 
-      - name: Unit and builtin tests
+      - name: Unit and builtin tests, the fuzz targets' corpus
         run: |
-          make test.units test.builtin
+          make test.units test.builtin test.fuzz
 
       - name: Integration tests
         run: |

@@ -5,6 +5,7 @@ fuzz-transop
 fuzz-seeds
 *.exe
 
-# Generated seed corpus and fuzzer scratch
+# Generated seed corpus, fuzzer scratch and what crashed
 seeds/
 work/
+crash/

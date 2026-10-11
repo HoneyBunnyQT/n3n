@@ -225,7 +225,15 @@ tests and `make lint` pass after each.
       sides that get through directly pass (`PASS+`); `/run/n3n` made
       before the daemons for 3.4.6; what is left gets `--retry 1` in CI
       and shows as `FLAKY`.  Open: `dual-stack`, `sn-tap-userpw` (ASan)
-- [ ] Fuzzing of the PDU decoders (`wire.c`) and of header decryption
+- [~] Fuzzing: libFuzzer targets for header decryption, the PDU
+      decoders and the transforms (`tests/fuzz`), which found the
+      receive-path bugs of 3.4.7 (GHSA); their inputs in the regression
+      corpus, replayed by `make test` and under the sanitizers, libFuzzer
+      in CI on every push (`fuzz.yml`).  Open: the handlers with their
+      state, through the netns lab (a sender of mutated PDUs at running
+      daemons); targets for the TCP framing, the management interface,
+      `tun.c`, and `qr_seal` with the configuration it opens (with the
+      Android revamp)
 - [x] Interop: netns scenarios with edges and supernodes of the last
       release of upstream n3n (3.4.6) next to this tree: old edge, old
       supernodes (also with port guessing), a mixed federation, relayed,

@@ -344,7 +344,7 @@ $(info CC is: $(CC) $(CFLAGS) $(CPPFLAGS) -c -o $$@ $$<)
 	libs/connslot/file2strbufc $< $(basename $(notdir $<)) >$@
 
 .PHONY: test test.units test.integration test.netns test.netns.full test.qr
-test: test.builtin test.units test.integration test.netns
+test: test.builtin test.units test.integration test.fuzz test.netns
 
 test.units: tools		# needs tools
 	scripts/test_harness.sh tests/tests_units.list
@@ -376,8 +376,8 @@ test.netns: apps		# needs apps
 # The fuzz targets, see tests/fuzz/README.md.  "make fuzz" builds them with
 # driver.c (any compiler); "make fuzz FUZZ=libfuzzer" links them with
 # libFuzzer (clang) to search for new inputs.  "make test.fuzz" replays the
-# committed regression corpus and the generated seeds - meant to run under
-# the sanitizers, it is not part of "make test".
+# committed regression corpus and the generated seeds, in "make test" and,
+# with the sanitizers, in sanitizers.yml; fuzz.yml searches with libFuzzer.
 .PHONY: fuzz test.fuzz
 fuzz: $(SUBDIR_LIBS)
 	$(MAKE) -C tests/fuzz

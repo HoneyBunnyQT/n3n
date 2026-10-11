@@ -21,13 +21,26 @@ Two ways to build, both driven from the top level:
 
 ```sh
 # 1. Replay the committed regression corpus and the generated seeds with
-#    the normal compiler (no libFuzzer needed).  Good under the sanitizers.
+#    the normal compiler (no libFuzzer needed).  Part of "make test", and
+#    good under the sanitizers.
 make test.fuzz
 
-# 2. Fuzz for real: build with libFuzzer (needs clang) and let it search.
+# 2. Fuzz for real: build with libFuzzer (clang, and its runtime: on
+#    Debian and Ubuntu libclang-rt-dev) and let it search.  The library
+#    is built with the fuzzer's instrumentation too.
+F="-fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=all -g -O1"
+./configure CC=clang CFLAGS="$F" LDFLAGS="$F"
 make fuzz FUZZ=libfuzzer
-./tests/fuzz/fuzz-transop tests/fuzz/seeds/transop     # ^C to stop
+tests/fuzz/fuzz-seeds tests/fuzz/seeds
+mkdir -p tests/fuzz/work/transop
+tests/fuzz/fuzz-transop tests/fuzz/work/transop tests/fuzz/seeds/transop   # ^C to stop
 ```
+
+In CI, `make test` replays them on every build, `sanitizers.yml` with
+AddressSanitizer and UndefinedBehaviorSanitizer, and `fuzz.yml` searches
+with libFuzzer: a minute per target on every push, twenty once a week,
+going on from the corpus of the runs before (kept in the cache).  What
+crashes a target there is uploaded as the artifact `fuzz-crash`.
 
 `make test.fuzz` builds the targets with `driver.c` instead of libFuzzer —
 `driver.c` runs each target over the files it is given (a file, or every

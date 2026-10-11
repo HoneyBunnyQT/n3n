@@ -14,6 +14,7 @@ SPDX-FileCopyrightText: Copyright Honey Bunny QT
 | unit tests: the programs `tools/tests-*`, against `tests/*.expected` | `make test.units` | yes |
 | builtin tests: commands of the program itself, see below | `make test.builtin` | yes |
 | integration tests: supernodes and edges on this host, checked with `n3nctl` | `make test.integration` | yes |
+| fuzz targets: the receive path (header decryption, PDU decoders, transforms), their regression corpus and generated seeds replayed; libFuzzer searching, see [tests/fuzz](../../tests/fuzz/README.md) | `make test.fuzz`; `make fuzz FUZZ=libfuzzer` | yes: replayed in `make test` and under the sanitizers; libFuzzer a minute per target on every push, twenty a week (`fuzz.yml`) |
 | NAT tests: edges and supernodes in network namespaces behind emulated NATs, see [Testing behind NATs](netns_testing.md) | `make test.netns` (the quick ones), `make test.netns.full` (needs root) | yes, all of them on every push (`netns.yml`); the interop ones in `interop.yml` |
 | other CPUs: big endian, 32 bit, ARM, under qemu-user | `scripts/test_qemu.sh`, see below | yes |
 | other CPUs on the wire: an edge and a supernode built for s390x, mips or arm64 in the NAT tests, next to the host's | `run.py @cross`, see [Testing behind NATs](netns_testing.md#other-cpus-cross) | yes (`netns.yml`) |
@@ -21,7 +22,7 @@ SPDX-FileCopyrightText: Copyright Honey Bunny QT
 | the options reference is up to date | `make options.check` | yes |
 | sanitizers: all of the above but lint and qemu, with AddressSanitizer and UndefinedBehaviorSanitizer built in, every finding fatal | see below | yes, on every push (`sanitizers.yml`), the NAT tests too |
 
-`make test` runs the first four and the quick NAT tests (which skip
+`make test` runs the first five and the quick NAT tests (which skip
 themselves without root).  A change that touches the protocol, NAT
 traversal, the threads or the supernode should also pass
 `make test.netns.full`, with and without `./configure --enable-pthread`.

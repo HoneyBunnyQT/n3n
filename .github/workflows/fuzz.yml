@@ -1,0 +1,75 @@
+---
+name: Fuzz
+
+# The fuzz targets of tests/fuzz, with libFuzzer, AddressSanitizer and
+# UndefinedBehaviorSanitizer: a minute each on every push, twenty once a
+# week.  The corpus a run grows is kept in the cache for the next one.  An
+# input that crashes a target is uploaded: minimise it and put it into
+# tests/fuzz/regress/, see tests/fuzz/README.md.  ("make test" replays the
+# regression corpus and the seeds on every build, sanitizers.yml with the
+# sanitizers.)
+
+# yamllint disable-line rule:truthy
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 3 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: libFuzzer
+    runs-on: ubuntu-24.04
+    env:
+      FUZZ_SECONDS: ${{ github.event_name == 'schedule' && 1200 || 60 }}
+      SAN_FLAGS: >-
+        -fsanitize=fuzzer-no-link,address,undefined
+        -fno-sanitize-recover=all -fno-omit-frame-pointer -g -O1
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Fix Checkout
+        run: |
+          git fetch --force --tags
+
+      - name: Build the targets with libFuzzer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libclang-rt-18-dev
+          ./autogen.sh
+          ./configure CC=clang CFLAGS="$SAN_FLAGS" LDFLAGS="$SAN_FLAGS"
+          make -j4 fuzz FUZZ=libfuzzer
+          tests/fuzz/fuzz-seeds tests/fuzz/seeds
+
+      - name: The corpus of earlier runs
+        uses: actions/cache@v6
+        with:
+          path: tests/fuzz/work
+          key: fuzz-corpus-${{ github.run_id }}
+          restore-keys: fuzz-corpus-
+
+      - name: Fuzz
+        run: |
+          rc=0
+          for t in header transop wire; do
+            mkdir -p tests/fuzz/work/$t tests/fuzz/crash/$t
+            # new inputs go to the first directory, the corpus kept
+            tests/fuzz/fuzz-$t -max_total_time="$FUZZ_SECONDS" \
+              -artifact_prefix=tests/fuzz/crash/$t/ \
+              tests/fuzz/work/$t tests/fuzz/regress/$t tests/fuzz/seeds/$t \
+              || rc=1
+          done
+          exit $rc
+
+      - if: ${{ failure() }}
+        name: Upload what crashed
+        uses: actions/upload-artifact@v6
+        with:
+          name: fuzz-crash
+          path: tests/fuzz/crash
