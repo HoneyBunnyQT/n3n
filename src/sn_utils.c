@@ -698,93 +698,48 @@ static int process_pdu_body (struct n3n_runtime_data * sss,
                              struct pdu_ctx *h,
                              struct sn_community *comm) {
 
-    const struct sockaddr *sender_sock = h->sender_sock;
-    uint8_t *udp_buf = h->buf;
-    size_t udp_size = h->size;
-
-    n2n_common_t cmn;        /* common fields in the packet header */
-    size_t rem;
-    size_t idx;
-    size_t msg_type;
-    bool from_supernode;
-    struct peer_info *sn = NULL;
-    n3n_sock_t sender;
     n3n_sock_str_t sockbuf;
-    uint32_t header_enc = h->header_enc;
-    int skip_add;
 
-    fill_n3nsock(&sender, sender_sock);
+    fill_n3nsock(&h->sender, h->sender_sock);
 
     traceEvent(TRACE_DEBUG, "processing incoming UDP packet [len: %lu][sender: %s]",
-               udp_size, sock_to_cstr(sockbuf, &sender));
+               h->size, sock_to_cstr(sockbuf, &h->sender));
 
     if(!n3n_thread_slot) {
-        lock_header_encryption(comm, header_enc);
+        lock_header_encryption(comm, h->header_enc);
     }
 
-    /* Use decode_common() to determine the kind of packet then process it:
+    /* The kind of packet, from its common header, decides what follows:
      *
      * REGISTER_SUPER adds an edge and generate a return REGISTER_SUPER_ACK
      *
      * REGISTER, REGISTER_ACK and PACKET messages are forwarded to their
      * destination edge. If the destination is not known then PACKETs are
      * broadcast.
+     *
+     * With user/password authentication, the registration may come with
+     * the static keys; and only a REGISTER_SUPER may come from a supernode
+     * not known yet.
      */
-
-    rem = udp_size; /* Counts down bytes of packet to protect against buffer overruns. */
-    idx = 0; /* marches through packet header as parts are decoded. */
-
-    if(decode_common(&cmn, udp_buf, &rem, &idx) < 0) {
-        traceEvent(TRACE_ERROR, "failed to decode common section");
-        return -1; /* failed to decode packet */
+    if(pdu_in_common(h, comm && comm->allowed_users,
+                     PDU_TYPE_BIT(MSG_TYPE_REGISTER_SUPER) | PDU_TYPE_BIT(MSG_TYPE_REGISTER_SUPER_ACK)
+                     | PDU_TYPE_BIT(MSG_TYPE_REGISTER_SUPER_NAK),
+                     &(sss->relay.federation->edges), PDU_TYPE_BIT(MSG_TYPE_REGISTER_SUPER)) < 0) {
+        return -1;
     }
 
-    msg_type = cmn.pc; /* packet code */
-
-    // special case for user/pw auth
-    // community's auth scheme and message type need to match the used key (dynamic)
-    if(comm) {
-        if((comm->allowed_users)
-           && (msg_type != MSG_TYPE_REGISTER_SUPER)
-           && (msg_type != MSG_TYPE_REGISTER_SUPER_ACK)
-           && (msg_type != MSG_TYPE_REGISTER_SUPER_NAK)) {
-            if(header_enc != 2) {
-                traceEvent(TRACE_WARNING, "dropped packet encrypted with static key where expecting dynamic key");
-                return -1;
-            }
-        }
-    }
-
-    from_supernode = cmn.flags & N2N_FLAGS_FROM_SUPERNODE;
-    if(from_supernode) {
-        skip_add = SN_ADD_SKIP;
-        sn = add_sn_to_list_by_mac_or_sock(&(sss->relay.federation->edges), &sender, null_mac, &skip_add);
-        // only REGISTER_SUPER allowed from unknown supernodes
-        if((!sn) && (msg_type != MSG_TYPE_REGISTER_SUPER)) {
-            traceEvent(TRACE_DEBUG, "dropped incoming data from unknown supernode");
-            return -1;
-        }
-    }
-
-    if(cmn.ttl < 1) {
+    if(h->cmn.ttl < 1) {
         traceEvent(TRACE_WARNING, "expired TTL");
         return 0; /* Don't process further */
     }
 
-    --(cmn.ttl); /* The value copied into all forwarded packets. */
+    --(h->cmn.ttl); /* The value copied into all forwarded packets. */
 
-    h->cmn = cmn;
-    h->rem = rem;
-    h->idx = idx;
-    h->sender = sender;
-    h->from_supernode = from_supernode;
-
-    if(n3n_thread_slot && !relay_here(sss, comm, &cmn, from_supernode, udp_buf, rem, idx)) {
+    if(n3n_thread_slot && !relay_here(sss, comm, &h->cmn, h->from_supernode, h->buf, h->rem, h->idx)) {
         edge_threads_post_pdu(sss, h);
         return 0;
     }
 
-    h->sn = sn;
     h->comm = comm;
     pdu_dispatch(sss, sn_pdu_handlers, h);
 

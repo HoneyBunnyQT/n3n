@@ -58,6 +58,20 @@ typedef pdu_handler_fn pdu_handlers_t[MSG_TYPE_MAX_TYPE + 1];
 // the log, if there is none.
 int pdu_dispatch (struct n3n_runtime_data *rt, const pdu_handlers_t handlers, struct pdu_ctx *c);
 
+// A bit per message type, for the sets of types pdu_in_common() takes
+#define PDU_TYPE_BIT(type) (1u << (type))
+
+// The steps before the dispatch, the same for both roles, on c->buf with
+// its header decrypted (c->header_enc) and c->sender set: the common header
+// decoded into c->cmn, with c->rem and c->idx after it; with user/password
+// authentication (dynamic_keys) a PDU under the static keys dropped,
+// unless its type is one of static_ok (the registration with a supernode);
+// and one from a supernode looked up in supernodes, into c->sn, or dropped
+// if not found, unless its type is one of unknown_sn_ok.  Returns -1 to
+// drop the PDU, after a line in the log.
+int pdu_in_common (struct pdu_ctx *c, bool dynamic_keys, uint32_t static_ok,
+                   struct peer_info **supernodes, uint32_t unknown_sn_ok);
+
 // Whether the header of a PDU looks unencrypted: a version, a message type
 // and flags that make sense, and a community name that ends where it has to.
 // Around 99.99962 percent reliable.  false for a PDU too short for a header.

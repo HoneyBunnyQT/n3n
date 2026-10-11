@@ -1013,113 +1013,7 @@ void edge_process_pdu (struct n3n_runtime_data *eee,
                        time_t now
 ) {
 
-    n2n_common_t cmn;          /* common fields in the packet header */
     n3n_sock_str_t sockbuf1;
-    uint8_t hash_buf[16] = {0};
-    size_t rem;
-    size_t idx;
-    size_t msg_type;
-    uint8_t from_supernode;
-    uint8_t via_multicast;
-    struct peer_info *sn = NULL;
-    n3n_sock_t sender;
-    uint32_t header_enc = 0;
-    uint64_t stamp = 0;
-    int skip_add = 0;
-
-    /* REVISIT: when UDP/IPv6 is supported we will need a flag to indicate which
-     * IP transport version the packet arrived on. May need to UDP sockets. */
-
-    // TODO: pass the sender to edge_process_pdu, dont calculate it here
-    if(eee->client.tcp && (in_sock == eee->sock))
-        // TCP expects that we know our comm partner and does not deliver the sender
-        memcpy(&sender, &(eee->client.curr_sn->sock), sizeof(sender));
-    else {
-        // REVISIT: type conversion back and forth, choose a consistent approach throughout whole code,
-        //          i.e. stick with more general sockaddr as long as possible and narrow only if required
-        fill_n3nsock(&sender, sender_sock);
-    }
-#ifdef SKIP_MULTICAST_PEERS_DISCOVERY
-    via_multicast = 0;
-#else
-    via_multicast = ((in_sock == eee->client.udp_multicast_sock_v4) ||
-                     (in_sock == eee->client.udp_multicast_sock_v6));
-#endif
-
-    traceEvent(TRACE_DEBUG, "Rx VPN packet of size %d from [%s]",
-               (signed int)udp_size, sock_to_cstr(sockbuf1, &sender));
-
-    if(eee->conf.community.header_encryption == HEADER_ENCRYPTION_ENABLED) {
-        // with the dynamic (2) or the static (1) keys?  The hash is only
-        // checked with user/password authentication
-        header_enc = pdu_header_decrypt(udp_buf, udp_size, (char *)eee->conf.community.community_name,
-                                        eee->conf.header_encryption_ctx_dynamic, eee->conf.header_iv_ctx_dynamic,
-                                        eee->conf.header_encryption_ctx_static, eee->conf.header_iv_ctx_static,
-                                        eee->conf.shared_secret ? hash_buf : NULL, &stamp);
-        if(!header_enc) {
-            traceEvent(TRACE_DEBUG, "failed to decrypt header");
-            return;
-        }
-        // time stamp verification follows in the packet specific section as it requires to determine the
-        // sender from the hash list by its MAC, or the packet might be from the supernode, this all depends
-        // on packet type, path taken (via supernode) and packet structure (MAC is not always in the same place)
-    }
-
-    rem = udp_size; /* Counts down bytes of packet to protect against buffer overruns. */
-    idx = 0; /* marches through packet header as parts are decoded. */
-    if(decode_common(&cmn, udp_buf, &rem, &idx) < 0) {
-        if(via_multicast) {
-            // from some other edge on local network, possibly header encrypted
-            traceEvent(TRACE_DEBUG, "dropped packet arriving via multicast due to error while decoding N2N_UDP");
-        } else {
-            traceEvent(TRACE_INFO, "failed to decode common section in N2N_UDP");
-        }
-        return; /* failed to decode packet */
-    }
-
-    msg_type = cmn.pc; /* packet code */
-
-    // special case for user/pw auth
-    // community's auth scheme and message type need to match the used key (dynamic)
-    if((eee->conf.shared_secret)
-       && (msg_type != MSG_TYPE_REGISTER_SUPER_ACK)
-       && (msg_type != MSG_TYPE_REGISTER_SUPER_NAK)) {
-        if(header_enc != 2) {
-            traceEvent(TRACE_INFO, "dropped packet encrypted with static key where dynamic key expected");
-            return;
-        }
-    }
-
-    // check if packet is from supernode and find the corresponding supernode in list
-    from_supernode = cmn.flags & N2N_FLAGS_FROM_SUPERNODE;
-    if(from_supernode) {
-        skip_add = SN_ADD_SKIP;
-        sn = add_sn_to_list_by_mac_or_sock(&(eee->client.supernodes), &sender, null_mac, &skip_add);
-        if(!sn) {
-            traceEvent(TRACE_DEBUG, "dropped incoming data from unknown supernode");
-            return;
-        }
-    }
-
-    if(0 != memcmp(cmn.community, eee->conf.community.community_name, N2N_COMMUNITY_SIZE)) {
-        // The community in the packet is not matching ours
-
-        if(from_supernode) {
-            traceEvent(TRACE_INFO, "received packet with unknown community");
-            // TODO:
-            // stats.errors.community.supernode ++;
-        } else {
-            traceEvent(
-                TRACE_INFO,
-                "ignoring packet with unknown community (%s)",
-                cmn.community
-            );
-            // TODO:
-            // stats.errors.community.other ++;
-        }
-
-        return;
-    }
 
     // The control messages - registrations, peer info, supernode answers -
     // change the tables, which only the main thread does: a packet thread
@@ -1128,23 +1022,73 @@ void edge_process_pdu (struct n3n_runtime_data *eee,
     struct pdu_ctx c = {
         .buf = udp_buf,
         .size = udp_size,
-        .cmn = cmn,
-        .rem = rem,
-        .idx = idx,
-        .sender = sender,
-        .header_enc = header_enc,
-        .stamp = stamp,
-        .from_supernode = from_supernode,
-        .via_multicast = via_multicast,
         .socket_fd = in_sock,
         .now = now,
         .sender_sock = sender_sock,
-        .sn = sn,
     };
 
-    memcpy(c.hash_buf, hash_buf, sizeof(c.hash_buf));
+    // TODO: pass the sender to edge_process_pdu, dont calculate it here
+    if(eee->client.tcp && (in_sock == eee->sock))
+        // TCP expects that we know our comm partner and does not deliver the sender
+        memcpy(&c.sender, &(eee->client.curr_sn->sock), sizeof(c.sender));
+    else {
+        // REVISIT: type conversion back and forth, choose a consistent approach throughout whole code,
+        //          i.e. stick with more general sockaddr as long as possible and narrow only if required
+        fill_n3nsock(&c.sender, sender_sock);
+    }
+#ifndef SKIP_MULTICAST_PEERS_DISCOVERY
+    c.via_multicast = ((in_sock == eee->client.udp_multicast_sock_v4) ||
+                       (in_sock == eee->client.udp_multicast_sock_v6));
+#endif
 
-    if(n3n_thread_slot && (msg_type != MSG_TYPE_PACKET)) {
+    traceEvent(TRACE_DEBUG, "Rx VPN packet of size %d from [%s]",
+               (signed int)udp_size, sock_to_cstr(sockbuf1, &c.sender));
+
+    if(eee->conf.community.header_encryption == HEADER_ENCRYPTION_ENABLED) {
+        // with the dynamic (2) or the static (1) keys?  The hash is only
+        // checked with user/password authentication
+        c.header_enc = pdu_header_decrypt(udp_buf, udp_size, (char *)eee->conf.community.community_name,
+                                          eee->conf.header_encryption_ctx_dynamic, eee->conf.header_iv_ctx_dynamic,
+                                          eee->conf.header_encryption_ctx_static, eee->conf.header_iv_ctx_static,
+                                          eee->conf.shared_secret ? c.hash_buf : NULL, &c.stamp);
+        if(!c.header_enc) {
+            traceEvent(TRACE_DEBUG, "failed to decrypt header");
+            return;
+        }
+        // time stamp verification follows in the packet specific section as it requires to determine the
+        // sender from the hash list by its MAC, or the packet might be from the supernode, this all depends
+        // on packet type, path taken (via supernode) and packet structure (MAC is not always in the same place)
+    }
+
+    // with user/password authentication, the answers of the supernode to
+    // the registration may come with the static keys
+    if(pdu_in_common(&c, eee->conf.shared_secret,
+                     PDU_TYPE_BIT(MSG_TYPE_REGISTER_SUPER_ACK) | PDU_TYPE_BIT(MSG_TYPE_REGISTER_SUPER_NAK),
+                     &(eee->client.supernodes), 0) < 0) {
+        return;
+    }
+
+    if(0 != memcmp(c.cmn.community, eee->conf.community.community_name, N2N_COMMUNITY_SIZE)) {
+        // The community in the packet is not matching ours
+
+        if(c.from_supernode) {
+            traceEvent(TRACE_INFO, "received packet with unknown community");
+            // TODO:
+            // stats.errors.community.supernode ++;
+        } else {
+            traceEvent(
+                TRACE_INFO,
+                "ignoring packet with unknown community (%s)",
+                c.cmn.community
+            );
+            // TODO:
+            // stats.errors.community.other ++;
+        }
+
+        return;
+    }
+
+    if(n3n_thread_slot && (c.cmn.pc != MSG_TYPE_PACKET)) {
         edge_threads_post_pdu(eee, &c);
         return;
     }
