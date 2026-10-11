@@ -328,26 +328,31 @@ static int reload_load (void *conf) {
             }
             traceEvent(TRACE_WARNING, "reload: no config file for '%s' (any more), or it cannot be read as uid %d",
                        reload_session, (int)getuid());
-            free(tmp);
             free(session);
-            return -1;
+            goto failed;
         default:
-            free(tmp);
             free(session);
-            return -1;
+            goto failed;
     }
     // the session name is not compared, nor kept
     tmp->conf.sessionname = NULL;
     free(session);
     if(n3n_config_load_env(&tmp->conf) != 0) {
-        free(tmp);
-        return -1;
+        goto failed;
     }
     optind = 1;
     loadFromCLI(reload_argc, reload_argv, tmp);
     memcpy(conf, &tmp->conf, sizeof(tmp->conf));
+    // of the rest of the runtime, only the federation is allocated
+    free(tmp->relay.federation);
     free(tmp);
     return 0;
+
+failed:
+    n3n_config_free(&tmp->conf);
+    free(tmp->relay.federation);
+    free(tmp);
+    return -1;
 }
 
 static void n3n_sn_config (int argc, char **argv, char *defname, struct n3n_runtime_data *sss) {
