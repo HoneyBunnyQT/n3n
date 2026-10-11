@@ -23,6 +23,8 @@ object Status {
         val rttMs: Long?,
         val peers: Int,
         val direct: Int,
+        // reaching the supernode over TCP (connection.tcp_fallback, tcp://)
+        val tcp: Boolean,
     )
 
     fun query(context: Context): Info? {
@@ -57,7 +59,8 @@ object Status {
                 direct++
             }
         }
-        return Info(registered, supernode, rttMs, edges.length(), direct)
+        val tcp = info?.optString("transport") == "tcp"
+        return Info(registered, supernode, rttMs, edges.length(), direct, tcp)
     }
 
     private fun callList(context: Context, method: String): JSONArray? =

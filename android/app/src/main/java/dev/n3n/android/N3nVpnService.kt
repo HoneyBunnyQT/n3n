@@ -10,6 +10,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.drawable.Icon
 import android.net.ConnectivityManager
 import android.net.LinkProperties
 import android.net.Network
@@ -19,6 +20,7 @@ import android.net.VpnService
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 
 /**
  * The VPN: Android gives the device, set up with the address and route of
@@ -26,6 +28,10 @@ import android.os.Looper
  * src/main/cpp/n3n_jni.c) runs on it in a thread of its own.  Every socket
  * the edge opens comes back here to protect(), so that it does not go into
  * the VPN itself.
+ *
+ * It also keeps what the connection is doing (state, see Connection.kt):
+ * from its own steps, and from the edge's management API while the edge
+ * runs.  The notification says that, and so does the main screen.
  */
 class N3nVpnService : VpnService() {
 
@@ -38,6 +44,13 @@ class N3nVpnService : VpnService() {
         const val EXTRA_DNS = "dns"
         private const val CHANNEL = "vpn"
         private const val NOTIFICATION = 1
+        // how often the edge is asked for its state: while on the way, while
+        // the main screen shows it, and else
+        private const val POLL_BUSY_MS = 1000L
+        private const val POLL_SHOWN_MS = 2000L
+        private const val POLL_IDLE_MS = 10000L
+        // not registered for this long: no supernode answers
+        private const val NO_ANSWER_MS = 15000L
 
         init {
             System.loadLibrary("n3n")
@@ -61,6 +74,26 @@ class N3nVpnService : VpnService() {
 
         private val main = Handler(Looper.getMainLooper())
 
+        /** What the connection is doing; main thread */
+        var state = Snapshot(Phase.OFF)
+            private set
+        private var stateListener: ((Snapshot) -> Unit)? = null
+        // the service that asks the edge, while an edge runs
+        private var poller: N3nVpnService? = null
+
+        /**
+         * The main screen, while it is shown: gets the state at once and
+         * with every change, and the edge is asked more often meanwhile.
+         * null: no longer.  Main thread.
+         */
+        fun watch(listener: ((Snapshot) -> Unit)?) {
+            stateListener = listener
+            if (listener != null) {
+                listener(state)
+                poller?.pollSoon()
+            }
+        }
+
         fun addLog(line: String) {
             main.post {
                 log.addLast(line)
@@ -71,6 +104,19 @@ class N3nVpnService : VpnService() {
             }
         }
     }
+
+    // this run of the edge, for the state and the notification
+    private var via: String? = null
+    private var name: String? = null
+    private var address: String? = null
+    private var answered = false
+    private var everRegistered = false
+    private var lostSince = 0L
+    private var asking = false
+    // in the foreground, with the notification: what it says
+    private var foreground = false
+    private var shownKey: String? = null
+    private val poll = Runnable { pollNow() }
 
     private external fun nativeRun(config: String, tunFd: Int, rundir: String): Int
     private external fun nativeStop()
@@ -175,9 +221,11 @@ class N3nVpnService : VpnService() {
                 // once the last edge has stopped, see the end of its thread
                 next = intent
                 running = true
+                via = intent.getStringExtra(EXTRA_GATEWAY)
+                setState(Snapshot(Phase.STARTING))
                 // Android wants it in the foreground soon after
                 // startForegroundService(), whenever the edge gets going
-                startForeground(intent.getStringExtra(EXTRA_GATEWAY))
+                startForeground()
             }
             return START_NOT_STICKY
         }
@@ -196,11 +244,19 @@ class N3nVpnService : VpnService() {
         val network = config.network
         if (address == null || network == null) {
             addLog(getString(R.string.no_address))
+            setState(Snapshot(Phase.OFF, failed = true))
             stopSelf()
             return false
         }
 
-        startForeground(gateway)
+        via = gateway
+        name = config.description
+        this.address = address.first
+        answered = false
+        everRegistered = false
+        lostSince = 0L
+        setState(Snapshot(Phase.STARTING))
+        startForeground()
 
         // the name Android shows for the VPN: never the community's, which
         // may be the key of the headers
@@ -230,7 +286,8 @@ class N3nVpnService : VpnService() {
         }
         if (tun == null) {
             addLog("the VPN is not allowed (anymore)")
-            stopForeground(STOP_FOREGROUND_REMOVE)
+            setState(Snapshot(Phase.OFF, failed = true))
+            leaveForeground()
             stopSelf()
             return false
         }
@@ -249,21 +306,29 @@ class N3nVpnService : VpnService() {
         if (watching == null) {
             watchNetwork()
         }
+        poller = this
+        pollSoon()
         return true
     }
 
     /** Main thread, once the edge's thread is through */
     private fun edgeEnded() {
+        // not asked to stop: it ended by itself, the log says why
+        val asked = stopping
         edge = null
         stopping = false
+        stopPolling()
         val start = next
         next = null
         if (start != null && startEdge(start)) {
             return
         }
         running = false
+        if (start == null) {
+            setState(Snapshot(Phase.OFF, failed = !asked))
+        }
         unwatchNetwork()
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        leaveForeground()
         stopSelf()
     }
 
@@ -272,10 +337,13 @@ class N3nVpnService : VpnService() {
             // the edge ends, and then its thread the service
             stopping = true
             running = false
+            stopPolling()
+            setState(Snapshot(Phase.STOPPING, state.info))
             nativeStop()
         } else {
             running = false
-            stopForeground(STOP_FOREGROUND_REMOVE)
+            setState(Snapshot(Phase.OFF))
+            leaveForeground()
             stopSelf()
         }
     }
@@ -286,36 +354,159 @@ class N3nVpnService : VpnService() {
     }
 
     override fun onDestroy() {
+        // the notification goes with the service
+        foreground = false
         unwatchNetwork()
+        stopPolling()
         // the edge's thread outlives this object; it is told to stop, if
         // nothing waits to follow it
         if (edge != null && next == null) {
             stopping = true
             running = false
+            setState(Snapshot(Phase.STOPPING, state.info))
             nativeStop()
         }
         super.onDestroy()
     }
 
-    private fun startForeground(gateway: String?) {
+    /* Asking the edge for its state, on a thread of its own: its
+     * management API on the unix socket, see Status. */
+    private fun pollSoon() {
+        main.removeCallbacks(poll)
+        main.post(poll)
+    }
+
+    private fun stopPolling() {
+        main.removeCallbacks(poll)
+        if (poller === this) {
+            poller = null
+        }
+    }
+
+    private fun pollNow() {
+        if (edge == null || stopping || asking) {
+            // a query on its way schedules the next one
+            return
+        }
+        asking = true
+        val context = applicationContext
+        Thread({
+            val info = Status.query(context)
+            main.post {
+                asking = false
+                statusIs(info)
+            }
+        }, "n3n-status").start()
+    }
+
+    // main thread, with the answer of the edge (null: none)
+    private fun statusIs(info: Status.Info?) {
+        if (edge == null || stopping || poller !== this) {
+            return
+        }
+        val now = SystemClock.elapsedRealtime()
+        val phase = when {
+            // not up yet; later, one missed answer (a timeout) changes nothing
+            info == null -> if (answered) state.phase else Phase.STARTING
+            info.registered -> Phase.CONNECTED
+            everRegistered -> Phase.RECONNECTING
+            else -> Phase.CONNECTING
+        }
+        if (info != null) {
+            answered = true
+            if (info.registered) {
+                everRegistered = true
+                lostSince = 0L
+            } else if (lostSince == 0L) {
+                lostSince = now
+            }
+        }
+        val noAnswer = lostSince != 0L && now - lostSince > NO_ANSWER_MS
+        setState(Snapshot(phase, info ?: state.info, noAnswer))
+        main.postDelayed(poll, when {
+            phase.busy -> POLL_BUSY_MS
+            stateListener != null -> POLL_SHOWN_MS
+            else -> POLL_IDLE_MS
+        })
+    }
+
+    // main thread
+    private fun setState(s: Snapshot) {
+        state = s
+        stateListener?.invoke(s)
+        if (foreground && s.phase != Phase.OFF) {
+            val key = notificationText(s).joinToString("\n")
+            if (key != shownKey) {
+                shownKey = key
+                manager().notify(NOTIFICATION, notification(s))
+            }
+        }
+    }
+
+    /** Title, text and the line in the header of the notification */
+    private fun notificationText(s: Snapshot): List<String> {
+        val info = s.info
+        val text = when {
+            s.phase == Phase.CONNECTED && info != null ->
+                resources.getQuantityString(R.plurals.notify_connected, info.peers, address ?: "", info.peers, info.direct)
+            else -> s.doing(this) ?: ""
+        }
+        val sub = via?.let { getString(R.string.notify_via, it) } ?: name ?: ""
+        return listOf(s.title(this), text, sub)
+    }
+
+    private fun manager(): NotificationManager {
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26) {
             manager.createNotificationChannel(
                 NotificationChannel(CHANNEL, getString(R.string.channel), NotificationManager.IMPORTANCE_LOW))
         }
+        return manager
+    }
+
+    private fun notification(s: Snapshot): Notification {
+        val (title, text, sub) = notificationText(s)
         val open = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        val stop = PendingIntent.getService(
+            this, 1, Intent(this, N3nVpnService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE)
         val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, CHANNEL) else Notification.Builder(this)
-        val notification = builder
-            .setSmallIcon(R.drawable.ic_n3n)
-            .setContentTitle(if (gateway != null) getString(R.string.running_route, gateway) else getString(R.string.running))
+        builder
+            // white on nothing, as the system wants it: it tints the icon
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title)
+            .setContentText(text)
             .setContentIntent(open)
+            .setCategory(Notification.CATEGORY_SERVICE)
+            .setShowWhen(false)
+            .setOnlyAlertOnce(true)
             .setOngoing(true)
-            .build()
+        if (sub.isNotEmpty()) {
+            builder.setSubText(sub)
+        }
+        if (s.phase != Phase.STOPPING) {
+            builder.addAction(
+                Notification.Action.Builder(
+                    Icon.createWithResource(this, R.drawable.ic_power), getString(R.string.disconnect), stop).build())
+        }
+        return builder.build()
+    }
+
+    private fun startForeground() {
+        manager()
+        val notification = notification(state)
         if (Build.VERSION.SDK_INT >= 34) {
             startForeground(NOTIFICATION, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {
             startForeground(NOTIFICATION, notification)
         }
+        foreground = true
+        shownKey = notificationText(state).joinToString("\n")
+    }
+
+    private fun leaveForeground() {
+        foreground = false
+        shownKey = null
+        stopForeground(STOP_FOREGROUND_REMOVE)
     }
 }

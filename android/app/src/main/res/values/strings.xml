@@ -6,9 +6,21 @@
     <!-- main screen -->
     <string name="connect">Connect</string>
     <string name="disconnect">Disconnect</string>
+    <!-- the state, in the button and the notification: see Connection.kt -->
     <string name="state_off">Not connected</string>
-    <string name="state_wait">Connecting…</string>
+    <string name="state_connecting">Connecting…</string>
     <string name="state_on">Connected</string>
+    <string name="state_reconnecting">Reconnecting…</string>
+    <string name="state_stopping">Disconnecting…</string>
+    <!-- below it: what it is doing, or what a tap does -->
+    <string name="doing_start">Starting the edge</string>
+    <string name="doing_register">Registering with the supernode</string>
+    <string name="doing_register_tcp">Registering with the supernode over TCP</string>
+    <string name="doing_no_answer">No supernode answers yet</string>
+    <string name="doing_stop">Stopping the edge</string>
+    <string name="tap_connect">Tap to connect</string>
+    <string name="tap_disconnect">Tap to disconnect</string>
+    <string name="stopped_see_log">Stopped by itself: see the log</string>
     <string name="address">Address</string>
     <string name="supernode">Supernode</string>
     <string name="peers">Peers</string>
@@ -23,7 +35,11 @@
     <string name="no_config_hint">Scan the QR code of a network, made with n3n-qr or shown by another phone, or write its configuration.</string>
     <string name="no_address">The configuration needs an address of this phone in the network: address = 10.1.2.3/24 in [tuntap].</string>
     <string name="channel">VPN</string>
-    <string name="running">n3n is connected</string>
+    <plurals name="notify_connected">
+        <item quantity="one">%1$s · %2$d peer (%3$d direct)</item>
+        <item quantity="other">%1$s · %2$d peers (%3$d direct)</item>
+    </plurals>
+    <string name="notify_via">all traffic via %1$s</string>
 
     <string name="unnamed">This phone has no name yet: description = … in [connection]</string>
 
@@ -34,7 +50,6 @@
     <string name="route_note">The exit peer needs filter.allow_routing = true in its configuration, IP forwarding and NAT (masquerade) towards the internet. IPv6 is held back meanwhile, so that nothing goes around the exit peer. Applies on the next connect.</string>
     <string name="route_need_gateway">Enter the exit peer\'s address in the network (e.g. 10.1.2.1)</string>
     <string name="route_reconnect">Connect again to apply</string>
-    <string name="running_route">n3n is connected, all traffic via %1$s</string>
 
     <!-- configuration -->
     <string name="config_hint">The configuration, as in a .conf file of n3n:\n\n[community]\nname = mynetwork\nkey = mysecret\nsupernode = sn.example.org:7654\n\n[tuntap]\naddress = 10.1.2.3/24</string>

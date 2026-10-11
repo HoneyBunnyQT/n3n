@@ -6,13 +6,9 @@ package dev.n3n.android
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
-import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.RippleDrawable
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.View
@@ -24,20 +20,16 @@ import android.widget.Toast
 
 /**
  * The network at a glance: connect and disconnect, the state of the
- * connection as the edge reports it, and the way to the other screens.
+ * connection as N3nVpnService has it from the edge, and the way to the
+ * other screens.
  */
 class MainActivity : Activity() {
 
     private companion object {
         const val REQUEST_VPN = 1
-        const val POLL_MS = 2000L
     }
 
-    private enum class State { OFF, WAIT, ON }
-
-    private lateinit var connect: Button
-    private lateinit var dot: View
-    private lateinit var state: TextView
+    private lateinit var connect: ConnectButton
     private lateinit var network: TextView
     private lateinit var address: TextView
     private lateinit var supernode: TextView
@@ -46,24 +38,12 @@ class MainActivity : Activity() {
     private lateinit var routeAll: Switch
     private lateinit var gateway: EditText
     private lateinit var dns: EditText
-    private var shown = State.OFF
-
-    private val main = Handler(Looper.getMainLooper())
-    private var asking = false
-    private val poll = object : Runnable {
-        override fun run() {
-            refresh()
-            main.postDelayed(this, POLL_MS)
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
         connect = findViewById(R.id.connect)
-        dot = findViewById(R.id.dot)
-        state = findViewById(R.id.state)
         network = findViewById(R.id.network)
         address = findViewById(R.id.address)
         supernode = findViewById(R.id.supernode)
@@ -96,11 +76,11 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         showConfig()
-        main.post(poll)
+        N3nVpnService.watch { show(it) }
     }
 
     override fun onPause() {
-        main.removeCallbacks(poll)
+        N3nVpnService.watch(null)
         super.onPause()
     }
 
@@ -158,7 +138,6 @@ class MainActivity : Activity() {
     private fun toggle() {
         if (N3nVpnService.running) {
             startService(Intent(this, N3nVpnService::class.java).setAction(N3nVpnService.ACTION_STOP))
-            main.postDelayed({ refresh() }, 300)
             return
         }
         val config = Config(Store.load(this))
@@ -197,7 +176,6 @@ class MainActivity : Activity() {
             intent.putExtra(N3nVpnService.EXTRA_DNS, if (Store.isIpv4(route.dns)) route.dns else "1.1.1.1")
         }
         if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent) else startService(intent)
-        main.postDelayed({ refresh() }, 300)
     }
 
     @Deprecated("the platform's own Activity, no AndroidX")
@@ -208,60 +186,26 @@ class MainActivity : Activity() {
         }
     }
 
-    /** The state, from the service and what the edge reports */
-    private fun refresh() {
-        if (!N3nVpnService.running) {
-            show(State.OFF, null)
-            return
+    /** What the connection is doing, see Connection.kt */
+    private fun show(s: Snapshot) {
+        val look = when {
+            s.phase == Phase.CONNECTED -> ConnectButton.Look.ON
+            s.phase.busy -> ConnectButton.Look.BUSY
+            else -> ConnectButton.Look.OFF
         }
-        if (asking) {
-            return
-        }
-        asking = true
-        Thread {
-            val info = Status.query(this)
-            main.post {
-                asking = false
-                if (N3nVpnService.running) {
-                    // one missed answer (a timeout) does not make it amber
-                    val s = when {
-                        info == null && shown == State.ON -> State.ON
-                        info?.registered == true -> State.ON
-                        else -> State.WAIT
-                    }
-                    show(s, info ?: lastInfo)
-                } else {
-                    show(State.OFF, null)
-                }
-            }
-        }.start()
-    }
-
-    private var lastInfo: Status.Info? = null
-
-    private fun show(s: State, info: Status.Info?) {
-        shown = s
-        lastInfo = info
-        val color = getColor(
-            when (s) {
-                State.ON -> R.color.state_on
-                State.WAIT -> R.color.state_wait
-                State.OFF -> R.color.state_off
+        // what it is doing, or else what a tap does
+        val detail = s.doing(this) ?: getString(
+            when {
+                s.failed -> R.string.stopped_see_log
+                s.phase == Phase.CONNECTED -> R.string.tap_disconnect
+                else -> R.string.tap_connect
             }
         )
-        val ring = (connect.background.mutate() as RippleDrawable).getDrawable(0) as GradientDrawable
-        ring.setStroke((6 * resources.displayMetrics.density).toInt(), color)
-        (dot.background.mutate() as GradientDrawable).setColor(color)
+        // a tap while stopping connects again, once the edge is down
+        val starts = s.phase == Phase.OFF || s.phase == Phase.STOPPING
+        connect.show(look, s.title(this), detail, getString(if (starts) R.string.connect else R.string.disconnect))
 
-        connect.setText(if (s == State.OFF) R.string.connect else R.string.disconnect)
-        state.setText(
-            when (s) {
-                State.ON -> R.string.state_on
-                State.WAIT -> R.string.state_wait
-                State.OFF -> R.string.state_off
-            }
-        )
-
+        val info = if (s.phase == Phase.OFF) null else s.info
         val sn = info?.supernode
         val rtt = info?.rttMs
         supernode.text = when {

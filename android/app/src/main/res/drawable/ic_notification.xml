@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The notification's small icon: the three linked nodes of the app's
+     icon, white on nothing - the system takes the shape and tints it -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.6"
+        android:pathData="M12,6.5 L6,17 L18,17 Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M12,6.5m-3.2,0a3.2,3.2 0,1 1,6.4 0a3.2,3.2 0,1 1,-6.4 0" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M6,17m-3.2,0a3.2,3.2 0,1 1,6.4 0a3.2,3.2 0,1 1,-6.4 0" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M18,17m-3.2,0a3.2,3.2 0,1 1,6.4 0a3.2,3.2 0,1 1,-6.4 0" />
+</vector>
