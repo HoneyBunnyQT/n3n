@@ -25,15 +25,24 @@ if [ -d "$TOPDIR/.git" ]; then
 
     cd "$TOPDIR" || exit 1
 
-    VER_GIT_SHORT=$(git describe --abbrev=0)
-
-    if [ "$VER_FILE_SHORT" != "$VER_GIT_SHORT" ]; then
-        echo "WARNING: VERSION file does not match tag version ($VER_FILE_SHORT != $VER_GIT_SHORT)" 1>&2
-    fi
-
-    VER_SHORT="$VER_GIT_SHORT"
     VER_HASH=$(git rev-parse --short HEAD)
-    VER=$(git describe --abbrev=7 --dirty)
+
+    if VER_GIT_SHORT=$(git describe --abbrev=0 2>/dev/null); then
+        if [ "$VER_FILE_SHORT" != "$VER_GIT_SHORT" ]; then
+            echo "WARNING: VERSION file does not match tag version ($VER_FILE_SHORT != $VER_GIT_SHORT)" 1>&2
+        fi
+
+        VER_SHORT="$VER_GIT_SHORT"
+        VER=$(git describe --abbrev=7 --dirty)
+    else
+        # A checkout without tags, such as a shallow clone: the version
+        # is the VERSION file's, with the commit (an empty one would stop
+        # configure with a misleading error)
+        echo "WARNING: no tags in this git checkout, the version is from the VERSION file" 1>&2
+
+        VER_SHORT="$VER_FILE_SHORT"
+        VER="$VER_FILE_SHORT-g$(git describe --always --abbrev=7 --dirty)"
+    fi
 
     if git diff --quiet; then
         # In a clean build dir, use the last commit date
