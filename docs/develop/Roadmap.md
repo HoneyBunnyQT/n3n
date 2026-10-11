@@ -219,8 +219,9 @@ tests and `make lint` pass after each.
       and white night mode does not show; an adaptive launcher icon with
       a monochrome layer; icons on the tiles.  Open: try it on a phone;
       the QR code again, with a fuzz target for `qr_seal` and the
-      configuration it opens; maybe a navigation bar instead of the four
-      tiles, should the app get more screens (several networks, peers)
+      configuration it opens (postponed, 2026-10-11, see Decisions); maybe a
+      navigation bar instead of the four tiles, should the app get more
+      screens (several networks, peers)
 - [x] `n3n-edge help transform`: lists the ciphers and compressions built
       in, with the implementation of each (`*_IMPL` in `src/crypto/*.h`,
       `desc` of the transforms); also on `fixes`
@@ -248,8 +249,8 @@ tests and `make lint` pass after each.
       The management interface: `fuzz-mgmt`, which found an out-of-bounds
       read and several NULL dereferences on malformed local requests (all
       local only), and a base64 decode bug.  The TUN edge's Ethernet and
-      ARP: `fuzz-tun` (nothing found).  Open: `qr_seal` with the
-      configuration it opens (with the Android revamp)
+      ARP: `fuzz-tun` (nothing found).  Postponed: `qr_seal` with the
+      configuration it opens (see Decisions 2026-10-11)
 - [x] Interop: netns scenarios with edges and supernodes of the last
       release of upstream n3n (3.4.6) next to this tree: old edge, old
       supernodes (also with port guessing), a mixed federation, relayed,
@@ -332,7 +333,8 @@ tests and `make lint` pass after each.
       through the tunnel with the CPU per packet of each daemon, see
       testing.md
 - [ ] IPv6 address on the TAP device, from the config or assigned by the relay
-- [ ] Supernode lookup by DNS SRV (`resolve.c` TODO)
+- [ ] Supernode lookup by DNS SRV (`resolve.c` TODO): moved to v4, see
+      Decisions
 
 ### Later: the peer protocol (v4)
 
@@ -402,6 +404,10 @@ while `peer` keeps getting what does not touch the wire, merged into
 - [ ] Broadcast without a central node: answer ARP from the directory
       (proxy ARP) or a tree among relays
 - [ ] v3 bridge: the relay role keeps serving v3 edges
+- [ ] Relay lookup by DNS SRV (from v3's `resolve.c` TODO; waits for
+      v4, see Decisions 2026-10-11)
+- [ ] Signed configurations: a QR code (or file) signed by who may hand
+      out the community's configuration, checked before it is taken
 
 ### Far future
 
@@ -451,6 +457,14 @@ while `peer` keeps getting what does not touch the wire, merged into
   some setups may hold elsewhere, e.g. on a smart card, not in the config.
   Performance work (epoll, batched I/O, no alloc per packet) from
   2026-10-11 on.
+- 2026-10-11: Fuzzing `qr_seal` and the configuration a QR code opens is
+  postponed: the code's text is read in as a configuration typed in
+  would be, so a malicious code is a malicious configuration, which no
+  fuzzing makes harmless.  Codes signed by who may hand out the
+  community's configuration are an idea for v4 (with peer identities).
+- 2026-10-11: Supernode lookup by DNS SRV waits for v4: in v3, and with
+  header encryption above all, a community can live from not showing its
+  supernodes' ports as n3n's, which `_n3n._udp` records would give away.
 - 2026-10-10: Development goes on on `main`, which has all of `peer`;
   `peer` is not worked on any more and goes.  The fork's packages are
   named `n3n-be`.
