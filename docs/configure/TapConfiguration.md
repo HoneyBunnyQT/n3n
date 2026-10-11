@@ -116,6 +116,16 @@ total of 4 fragments will be sent over the internet. On the other hand, if the V
 MTU was set to 1460 bytes, it would result in only 3 fragments sent as the initial segment of
 3000 bytes would be split in 1460 + 1460 + 80 bytes without further fragmentation.
 
+The default MTU of 1290 makes frames of up to about 1440 bytes on the
+wire (relayed over IPv6 with AES), which fits paths of 1500 and 1492
+bytes (PPPoE).  On a smaller path - 1280 bytes, the IPv6 minimum, as some
+mobile networks and tunnels in tunnels leave - frames that do not fit get
+fragmented, and get lost where fragments are dropped.  Set
+`tuntap.mtu = 1128` there (in the `[tuntap]` section, on the edges of the
+community): that fits a 1280 byte path in every case.  The edge does not
+find the MTU of a path by itself yet; see
+[Path MTU](../develop/PathMtu.md).
+
 IP packet fragmentation in general is something to avoid, as described in
 http://www.hpl.hp.com/techreports/Compaq-DEC/WRL-87-3.pdf. If possible,
 the fragmentation should be moved to the TCP layer by a proper MSS value.

@@ -3,16 +3,37 @@ SPDX-License-Identifier: GPL-3.0-only
 SPDX-FileCopyrightText: Copyright Honey Bunny QT
 -->
 
-# Path MTU: a draft
+# Path MTU: notes for v4
 
-**A draft for discussion, nothing of it is code yet.**  See the
-[Roadmap](Roadmap.md) ("Open from the MTU scenarios") and the scenarios
-`mtu-1280*` in [netns_testing.md](netns_testing.md).
+**Postponed to v4 (decided 2026-10-11), nothing of it is code.**  This
+began as a draft for v3 and stays as the groundwork for v4.  See the
+[Roadmap](Roadmap.md) (the decision, and the item in the v4 list) and the
+scenarios `mtu-1280*` in [netns_testing.md](netns_testing.md).
 
-The constraint: v3 stays on the wire as it is - no new message types, no
-new fields.  Whatever the edges tell each other goes in-band, in what v3
-already carries, and an edge that does not know of it (an older n3n,
-n2n 3.x) must not notice anything.
+Why not in v3: the questions at the end of this page come from v3's wire
+format, where the size of the same frame depends on the path it takes -
+a relayed PACKET carries the sender's address (8 or 20 bytes more), IPv6
+has 20 bytes more of header than IPv4 - while paths change under a flow:
+IPv4 and IPv6 flip, peers go to a relay and come back.  A per-peer MTU
+learned in-band would chase a moving target.  v4 is to do one of:
+
+- **The same packet the same size on any path** - direct or relayed, IPv4
+  or IPv6 - so that what fits does not change when the path does; then a
+  single tunnel MTU per peer (or for all) is enough.
+- **Explicit packets for finding the MTU of a path**, a message type of
+  their own, which v4 can have; then the probes of K2 below without the
+  disguise as a PACKET.
+
+What follows was written under v3's constraint - no new message types,
+no new fields - and is kept for its numbers and options.
+
+## Until then, in v3
+
+Where a path is smaller than usual, set the TAP device's MTU so that the
+largest frame fits: on a path of 1280 bytes, `tuntap.mtu = 1128` fits in
+every case (relayed over IPv6 with AES, the largest overhead); the table
+below gives the overhead of each part.  See
+[TAP or TUN](../configure/TapConfiguration.md#mtu).
 
 ## The problem
 
@@ -168,7 +189,7 @@ but one bad path lowers it for all, it changes at run time (Android:
 a new `VpnService.Builder`), and it does not help the hosts behind.  At
 most a start-up setting: `tuntap.mtu = auto`, from K0.
 
-## A proposal, to discuss
+## A proposal (for v3, before it was postponed)
 
 1. **A1 with K0 first**: a tunnel MTU per peer, from `connection.path_mtu`
    or else as today (1500 for the outer path); ICMP into the TAP device
@@ -183,7 +204,7 @@ most a start-up setting: `tuntap.mtu = auto`, from K0.
 4. `pmtu_discovery` then means "DF and learn" (K1/K2); without it, as
    today.
 
-Questions:
+The questions, which led to postponing it:
 
 - K2 and K3 are the only parts that two edges have to agree on: is
   EtherType 0x88B5 plus a magic in a PACKET to the peer's MAC acceptable

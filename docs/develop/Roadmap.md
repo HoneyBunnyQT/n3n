@@ -181,11 +181,9 @@ tests and `make lint` pass after each.
 - [ ] Open from the MTU scenarios: on a 1280 byte path, frames that do not
       fit get fragmented (works) - lost where fragments are dropped, and
       refused with `connection.pmtu_discovery` ("Message too long", no
-      ICMP back into the TAP).  Candidates: ICMP "fragmentation needed" /
-      "packet too big" into the TAP for the inner sender, as kernel
-      tunnels do; TCP MSS clamping per peer; a TAP MTU derived from the
-      path.  A draft to discuss before any code, in-band only (no new
-      message types): [Path MTU](PathMtu.md)
+      ICMP back into the TAP).  Moved to v4 (see Decisions 2026-10-11 and
+      [Path MTU](PathMtu.md)); in v3 a smaller `tuntap.mtu` is the way,
+      see configure/TapConfiguration.md
 - [x] Reload: SIGHUP (not in a terminal), `n3nctl reload` (method
       `reload`), `ExecReload` in the units (`RELOADING=1`/`READY=1`).
       `src/reload.c` loads the configuration as at the start, compares
@@ -425,6 +423,13 @@ while `peer` keeps getting what does not touch the wire, merged into
 - [ ] Broadcast without a central node: answer ARP from the directory
       (proxy ARP) or a tree among relays
 - [ ] v3 bridge: the relay role keeps serving v3 edges
+- [ ] Path MTU, from v3's `mtu-1280*` scenarios (see [Path MTU](PathMtu.md)):
+      the same packet the same size on any path - direct or relayed, IPv4
+      or IPv6, so that a path that changes under a flow (a flip between
+      the families, a move to a relay) does not change what fits - or
+      else explicit packets for finding the MTU of a path, which v4 can
+      have.  Then ICMP "fragmentation needed" / "packet too big" into the
+      TAP and TCP MSS clamping per peer on what is known
 - [ ] Relay lookup by DNS SRV (from v3's `resolve.c` TODO; waits for
       v4, see Decisions 2026-10-11)
 - [ ] Signed configurations: a QR code (or file) signed by who may hand
@@ -483,6 +488,15 @@ while `peer` keeps getting what does not touch the wire, merged into
   would be, so a malicious code is a malicious configuration, which no
   fuzzing makes harmless.  Codes signed by who may hand out the
   community's configuration are an idea for v4 (with peer identities).
+- 2026-10-11: The path MTU waits for v4.  In v3 the size of a frame on the
+  wire depends on the path (relayed PACKETs carry the sender's address, 8
+  or 20 bytes; IPv6 has 20 bytes more of header than IPv4), and paths
+  change under a flow - IPv4 and IPv6 flip, peers move to a relay and
+  back - so a per-peer MTU learned in-band would chase a moving target,
+  and the questions of the draft (PathMtu.md) have no good answer within
+  v3's wire format.  v4 is to keep the same packet the same size on any
+  path, or have explicit packets for finding the MTU.  Until then: a
+  smaller `tuntap.mtu` where a path is small.
 - 2026-10-11: Supernode lookup by DNS SRV waits for v4: in v3, and with
   header encryption above all, a community can live from not showing its
   supernodes' ports as n3n's, which `_n3n._udp` records would give away.

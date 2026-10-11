@@ -16,5 +16,5 @@ documents with useful information.
 - [Roadmap and Scratchpad](Roadmap.md)
 - [Releasing n3n BE](Releasing.md): the packages, the keys
 - [Mobile and TUN: design notes](MobileAndTun.md)
-- [Path MTU: a draft](PathMtu.md)
+- [Path MTU: notes for v4](PathMtu.md)
 - [The Android app](../../android/README.md): building and trying it
