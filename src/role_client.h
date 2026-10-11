@@ -19,6 +19,9 @@
 // Registrations with the supernodes and the peers
 void reset_sup_attempts (struct n3n_runtime_data *eee);
 void edge_supernodes_changed (struct n3n_runtime_data *eee, bool curr_gone);
+// Who the edge is changed (its description, by a reload): its peers hear it
+// now, from a REGISTER, not only once they learn of the edge anew
+void edge_tell_peers (struct n3n_runtime_data *eee);
 void supernode_disconnect (struct n3n_runtime_data *eee);
 void transport_probe_close (struct n3n_runtime_data *eee);
 size_t encode_register_pkt (struct n3n_runtime_data * eee,

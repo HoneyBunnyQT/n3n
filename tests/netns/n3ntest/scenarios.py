@@ -235,14 +235,26 @@ SCENARIOS = [
     Scenario(
         "reload",
         "easy-kept / easy-changed; a's configuration loses the supernode a "
-        "is at and gets another description, then a gets SIGHUP: it "
-        "applies both while it runs, moves to the other supernode, and "
-        "the edges stay direct",
+        "is at and gets another description and a filter rule, then a "
+        "gets SIGHUP: it applies all three while it runs, moves to the "
+        "other supernode, b sees the new description at once, and the "
+        "edges stay direct",
         # a reload reads the file as the user the edge dropped to: in CI
         # the checkout, under the runner's home, is not readable for it
         Site(["easy-kept"], conf={"daemon": {"userid": 0, "groupid": 0}}),
         Site(["easy-changed"]),
         "direct", reload="a"),
+    Scenario(
+        "sn-tap-reload",
+        "easy-kept / the TAP device of sn2 (supernode.tap); sn2's "
+        "configuration gets another description and a filter rule for its "
+        "edge, then sn2 gets SIGHUP: its edge takes both, and a sees it "
+        "under its new description",
+        Site(["easy-kept"]),
+        Site(on_supernode="sn2"),
+        "relayed", reload="b",
+        # as for reload: the supernode reads the file again as root
+        sn_conf={"daemon": {"userid": 0, "groupid": 0}}),
     Scenario(
         "sn-outage",
         "both supernodes die while the edges are direct: the edges go on "

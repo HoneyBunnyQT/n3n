@@ -151,6 +151,24 @@ void edge_supernodes_changed (struct n3n_runtime_data *eee, bool curr_gone) {
 }
 
 
+void edge_tell_peers (struct n3n_runtime_data *eee) {
+
+    struct peer_info *peer, *tmp;
+
+    // the direct ones directly, as the periodic REGISTERs go
+    HASH_ITER(hh, eee->client.known_peers, peer, tmp) {
+        send_register(eee, &(peer->sock), peer->mac_addr, peer->last_cookie);
+    }
+    // the others through the supernode, as to a peer the edge just found
+    if(!eee->client.curr_sn) {
+        return;
+    }
+    HASH_ITER(hh, eee->client.pending_peers, peer, tmp) {
+        send_register(eee, &(eee->client.curr_sn->sock), peer->mac_addr, forwarded_reg_cookie(eee));
+    }
+}
+
+
 bool edge_is_registered (const struct n3n_runtime_data *eee, time_t now) {
 
     time_t last = SHARED_LOAD(eee->client.last_sup);

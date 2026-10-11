@@ -18,6 +18,7 @@
 #include <n3n/edge.h>           // for supernode_first
 #include <n3n/logging.h>        // for traceEvent
 #include <n3n/metrics.h>        // for n3n_metrics_set_session
+#include <n3n/network_traffic_filter.h>  // for create_network_traffic_filter
 #include <n3n/resolve.h>        // for RESOLVE_LIST_SUPERNODE, resolve_hostnames_str_add
 #include <signal.h>             // for sig_atomic_t
 #include <stdio.h>
@@ -59,6 +60,7 @@ static const char *const live_options[] = {
     "connection.watch_network",
     "filter.allow_multicast",
     "filter.allow_routing",
+    "filter.rule",
     "logging.verbose",
     "management.password",
     NULL
@@ -286,6 +288,68 @@ static void conf_release (n2n_edge_conf_t *conf) {
 }
 
 
+// What the edge of a supernode (supernode.tap) takes over of the live
+// options when they change: those of its own that the supernode does not
+// set for it, see edge_start_local().  Its edge is not reloaded on its own
+// - it has no configuration of its own, but a copy of the supernode's.
+static const char *const local_edge_options[] = {
+    "connection.description",
+    "connection.register_interval",
+    "filter.allow_multicast",
+    "filter.allow_routing",
+    "filter.rule",
+    NULL
+};
+
+static bool is_local_edge_option (const char *key) {
+
+    for(int i = 0; local_edge_options[i]; i++) {
+        if(!strcmp(local_edge_options[i], key)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+
+// The rules of the traffic filter as conf has them, for the edge of rt (a
+// supernode's own edge for a supernode): a filter of their own, which the
+// caches of verdicts know by its id, so that none of the old ones is
+// taken.  Not while packet threads use the filter, as they do with
+// daemon.threads.  The edge of a supernode shares the list of rules with
+// the supernode, and frees it at its end, see edge_term().
+static bool apply_rules (struct n3n_runtime_data *rt, n2n_edge_conf_t *conf) {
+
+    struct n3n_runtime_data *eee = rt->conf.is_supernode ? rt->relay.local_edge : rt;
+    filter_rule_t *rule, *tmp;
+    network_traffic_filter_t *filter;
+
+    if(eee && eee->threads) {
+        return false;
+    }
+    if(eee) {
+        filter = create_network_traffic_filter();
+        if(!filter) {
+            return false;
+        }
+        network_traffic_filter_add_rule(filter, conf->tap.network_traffic_filter_rules);
+        destroy_network_traffic_filter(eee->tap.network_traffic_filter);
+        eee->tap.network_traffic_filter = filter;
+    }
+
+    HASH_ITER(hh, rt->conf.tap.network_traffic_filter_rules, rule, tmp) {
+        HASH_DEL(rt->conf.tap.network_traffic_filter_rules, rule);
+        free(rule);
+    }
+    rt->conf.tap.network_traffic_filter_rules = conf->tap.network_traffic_filter_rules;
+    conf->tap.network_traffic_filter_rules = NULL;
+    if(eee && (eee != rt)) {
+        eee->conf.tap.network_traffic_filter_rules = rt->conf.tap.network_traffic_filter_rules;
+    }
+    return true;
+}
+
+
 // A supernode's communities: the [community NAME] sections, the community
 // file and community_regex, which reload_communities() reads anew
 static bool is_relay_community (const struct n3n_runtime_data *rt, const char *key) {
@@ -326,6 +390,10 @@ static bool apply (struct n3n_runtime_data *rt, const char *key, const struct se
         return true;
     }
 
+    if(!strcmp(key, "filter.rule")) {
+        return apply_rules(rt, conf);
+    }
+
     if(!strcmp(key, "community.supernode")) {
         // a supernode's federation is set up at its start; an edge needs one
         if(!edge || !resolve_hostnames_str_get(RESOLVE_LIST_SUPERNODE, 0)) {
@@ -354,9 +422,20 @@ static bool apply (struct n3n_runtime_data *rt, const char *key, const struct se
     if(n3n_config_set_option(&rt->conf, section, option, (char *)value) != 0) {
         return false;
     }
+    // and on the supernode's own edge, see local_edge_options
+    if(rt->conf.is_supernode && rt->relay.local_edge && is_local_edge_option(key)) {
+        n3n_config_set_option(&rt->relay.local_edge->conf, section, option, (char *)value);
+    }
 
     if(!strcmp(key, "connection.watch_network") && edge) {
         edge_netwatch_update(rt);
+    }
+    if(!strcmp(key, "connection.description")) {
+        if(edge) {
+            edge_tell_peers(rt);
+        } else if(rt->conf.is_supernode && rt->relay.local_edge) {
+            edge_tell_peers(rt->relay.local_edge);
+        }
     }
     return true;
 }

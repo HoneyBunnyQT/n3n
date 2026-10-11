@@ -120,12 +120,19 @@ What differs and can change while running is applied at once:
   `connection.punch_ports`, `connection.punch_ttl`,
   `connection.register_interval`, `connection.register_pkt_ttl`,
   `connection.supernode_selection`, `connection.tcp_fallback`,
-  `connection.watch_network`
-- `filter.allow_multicast`, `filter.allow_routing`
+  `connection.watch_network`; a new description is told to the peers at
+  once, with a REGISTER
+- `filter.allow_multicast`, `filter.allow_routing`, and the rules
+  (`filter.rule`): a new set of them takes over at once - not with packet
+  threads (`daemon.threads`), which use the filter while it changes; there
+  they wait for a restart
 - `logging.verbose`, `management.password`
 - a supernode's communities: `[community NAME]` sections,
   `supernode.community_file` and `supernode.community_regex`; the
   community file is read again in any case, as `reload_communities` does
+- the edge of a supernode (`supernode.tap`), which has no configuration of
+  its own but the supernode's: its description, register interval,
+  `filter.allow_*` and rules, as they change there
 
 Everything else - the community, its key and cipher, `connection.bind`, the
 TAP device and its address, `daemon.*` and so on - waits for a restart: the
@@ -140,9 +147,6 @@ $ n3nctl -k PASSWORD reload
     "restart": ["tuntap.address"]
 }
 ```
-
-Filter rules (`filter.rule`) are not compared yet: changing them needs a
-restart, and a reload does not say so.
 
 If the configuration cannot be loaded, nothing changes (`"loaded": false`).
 Note that n3n drops its privileges after the start (`daemon.userid`, 65534

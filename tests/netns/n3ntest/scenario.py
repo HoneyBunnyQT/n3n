@@ -1380,10 +1380,26 @@ class Run:
         if self.check_alive("spray"):
             time.sleep(2 * self.st.register_interval + 2)
 
+    # a filter rule the reload adds: it drops ICMP only, so the frames
+    # measured (UDP) pass
+    RELOAD_RULE = "0.0.0.0/0:[0,65535],0.0.0.0/0:[0,65535],ICMP-"
+
+    def _reload_log(self, d):
+        """The lines of a daemon's log about a reload"""
+        try:
+            with open(d.proc.log_path, errors="replace") as f:
+                log = f.read()
+        except OSError:
+            log = ""
+        return [line.split("] ", 1)[-1] for line in log.splitlines()
+                if "reload" in line or "ADD network traffic filter" in line]
+
     def reload_phase(self):
         """Change an edge's configuration file, SIGHUP it: it drops the
         supernode it is at, and moves to the other one"""
         site = self.sc.reload
+        if self.edges[site].get("on_supernode"):
+            return self.reload_tap_phase(site)
         d = self.edges[site]["daemon"]
         at = d.current_supernode() or ""
         victim = None
@@ -1402,6 +1418,7 @@ class Run:
                 and o != "description"]
         d.sections.setdefault("connection", []).append(
             ("description", site + "-reloaded"))
+        d.sections.setdefault("filter", []).append(("rule", self.RELOAD_RULE))
         write_conf(d.conf, d.sections)
         self.log("{}: without {} in its configuration, SIGHUP".format(
             site, victim))
@@ -1418,25 +1435,81 @@ class Run:
         ok = wait_for(moved, 30 + 2 * self.st.register_interval,
                       interval=0.5) == "ok"
         took = round(time.monotonic() - t, 1)
-        try:
-            with open(d.proc.log_path, errors="replace") as f:
-                log = f.read()
-        except OSError:
-            log = ""
-        lines = [line.split("] ", 1)[-1] for line in log.splitlines()
-                 if "reload" in line]
+        lines = self._reload_log(d)
         applied = any("applied:" in line
                       and "community.supernode" in line
                       and "connection.description" in line
+                      and "filter.rule" in line
                       for line in lines)
-        self.check("reload", ok and applied,
+        rule = any(self.RELOAD_RULE in line for line in lines)
+        self.check("reload", ok and applied and rule,
                    "{} at {} after {}s, {}".format(
                        site, d.current_supernode(), took,
-                       "both options applied" if applied
+                       "the three options applied, the rule in the filter"
+                       if applied and rule
                        else "its log of the reload: {}".format(
                            " | ".join(lines[-4:]) or "none")))
+        # the peers hear of the new description at once
+        desc = site + "-reloaded"
+        others = [e for s, e in self.edges.items()
+                  if "daemon" in e and s != site]
+
+        def told():
+            return all((e["daemon"].peer(self.edges[site]["mac"])[1] or {})
+                       .get("desc") == desc for e in others) or None
+        self.check("reload: the peers told", bool(wait_for(told, 10)),
+                   ", ".join("{} sees {}".format(s, (e["daemon"].peer(
+                       self.edges[site]["mac"])[1] or {}).get("desc"))
+                       for s, e in self.edges.items()
+                       if "daemon" in e and s != site))
         # A round of registrations for the peers to find each other again
         time.sleep(self.st.register_interval + 1)
+
+    def reload_tap_phase(self, site):
+        """Change the configuration of the supernode whose edge the site
+        is (supernode.tap): its edge's description and a filter rule, then
+        SIGHUP the supernode: its edge takes both, and the other edges see
+        it under its new description"""
+        sn = self.edges[site]["on_supernode"]
+        d = self.supernodes[sn]["daemon"]
+        desc = site + "-reloaded"
+        d.sections["connection"] = [
+            (o, v) for o, v in d.sections.get("connection", [])
+            if o != "description"] + [("description", desc)]
+        d.sections.setdefault("filter", []).append(("rule", self.RELOAD_RULE))
+        write_conf(d.conf, d.sections)
+        self.log("{}: its edge with description {} and a rule, SIGHUP".format(
+            sn, desc))
+        d.proc.send_signal(signal.SIGHUP)
+        t = time.monotonic()
+        others = [(s, e) for s, e in self.edges.items()
+                  if "daemon" in e and s != site]
+
+        def seen():
+            if not self.check_alive_quiet():
+                return "dead"
+            return "ok" if all(
+                (e["daemon"].peer(self.edges[site]["mac"])[1] or {})
+                .get("desc") == desc for _, e in others) else None
+        ok = wait_for(seen, 30 + 3 * self.st.register_interval,
+                      interval=0.5) == "ok"
+        took = round(time.monotonic() - t, 1)
+        lines = self._reload_log(d)
+        applied = any("applied:" in line
+                      and "connection.description" in line
+                      and "filter.rule" in line for line in lines)
+        rule = any(self.RELOAD_RULE in line for line in lines)
+        self.check("reload", ok and applied and rule,
+                   "{} seen as {} after {}s, {}".format(
+                       site, ", ".join(
+                           "{} by {}".format((e["daemon"].peer(
+                               self.edges[site]["mac"])[1] or {})
+                               .get("desc"), s)
+                           for s, e in others), took,
+                       "both options applied, the rule in the filter"
+                       if applied and rule
+                       else "the log of {}'s reload: {}".format(
+                           sn, " | ".join(lines[-4:]) or "none")))
 
     def udp_lost_phase(self):
         """UDP stops getting through at a site, see udp_lost: wait for its

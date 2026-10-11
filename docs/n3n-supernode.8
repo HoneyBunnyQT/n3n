@@ -149,8 +149,9 @@ every destination to a port of its own, even with just this supernode.
 \fBn3nctl reload\fR, \fBsystemctl reload\fR or SIGHUP (not while it runs
 in a terminal, where SIGHUP stops it) has the supernode read its
 configuration again.  The communities, \fBlogging.verbose\fR and
-\fBmanagement.password\fR change at once; other changes are logged as
-waiting for a restart.  See docs/configure/ConfigurationFiles.md.
+\fBmanagement.password\fR change at once, and so do the description, the
+register interval and the filter rules of its own edge
+(\fBsupernode.tap\fR); other changes are logged as waiting for a restart.  See docs/configure/ConfigurationFiles.md.
 .SH RESTART
 When supernode restarts it loses all registration information from associated
 edge nodes.  The edges register again within their

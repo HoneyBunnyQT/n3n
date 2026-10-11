@@ -327,8 +327,9 @@ docs/configure/Systemd.md.
 \fBn3nctl reload\fR, \fBsystemctl reload\fR or SIGHUP (not while it runs
 in a terminal, where SIGHUP stops it, as Ctrl-C does) has the edge read its
 configuration again.  What can change while running - the supernodes, the
-register interval, \fBlogging.verbose\fR, \fBmanagement.password\fR and
-more - changes at once; the rest is logged as waiting for a restart.  The
+register interval, the filter rules, \fBlogging.verbose\fR,
+\fBmanagement.password\fR and more - changes at once; the rest is logged
+as waiting for a restart.  The
 configuration file has to be readable for \fBdaemon.userid\fR then.  See
 docs/configure/ConfigurationFiles.md.
 

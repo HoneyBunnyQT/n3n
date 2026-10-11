@@ -190,9 +190,11 @@ tests and `make lint` pass after each.
       the dumps option by option with what runs, applies the live ones
       (supernodes, register interval, password, verbosity, a supernode's
       communities, ...) and reports the rest as waiting for a restart.
-      netns scenario `reload`.  Open: filter rules (not in the dump, so not
-      compared); the edge of a supernode (`supernode.tap`) takes only what
-      the supernode's configuration changes
+      netns scenario `reload`.  Since 2026-10-11 also the filter rules (in
+      the dump now, a new filter swapped in; with packet threads at a
+      restart), the edge of a supernode (`supernode.tap`) takes what of
+      its own changes in the supernode's configuration (`sn-tap-reload`),
+      and a new description reaches the peers at once
 - [ ] Ideas to pick from (all v3 compatible): keep learned supernodes on disk;
       names for peers (DNS); IPv6 on the TAP device from a prefix derived
       from the community; epoll and batched I/O; no alloc per
