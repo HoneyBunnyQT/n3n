@@ -450,6 +450,26 @@ SCENARIOS = [
         Site(["hard-range"]), Site(["hard-range"]),
         "relayed", tcp_burst=300),
     Scenario(
+        "spray",
+        "mutated PDUs of the community at the supernodes, over UDP and "
+        "TCP, and at b (no NAT) for 20s (fuzz-spray): all stay up, the "
+        "edges direct after it",
+        Site(["easy-kept"]), Site([]),
+        "direct", spray=20, tags=["spray"]),
+    Scenario(
+        "spray-header-enc",
+        "as spray, with encrypted headers: the sprayer has the "
+        "community's keys and encrypts what it changed",
+        Site(["easy-kept"]), Site([]),
+        "direct", auth="header", spray=20, tags=["spray"]),
+    Scenario(
+        "spray-userpw",
+        "as spray-header-enc, with user/password authentication (the "
+        "sprayer has no user)",
+        Site(["easy-kept"]), Site([]),
+        "direct", auth="userpw", sn_start_gap=1.1, spray=20,
+        tags=["spray"]),
+    Scenario(
         "sn-tap",
         "an edge behind a NAT and the TAP device of its supernode "
         "(supernode.tap)",

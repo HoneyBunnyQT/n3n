@@ -49,6 +49,15 @@ once crashed — add new ones here) and the `seeds/` that `fuzz-seeds`
 generates. Each input is copied to its own buffer first, so a read past the
 end shows up under AddressSanitizer.
 
+## At running daemons
+
+`fuzz-spray` sends mutated PDUs over the network instead, at running
+edges and supernodes, for the netns scenarios tagged `spray` (see
+docs/develop/netns_testing.md): from the seeds below, with a community,
+its header keys and the daemons' MACs put in, so that the changes reach
+the handlers and their state, which the targets above do not.  It uses
+n3n's own random numbers, seeded with `-s`: the same seed, the same PDUs.
+
 ## Seeds
 
 `fuzz-seeds DIR` writes valid starting inputs into `DIR/header`,

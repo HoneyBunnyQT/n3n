@@ -222,6 +222,12 @@ def main():
                     help="run a failed scenario up to N times more: one "
                     "that passes then is FLAKY, which passes the run "
                     "but is reported (default 0)")
+    ap.add_argument("--spray-seconds", type=int, metavar="S",
+                    help="the scenarios tagged spray send their mutated "
+                    "PDUs for S seconds (default: their own, 20)")
+    ap.add_argument("--spray-seed", type=int, metavar="N",
+                    help="the seed of their mutations, to repeat a run "
+                    "(default: a random one, in the log and result.json)")
     ap.add_argument("--skip-missing", action="store_true",
                     help="exit 0 if root, ip, nft or TUN are missing")
     ap.add_argument("--cleanup", action="store_true",
@@ -256,6 +262,8 @@ def main():
         verbose=args.verbose,
         connect_timeout=args.connect_timeout,
         wrap=shlex.split(args.wrap),
+        spray_seconds=args.spray_seconds,
+        spray_seed=args.spray_seed,
     )
     Daemon.keep_root = args.keep_root
 
@@ -371,6 +379,10 @@ def main():
         for c in r.get("checks", []):
             if not c["ok"]:
                 print("  {}: {}".format(c["name"], c["detail"]))
+        if "spray" in r:
+            print("  again: run.py --spray-seed {} --spray-seconds {} {}"
+                  .format(r["spray"]["seed"], r["spray"]["seconds"],
+                          r["scenario"]))
     extra = ", ".join("{} {}".format(n, s) for s, n in (
         ("PASS+", sum(1 for r in results if status(r) == "PASS+")),
         ("FLAKY", len(flaky))) if n)

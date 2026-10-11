@@ -388,7 +388,7 @@ test.fuzz: fuzz
 	    tests/fuzz/fuzz-$$t tests/fuzz/regress/$$t tests/fuzz/seeds/$$t || exit 1; \
 	done
 
-test.netns.full: apps	# needs apps
+test.netns.full: apps fuzz	# needs apps, and fuzz-spray
 	$(NETNS_RUN) $(NETNS_ARGS)
 
 .PHONY: lint lint.python lint.ccode lint.shell lint.yaml lint.man

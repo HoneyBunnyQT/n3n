@@ -33,6 +33,7 @@ A run of a scenario:
 
 import json
 import os
+import random
 import re
 import signal
 import subprocess
@@ -169,7 +170,7 @@ class Scenario:
                  size=None, outage=False, outage_then=None,
                  outage_max_gap=None, reload=None, sn_versions=None,
                  direct_ok=None, sn_peer_family=4, sn_start_gap=0,
-                 tcp_burst=0):
+                 tcp_burst=0, spray=0):
         self.name = name
         self.desc = desc
         self.sites = {"a": a, "b": b}
@@ -263,6 +264,11 @@ class Scenario:
         # opened at once after the warm-up and held while the frames go:
         # it is to stay up and pass them
         self.tcp_burst = tcp_burst
+        # After the warm-up, tests/fuzz/fuzz-spray sends mutated PDUs for
+        # this many seconds at the supernodes, over UDP and TCP, and at
+        # the edges without NAT: the daemons are to stay up, and the
+        # frames to go through after it
+        self.spray = spray
 
     def directions(self):
         return {
@@ -322,7 +328,8 @@ class Settings:
 
     def __init__(self, topdir, workdir, register_interval=5, punch_ports=128,
                  frames=500, rate=200, size=64, loss=0.01, verbose=2,
-                 connect_timeout=90, relay_observe=None, wrap=()):
+                 connect_timeout=90, relay_observe=None, wrap=(),
+                 spray_seconds=None, spray_seed=None):
         self.topdir = topdir
         self.workdir = workdir
         self.edge_bin = os.path.join(topdir, "apps", "n3n-edge")
@@ -340,6 +347,11 @@ class Settings:
         # of registration, by default
         self.relay_observe = relay_observe or 4 * register_interval + 2
         self.wrap = list(wrap)
+        # the scenarios tagged spray: how long instead of their own time,
+        # and the seed of fuzz-spray instead of a random one (to repeat a
+        # run)
+        self.spray_seconds = spray_seconds
+        self.spray_seed = spray_seed
 
 
 class Check:
@@ -1202,6 +1214,58 @@ class Run:
         # let the supernode go through them before the frames
         time.sleep(2)
 
+    def spray_phase(self):
+        """Mutated PDUs at the daemons (tests/fuzz/fuzz-spray), from the
+        namespace of the last supernode, with the community, its header
+        keys and the daemons' MACs to put in; then a few rounds of
+        registration for what they mixed up, which v3 cannot keep a
+        member of the community from doing, to settle"""
+        fuzz = os.path.join(self.st.topdir, "tests", "fuzz")
+        spray = os.path.join(fuzz, "fuzz-spray")
+        if not os.access(spray, os.X_OK):
+            raise LabError("{} is not built: make fuzz".format(spray))
+        seeds = os.path.join(self.workdir, "seeds")
+        subprocess.run([os.path.join(fuzz, "fuzz-seeds"), seeds],
+                       check=True, stdout=subprocess.DEVNULL)
+        rate = 1000
+        seconds = self.st.spray_seconds or self.sc.spray
+        seed = self.st.spray_seed
+        if seed is None:
+            seed = random.randrange(1 << 32)
+        argv = [spray, "-c", COMMUNITY, "-t", str(seconds),
+                "-r", str(rate), "-s", str(seed)]
+        if self.sc.auth:
+            argv.append("-e")
+        for e in self.edges.values():
+            argv += ["-m", e["mac"]]
+        for i in range(1, len(self.supernodes) + 1):
+            argv += ["-m", "02:00:00:5e:00:{:02x}".format(i)]
+        argv.append(seeds)
+        for name, sn in sorted(self.supernodes.items()):
+            argv += ["udp:{}:{}".format(sn["ip"], SN_PORT),
+                     "tcp:{}:{}".format(sn["ip"],
+                                        self.sc.sn_tcp_port or SN_PORT)]
+        for sname, site in sorted(self.sc.sites.items()):
+            if not site.nat and not site.on_supernode:
+                argv.append("udp:{}:{}".format(self.edges[sname]["ip"],
+                                               EDGE_PORT))
+        out = os.path.join(self.workdir, "spray.out")
+        self.log("spray: {}s at {}/s, seed {} (run.py --spray-seed {} {})"
+                 .format(seconds, rate, seed, seed, self.sc.name))
+        p = self.lab.spawn("spray", self.supernodes[max(self.supernodes)]
+                           ["ns"], argv, stdout_path=out)
+        if not wait_for(lambda: not p.alive(), seconds + 30):
+            p.stop()
+        with open(out) as f:
+            lines = f.read().split()
+        sent = int(lines[-3]) if len(lines) >= 3 else 0
+        self.result["spray"] = {"seed": seed, "sent": sent,
+                                "seconds": seconds}
+        self.check("spray", sent >= seconds * rate // 2,
+                   "{} mutated PDUs sent".format(sent))
+        if self.check_alive("spray"):
+            time.sleep(2 * self.st.register_interval + 2)
+
     def reload_phase(self):
         """Change an edge's configuration file, SIGHUP it: it drops the
         supernode it is at, and moves to the other one"""
@@ -1493,6 +1557,8 @@ class Run:
                 self.reload_phase()
             if self.sc.tcp_burst and self.check_alive("warm-up"):
                 self.tcp_burst_phase()
+            if self.sc.spray and self.check_alive("warm-up"):
+                self.spray_phase()
             if self.check_alive("warm-up"):
                 n, sent, deltas, modes = self.measure()
                 received = self.stop_receivers()

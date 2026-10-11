@@ -3,6 +3,7 @@ fuzz-wire
 fuzz-header
 fuzz-transop
 fuzz-seeds
+fuzz-spray
 *.exe
 
 # Generated seed corpus, fuzzer scratch and what crashed

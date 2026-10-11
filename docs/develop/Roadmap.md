@@ -229,11 +229,13 @@ tests and `make lint` pass after each.
       decoders and the transforms (`tests/fuzz`), which found the
       receive-path bugs of 3.4.7 (GHSA); their inputs in the regression
       corpus, replayed by `make test` and under the sanitizers, libFuzzer
-      in CI on every push (`fuzz.yml`).  Open: the handlers with their
-      state, through the netns lab (a sender of mutated PDUs at running
-      daemons); targets for the TCP framing, the management interface,
-      `tun.c`, and `qr_seal` with the configuration it opens (with the
-      Android revamp)
+      in CI on every push (`fuzz.yml`).  The handlers with their state:
+      `fuzz-spray`, mutated PDUs at running daemons over UDP and TCP, in
+      the netns scenarios tagged `spray`, which found a supernode's NAK
+      encoded with a token from the stack (a crash; upstream since 3.4.6)
+      and a negative shift in `bitlen2mask()`.  Open: targets for the TCP
+      framing, the management interface, `tun.c`, and `qr_seal` with the
+      configuration it opens (with the Android revamp)
 - [x] Interop: netns scenarios with edges and supernodes of the last
       release of upstream n3n (3.4.6) next to this tree: old edge, old
       supernodes (also with port guessing), a mixed federation, relayed,

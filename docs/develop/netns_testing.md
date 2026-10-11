@@ -129,6 +129,45 @@ gives the name in `N2N_FEDERATION` instead, which gets into the key.
 | interop-n2n-relayed | hard-range / hard-range, a and sn1 n2n | relayed |
 | interop-n2n-header-enc | encrypted headers, a n2n, b easy-changed | direct |
 
+### Mutated PDUs (spray)
+
+The scenarios tagged `spray` take fuzzing to running daemons: after the
+warm-up, `tests/fuzz/fuzz-spray` (built by `make fuzz`) sends mutated
+PDUs of the community for 20 seconds, a thousand a second, at both
+supernodes, over UDP and TCP, and at the edge without NAT.  It starts
+from the PDUs `fuzz-seeds` makes, puts the community and the daemons'
+MACs into them, changes a few bytes, a length, the message type, and
+with encrypted headers encrypts the header with the community's keys,
+so that what it changed reaches the handlers behind the decryption, with
+all their state.  The daemons have to stay up, and the edges to get
+their frames through after a few rounds of registration (what a member
+of a v3 community can mix up, it can).
+
+```
+make fuzz
+sudo tests/netns/run.py @spray
+sudo tests/netns/run.py --spray-seconds 300 spray      # longer
+sudo tests/netns/run.py --spray-seed 1234 spray        # the same PDUs again
+```
+
+The seed of each run is in its log, its `result.json`, and with a
+failure in the summary, as the command that repeats it.  Under the
+sanitizers (`sanitizers.yml`) a finding comes with its stack in the
+daemon's log; for one in a plain build, `--wrap "gdb -q -batch -ex run
+-ex bt --args"` puts the backtrace there.
+
+| scenario | sites | expected |
+|----------|-------|----------|
+| spray | easy-kept / public | direct |
+| spray-header-enc | as spray, encrypted headers | direct |
+| spray-userpw | as spray, user/password (the sprayer has no user) | direct |
+
+Found with them: a supernode that refused a REGISTER_SUPER encoded the
+NAK with an auth token of whatever length and bytes were on the stack,
+out of the buffer (a crash at once; also in upstream n3n since 3.4.6);
+and `bitlen2mask()` shifted by a negative count for a prefix length above
+32 from the wire.
+
 ### Other CPUs (cross)
 
 The scenarios tagged `cross` run an edge, and in some a supernode, of this

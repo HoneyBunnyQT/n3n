@@ -23,9 +23,9 @@ TARGET_DRIVER=driver.c
 endif
 
 .PHONY: all clean
-all: $(TARGETS) fuzz-seeds
+all: $(TARGETS) fuzz-seeds fuzz-spray
 
-$(TARGETS) fuzz-seeds: ../../src/libn3n.a fuzz.h
+$(TARGETS) fuzz-seeds fuzz-spray: ../../src/libn3n.a fuzz.h
 
 $(TARGETS): %: %.c fuzz-common.c $(TARGET_DRIVER)
 	@echo "  CC      $@"
@@ -35,6 +35,11 @@ fuzz-seeds: fuzz-seeds.c fuzz-common.c
 	@echo "  CC      $@"
 	@$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) $(filter %.c,$^) $(LDLIBS) -o $@
 
+# mutated PDUs at running daemons, for the netns scenarios tagged "spray"
+fuzz-spray: fuzz-spray.c
+	@echo "  CC      $@"
+	@$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) $(filter %.c,$^) $(LDLIBS) -o $@
+
 clean:
-	rm -f $(TARGETS) fuzz-seeds *.o *.d
+	rm -f $(TARGETS) fuzz-seeds fuzz-spray *.o *.d
 	rm -rf seeds work
