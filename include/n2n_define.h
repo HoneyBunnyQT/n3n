@@ -111,8 +111,10 @@ enum n3n_event_topic {
 #define N3N_MGMT_PASSWORD  "n3n"               /* default password for management port access (so far, json only) */
 
 
-#define N2N_TCP_BACKLOG_QUEUE_SIZE   3         /* number of concurrently pending connections to be accepted */
-                                               /* NOT the number of max. TCP connections                    */
+#define N2N_TCP_BACKLOG_QUEUE_SIZE   128       /* number of concurrently pending connections to be accepted */
+                                               /* NOT the number of max. TCP connections; with fewer, the   */
+                                               /* kernel drops the SYNs of edges coming at once (after an   */
+                                               /* outage, falling back to TCP), which retry seconds later   */
 
 #define N2N_CLOSE_SOCKET_COUNTER_MAX 15        /* number of times of edge's reconnects to supernode after   */
                                                /* which the socket explicitly is closed before reopening    */
