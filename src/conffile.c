@@ -1008,7 +1008,17 @@ static void dump_option (FILE *f, void *conf, int level, const struct n3n_conf_o
             }
             return;
         }
-        // TODO: if type == n3n_conf_filter_rule ...
+        if(option.type == n3n_conf_filter_rule) {
+            filter_rule_t *rules = *(filter_rule_t **)((char *)conf + option.offset);
+            filter_rule_t *rule, *tmp;
+            if(!rules && level >= 2) {
+                fprintf(f, "#%s=\n", option.name);
+            }
+            HASH_ITER(hh, rules, rule, tmp) {
+                fprintf(f, "%s=%s\n", option.name, filter_rule_str(rule));
+            }
+            return;
+        }
 
         // enough for the longest value, a list of N3N_BIND_MAX addresses
         char buf[512];

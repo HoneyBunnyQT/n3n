@@ -238,10 +238,7 @@ void collect_packet_info (packet_address_proto_info_t* out_info, unsigned char *
     };
 }
 
-/* for [-Wmissing-declarations] */
-const char* get_filter_rule_info_log_string (filter_rule_t* rule);
-
-const char* get_filter_rule_info_log_string (filter_rule_t* rule) {
+const char *filter_rule_str (const filter_rule_t *rule) {
 
     // the returned string lives in here, one per thread
     static N3N_THREAD_LOCAL char buf[1024];
@@ -515,7 +512,7 @@ void network_traffic_filter_add_rule (network_traffic_filter_t* filter, filter_r
         filter_rule_t *new_rule = malloc(sizeof(filter_rule_t));
         memcpy(new_rule, item, sizeof(filter_rule_t));
         HASH_ADD(hh, filter->rules, key, sizeof(filter_rule_key_t), new_rule);
-        traceEvent(TRACE_NORMAL, "### ADD network traffic filter %s", get_filter_rule_info_log_string(new_rule));
+        traceEvent(TRACE_NORMAL, "### ADD network traffic filter %s", filter_rule_str(new_rule));
     }
 }
 

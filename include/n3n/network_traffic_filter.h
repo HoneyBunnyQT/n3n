@@ -171,4 +171,7 @@ void network_traffic_filter_add_rule (network_traffic_filter_t* filter, filter_r
 //rule_str format: src_ip/len:[b_port,e_port],dst_ip/len:[s_port,e_port],TCP+/-,UDP+/-,ICMP+/-
 uint8_t process_traffic_filter_rule_str (const char* rule_str, filter_rule_t* rule_struct);
 
+// A rule as filter.rule takes it, in a buffer of the calling thread's
+const char *filter_rule_str (const filter_rule_t *rule);
+
 #endif //N3N_NETWORK_TRAFFIC_FILTER_H
