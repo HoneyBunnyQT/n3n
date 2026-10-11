@@ -41,6 +41,11 @@
         <item name="android:textAllCaps">false</item>
         <item name="android:stateListAnimator">@null</item>
         <item name="android:minHeight">56dp</item>
+        <!-- with an icon on top, tinted as the text -->
+        <item name="android:drawableTint">@color/accent</item>
+        <item name="android:drawablePadding">6dp</item>
+        <item name="android:paddingTop">14dp</item>
+        <item name="android:paddingBottom">14dp</item>
     </style>
 
     <style name="Filled">

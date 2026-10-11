@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The launcher icon before Android 8: three nodes, linked, on a circle -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path android:fillColor="#1F6FEB" android:pathData="M24,24m-22,0a22,22 0,1 1,44 0a22,22 0,1 1,-44 0" />
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="2"
+        android:pathData="M24,15.5 L16.5,29 L31.5,29 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M24,15.5m-4,0a4,4 0,1 1,8 0a4,4 0,1 1,-8 0" />
+    <path android:fillColor="#FFFFFF" android:pathData="M16.5,29m-4,0a4,4 0,1 1,8 0a4,4 0,1 1,-8 0" />
+    <path android:fillColor="#FFFFFF" android:pathData="M31.5,29m-4,0a4,4 0,1 1,8 0a4,4 0,1 1,-8 0" />
+</vector>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The launcher icon's foreground, and its monochrome layer for themed
+     icons: three nodes, linked, within the 66dp circle that every mask
+     keeps -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="4"
+        android:pathData="M54,39.6 L38,68.4 L70,68.4 Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M54,39.6m-8,0a8,8 0,1 1,16 0a8,8 0,1 1,-16 0" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M38,68.4m-8,0a8,8 0,1 1,16 0a8,8 0,1 1,-16 0" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M70,68.4m-8,0a8,8 0,1 1,16 0a8,8 0,1 1,-16 0" />
+</vector>
