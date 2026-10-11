@@ -450,6 +450,14 @@ SCENARIOS = [
         Site(["hard-range"]), Site(["hard-range"]),
         "relayed", tcp_burst=300),
     Scenario(
+        "sn-tcp-1100",
+        "as sn-tcp-burst with 1100 connections, beyond the 1024 of "
+        "select(), and the supernodes started with a soft limit of 1024 "
+        "open files (systemd's): epoll, and the limit raised to the hard "
+        "one",
+        Site(["hard-range"]), Site(["hard-range"]),
+        "relayed", tcp_burst=1100, sn_nofile=1024),
+    Scenario(
         "spray",
         "mutated PDUs of the community at the supernodes, over UDP and "
         "TCP, and at b (no NAT) for 20s (fuzz-spray): all stay up, the "

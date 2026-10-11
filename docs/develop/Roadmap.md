@@ -309,8 +309,10 @@ tests and `make lint` pass after each.
 - [x] epoll in the mainloop instead of `select()` on Linux (`mainloop.c`),
       which lifts the limit of FD_SETSIZE (1024) on its fds - a
       supernode's TCP connections - to what the process may open; other
-      systems keep `select()`.  Open: a test with more than 1024 TCP
-      connections
+      systems keep `select()`.  The supernode raises its soft limit of
+      open files to the hard one, which systemd leaves at 1024 for
+      programs that use `select()`; netns scenario `sn-tcp-1100` (1100
+      connections, all taken; 1001 without the raise)
 - [x] Batched I/O: `recvmmsg()` / `sendmmsg()` on Linux (`sock.c`,
       `udp_drain()`, `sock_batch_begin()`), the edge's sends of a tap batch
       and all receives on the sockets of `connection.bind`: up to a third

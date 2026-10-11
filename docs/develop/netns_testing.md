@@ -321,6 +321,8 @@ ports from all of it.
 | tcp-fallback-userpw | as tcp-fallback-back, with user/password authentication | direct, a back on UDP |
 | tcp-port | as tcp-fallback-back, the supernodes with UDP on 7654 and TCP on 4443 only (`sn_tcp_port`) | direct, after a over TCP to 4443 |
 | tcp-only | easy-kept with its supernodes as `tcp://` only (`tcp_only`) / public | relayed, a over TCP from the start |
+| sn-tcp-burst | hard-range / hard-range, 300 TCP connections to a's supernode at once, held while the frames go (`tcp_burst`) | relayed; the supernode takes all of them (its own sockets, not what waits in the kernel's queue) |
+| sn-tcp-1100 | as sn-tcp-burst with 1100 connections, the supernodes started with a soft limit of 1024 open files (`sn_nofile`), as under systemd | relayed; all taken: epoll, and the limit raised to the hard one |
 | tun-tap | easy-kept with `tuntap.type=tun` / easy-changed with a TAP device | direct, the TUN edge building the frames |
 | tun-tun | hard-range / hard-range, both with `tuntap.type=tun` | relayed |
 | reload | easy-kept / easy-changed; a's configuration loses the supernode a is at and gets another description, then SIGHUP | a applies both while it runs and moves to the other supernode; direct |

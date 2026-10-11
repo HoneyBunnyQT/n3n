@@ -35,6 +35,7 @@ import json
 import os
 import random
 import re
+import resource
 import signal
 import subprocess
 import sys
@@ -170,7 +171,7 @@ class Scenario:
                  size=None, outage=False, outage_then=None,
                  outage_max_gap=None, reload=None, sn_versions=None,
                  direct_ok=None, sn_peer_family=4, sn_start_gap=0,
-                 tcp_burst=0, spray=0):
+                 tcp_burst=0, spray=0, sn_nofile=None):
         self.name = name
         self.desc = desc
         self.sites = {"a": a, "b": b}
@@ -264,6 +265,9 @@ class Scenario:
         # opened at once after the warm-up and held while the frames go:
         # it is to stay up and pass them
         self.tcp_burst = tcp_burst
+        # the soft limit of open files the supernodes start with, as under
+        # systemd (1024): with epoll, they are to raise it themselves
+        self.sn_nofile = sn_nofile
         # After the warm-up, tests/fuzz/fuzz-spray sends mutated PDUs for
         # this many seconds at the supernodes, over UDP and TCP, and at
         # the edges without NAT: the daemons are to stay up, and the
@@ -804,7 +808,7 @@ class Run:
             d = (N2nSupernode if is_n2n(version) else Supernode)(
                 self.lab, name, sn["ns"], self._session(name),
                 self.st.binary("n3n-supernode", version),
-                sections, wrap=self.st.wrap)
+                sections, wrap=self._sn_wrap())
             d.start()
             self._log_left_out(name, d)
             sn["daemon"] = d
@@ -1171,6 +1175,30 @@ class Run:
             self.log("{}: its version does not know {}".format(
                 who, ", ".join(sorted(set(d.left_out)))))
 
+    def _sn_wrap(self):
+        if not self.sc.sn_nofile:
+            return self.st.wrap
+        hard = resource.getrlimit(resource.RLIMIT_NOFILE)[1]
+        hard = "unlimited" if hard == resource.RLIM_INFINITY else hard
+        return ["prlimit", "--nofile={}:{}".format(self.sc.sn_nofile, hard),
+                "--"] + self.st.wrap
+
+    @staticmethod
+    def _sockets(pid):
+        """How many sockets the process has open"""
+        n = 0
+        try:
+            for fd in os.listdir("/proc/{}/fd".format(pid)):
+                try:
+                    if os.readlink("/proc/{}/fd/{}".format(
+                            pid, fd)).startswith("socket:"):
+                        n += 1
+                except OSError:
+                    pass
+        except OSError:
+            pass
+        return n
+
     def tcp_burst_phase(self):
         """Open sc.tcp_burst TCP connections to the supernode of edge a,
         from the namespace of another one, and keep them open"""
@@ -1182,6 +1210,8 @@ class Run:
             raise LabError("tcp burst: no supernode of a ({}) or no other "
                            "one to connect from".format(at))
         ip = self.supernodes[target[0]]["ip"]
+        pid = self.supernodes[target[0]]["daemon"].proc.popen.pid
+        before = self._sockets(pid)
         ready = os.path.join(self.workdir, "tcp-burst.ready")
         script = (
             "import socket, sys, time, resource\n"
@@ -1209,8 +1239,19 @@ class Run:
             opened = f.read().strip()
         self.log("tcp burst: {} of {} connections to {} open".format(
             opened, self.sc.tcp_burst, target[0]))
+        opened = int(opened or 0)
+        # what the supernode took (accept()), not what waits in the
+        # kernel's queue: its own sockets
+        accepted = wait_for(
+            lambda: max(self._sockets(pid) - before, 0)
+            if self._sockets(pid) - before >= opened else None, 15) \
+            or max(self._sockets(pid) - before, 0)
         self.result["tcp_burst"] = {"supernode": target[0],
-                                    "opened": int(opened or 0)}
+                                    "opened": opened, "accepted": accepted}
+        self.check("tcp burst", opened == self.sc.tcp_burst
+                   and accepted >= opened,
+                   "{} of {} connections opened, {} taken by {}".format(
+                       opened, self.sc.tcp_burst, accepted, target[0]))
         # let the supernode go through them before the frames
         time.sleep(2)
 
