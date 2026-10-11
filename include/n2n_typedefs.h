@@ -690,6 +690,8 @@ struct n3n_rt_client {
     size_t sup_attempts;                                                 /**< Number of remaining attempts to this supernode. */
     bool tcp;                                                            /**< the supernode is reached over TCP now, see transport_check() */
     uint8_t giveups;                                                     /**< supernodes given up on in a row, over the current transport */
+    bool tcp_answered;                                                   /**< over TCP: a supernode answered since the edge went on TCP */
+    bool tcp_conn_rx;                                                    /**< a PDU came over the current TCP connection */
     int probe_sock;                                                      /**< over TCP by fallback: a UDP socket to see whether UDP works again */
     bool probe_ok;                                                       /**< a supernode answered on it */
     time_t last_probe;

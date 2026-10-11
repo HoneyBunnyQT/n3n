@@ -50,6 +50,7 @@ struct peer_info {
     uint8_t transports;     /* a supernode: N3N_TRANSPORT_*, 0 for both */
     char *tcp_hostname;     /* a supernode: its "tcp://" entry, if TCP is elsewhere than sock */
     n3n_sock_t tcp_sock;    /* where it is reached over TCP then */
+    bool tcp_answered;      /* a supernode: it answered over TCP, see sn_tcp_failed() */
     uint32_t sn_load;       /* a supernode: the load it last reported */
     uint32_t sn_rtt_us;     /* a supernode: the round trip of its last PONG, 0 for none yet */
     time_t uptime;

@@ -531,6 +531,26 @@ SCENARIOS = [
         Site([]),
         "direct", unblock_udp=True, sn_tcp_port=4443, tags=["quick"]),
     Scenario(
+        "tcp-learned",
+        "an edge knows sn2 only, learns sn1 from the federation, which takes "
+        "UDP only, and prefers it (supernode_selection mac); then UDP stops "
+        "getting through: over TCP it goes to sn2, not to sn1's UDP port",
+        Site(["easy-kept"], supernodes=["sn2"],
+             conf={"connection": {"supernode_selection": "mac"}}),
+        Site([]),
+        "direct", sn_udp_only=["sn1"], udp_lost=("a", "sn1", "sn2")),
+    Scenario(
+        "tcp-learned-refused",
+        "as tcp-learned with four supernodes, the edge knowing sn3 only, "
+        "sn2 and sn4 taking UDP only: over TCP it goes to sn3; sn3 gets "
+        "killed, the edge goes round the learned ones, marking those that "
+        "refuse it UDP only, and ends at sn1, the one with TCP",
+        Site(["easy-kept"], supernodes=["sn3"],
+             conf={"connection": {"supernode_selection": "mac"}}),
+        Site([], supernodes=["sn1", "sn2"]),
+        "direct", sn_count=4, sn_udp_only=["sn2", "sn4"],
+        udp_lost=("a", None, "sn3"), failover="a", marked=["sn2", "sn4"]),
+    Scenario(
         "tcp-only",
         "an edge given its supernodes as tcp:// only: over TCP from the "
         "start",

@@ -1203,6 +1203,13 @@ void edge_read_proto3_tcp (struct n3n_runtime_data *eee,
         eee->sock = -1;
         supernode_disconnect(eee);
         eee->client.sn_wait = 1;
+        // gone before anything came over it: refused, as a rule (a
+        // network without a route fails in connect() itself, see
+        // supernode_connect()); the edge moves on at once if it was a
+        // learned supernode, which then is reached over UDP only
+        if(!eee->client.tcp_conn_rx && sn_tcp_failed(eee, eee->client.curr_sn, "refused the connection")) {
+            eee->client.sup_attempts = 0;
+        }
         return;
     }
 
@@ -1225,6 +1232,9 @@ void edge_read_proto3_tcp (struct n3n_runtime_data *eee,
     }
 
     // have a valid packet read, handle it
+    if(sock == eee->sock) {
+        eee->client.tcp_conn_rx = true;
+    }
     edge_process_pdu(
         eee,
         NULL,

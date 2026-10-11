@@ -171,7 +171,8 @@ class Scenario:
                  size=None, outage=False, outage_then=None,
                  outage_max_gap=None, reload=None, sn_versions=None,
                  direct_ok=None, sn_peer_family=4, sn_start_gap=0,
-                 tcp_burst=0, spray=0, sn_nofile=None):
+                 tcp_burst=0, spray=0, sn_nofile=None, sn_udp_only=(),
+                 udp_lost=None, sn_count=2, marked=()):
         self.name = name
         self.desc = desc
         self.sites = {"a": a, "b": b}
@@ -273,6 +274,22 @@ class Scenario:
         # the edges without NAT: the daemons are to stay up, and the
         # frames to go through after it
         self.spray = spray
+        # These supernodes take UDP only (connection.bind udp://), no TCP
+        self.sn_udp_only = set(sn_udp_only)
+        # (site, first, then): after the warm-up, once the site's edge is
+        # at the supernode first (None: at any it learned, not one of its
+        # own), UDP stops getting through on its network (as with
+        # Site(block_udp)); the edge is to go on over TCP, at the supernode
+        # then, without marking any as reached over UDP only on the way.
+        # The frames are relayed from then on: expect is for the warm-up.
+        self.udp_lost = udp_lost
+        # the supernodes the edge of udp_lost's site may mark as reached
+        # over UDP only by the end (learned ones without TCP at their UDP
+        # port), each at most once; it marks none other.  Whether it comes
+        # to one depends on the order it tries the learned ones in.
+        self.marked = list(marked)
+        # how many supernodes: sn1, sn2, ...
+        self.sn_count = sn_count
 
     def directions(self):
         return {
@@ -429,7 +446,8 @@ class Run:
             lab.sysctl(inet, "net.ipv6.conf.all.forwarding", 1)
         self.inet = inet
 
-        for i, name in enumerate(("sn1", "sn2"), start=1):
+        for i in range(1, self.sc.sn_count + 1):
+            name = "sn{}".format(i)
             ns = lab.netns(name)
             lab.veth(inet, "x-" + name, ns, "eth0")
             lab.enslave(inet, "x-" + name, "br0")
@@ -779,7 +797,9 @@ class Run:
                     peers.append(("peer", "[{}]:{}".format(
                         self.supernodes[o]["ip6"], SN_PORT)))
             sections = {
-                "connection": [("bind", "[::]:{}".format(SN_PORT)
+                "connection": [("bind", "udp://[::]:{}".format(SN_PORT)
+                                if name in self.sc.sn_udp_only else
+                                "[::]:{}".format(SN_PORT)
                                 if not self.sc.sn_tcp_port else
                                 "udp://[::]:{} tcp://[::]:{}".format(
                                     SN_PORT, self.sc.sn_tcp_port))],
@@ -1365,6 +1385,69 @@ class Run:
         # A round of registrations for the peers to find each other again
         time.sleep(self.st.register_interval + 1)
 
+    def udp_lost_phase(self):
+        """UDP stops getting through at a site, see udp_lost: wait for its
+        edge to be at the supernode first, block UDP, and wait for the edge
+        to be registered over TCP at the supernode then"""
+        site, first, then = self.sc.udp_lost
+        d = self.edges[site]["daemon"]
+        own = self.sc.sites[site].supernodes
+        at_first = [self.supernodes[n]["ip"] + ":"
+                    for n in ([first] if first else self.supernodes)
+                    if first or n not in own]
+        at_then = self.supernodes[then]["ip"] + ":"
+        interval = self.st.register_interval
+
+        def at(*prefixes):
+            return (d.current_supernode() or "").startswith(prefixes)
+        if not wait_for(lambda: at(*at_first) or None, 30 + 4 * interval,
+                        interval=0.5):
+            return self.check("udp lost", False, "edge {} never at {} ({})"
+                              .format(site, first or "a learned supernode",
+                                      d.current_supernode()))
+        self.lab.nft(self.edges[site]["ns"], AIRPORT, site + "-airport")
+        t = time.monotonic()
+
+        def moved():
+            if not self.check_alive_quiet():
+                return "dead"
+            return "ok" if (self.transports().get(site) == "tcp"
+                            and at(at_then) and d.registered()) else None
+        ok = wait_for(moved, 60 + 6 * interval, interval=0.5) == "ok"
+        took = round(time.monotonic() - t, 1)
+        now = d.current_supernode()
+        with open(d.proc.log_path, errors="replace") as f:
+            refused = [line.strip() for line in f
+                       if "UDP only from now on" in line]
+        self.result["udp_lost"] = {"seconds": took, "supernode": now,
+                                   "transport": self.transports().get(site),
+                                   "marked": refused}
+        self.check("udp lost", ok, "edge {} over {} at {} after {}s".format(
+            site, self.transports().get(site), now, took))
+        self.check("udp lost: none marked", not refused,
+                   refused[-1] if refused else "none")
+        if ok:
+            self.expect = "relayed"
+        # A round of registrations for the peers to find each other again
+        time.sleep(interval + 1)
+
+    def check_marked(self):
+        """The learned supernodes the edge of udp_lost's site marked as
+        reached over UDP only: some of marked, once each"""
+        site = self.sc.udp_lost[0]
+        with open(self.edges[site]["daemon"].proc.log_path,
+                  errors="replace") as f:
+            lines = [line for line in f if "UDP only from now on" in line]
+        got = []
+        for name, sn in sorted(self.supernodes.items()):
+            n = sum("[{}:".format(sn["ip"]) in line for line in lines)
+            got += [name] * n
+        self.result["marked"] = got
+        ok = len(got) == len(set(got)) and set(got) <= set(self.sc.marked)
+        self.check("marked", ok,
+                   "edge {} marked {} as UDP only".format(
+                       site, ", ".join(got) or "none"))
+
     def failover(self):
         """Kill the supernode an edge is at, wait for the edges to move"""
         site = self.sc.failover
@@ -1592,8 +1675,12 @@ class Run:
                 self.outage_phase()
             elif self.sc.roam and self.check_alive("warm-up"):
                 self.roam_phase()
+            if self.sc.udp_lost and self.check_alive("warm-up"):
+                self.udp_lost_phase()
             if self.sc.failover and self.check_alive("warm-up"):
                 self.failover()
+            if self.sc.udp_lost and self.check_alive("warm-up"):
+                self.check_marked()
             if self.sc.reload and self.check_alive("warm-up"):
                 self.reload_phase()
             if self.sc.tcp_burst and self.check_alive("warm-up"):

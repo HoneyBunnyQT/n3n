@@ -35,6 +35,10 @@ void send_register_super (struct n3n_runtime_data *eee);
 void send_query_peer (struct n3n_runtime_data *eee, const n2n_mac_t dst_mac);
 void supernode_connect (struct n3n_runtime_data *eee);
 bool transport_note_giveup (struct n3n_runtime_data *eee, time_t now);
+// over TCP: a supernode learned from the federation failed (why), so its
+// UDP port has no TCP - it is reached over UDP only from now on.  true if it
+// was marked so.
+bool sn_tcp_failed (struct n3n_runtime_data *eee, struct peer_info *sn, const char *why);
 // the first supernode that can be reached over the transport in use, and the
 // next one after sn (round the list)
 struct peer_info *supernode_first (struct n3n_runtime_data *eee);

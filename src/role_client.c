@@ -167,6 +167,60 @@ struct peer_info *supernode_first (struct n3n_runtime_data *eee) {
 }
 
 
+// Over TCP, where no PONGs tell the supernodes apart, the edge goes round
+// them in turn: the configured ones first, then those learned from the
+// federation, which may have no TCP at their UDP port (see sn_tcp_failed()).
+// The one after sn in that order (from the start for NULL).
+static bool tcp_turn (const struct peer_info *sn, bool learned) {
+
+    return sn_has_transport(sn, true) && (sn->purgeable == learned);
+}
+
+static struct peer_info *supernode_next_tcp (struct n3n_runtime_data *eee, struct peer_info *sn) {
+
+    bool learned = sn ? sn->purgeable : true;
+    struct peer_info *scan;
+
+    // the rest of its own kind, then the other kind, then its own from the
+    // start (sn itself last)
+    for(scan = sn ? sn->hh.next : NULL; scan; scan = scan->hh.next) {
+        if(tcp_turn(scan, learned)) {
+            return scan;
+        }
+    }
+    for(int round = 0; round < 2; round++) {
+        learned = !learned;
+        for(scan = eee->client.supernodes; scan; scan = scan->hh.next) {
+            if(tcp_turn(scan, learned)) {
+                return scan;
+            }
+        }
+    }
+    return supernode_first(eee);
+}
+
+
+/* A supernode the federation told about comes with its address of UDP only
+ * (v3 has nothing for TCP there), so over TCP it is tried at its UDP port -
+ * where n3n's supernodes take TCP by default, but not all.  One that fails
+ * there is reached over UDP only from then on: the edge does not try it
+ * over TCP again (sn_has_transport()), and it does not count for the
+ * rounds of transport_note_giveup(), but it stays for UDP, with its PINGs.
+ * Until it is gone from the list: learned again, it gets another try.
+ * Configured ones, and one that answered over TCP once, are never marked. */
+bool sn_tcp_failed (struct n3n_runtime_data *eee, struct peer_info *sn, const char *why) {
+
+    if(!eee->client.tcp || !sn || !sn->purgeable || sn->tcp_answered
+       || (sn->transports == N3N_TRANSPORT_UDP)) {
+        return false;
+    }
+    sn->transports = N3N_TRANSPORT_UDP;
+    traceEvent(TRACE_NORMAL, "supernode [%s], learned from the federation, %s: no TCP at its UDP port, "
+               "UDP only from now on", peer_info_get_hostname(sn), why);
+    return true;
+}
+
+
 struct peer_info *supernode_next (struct n3n_runtime_data *eee, struct peer_info *sn) {
 
     struct peer_info *scan = sn ? sn->hh.next : eee->client.supernodes;
@@ -221,8 +275,13 @@ static void transport_switch (struct n3n_runtime_data *eee, bool tcp, time_t now
     supernode_disconnect(eee);
     transport_probe_close(eee);
     eee->client.tcp = tcp;
+    eee->client.tcp_answered = false;
     eee->client.giveups = 0;
     eee->client.last_probe = now;
+    if(tcp && (!eee->client.curr_sn || eee->client.curr_sn->purgeable)) {
+        // over TCP, a configured supernode first
+        eee->client.curr_sn = supernode_next_tcp(eee, NULL);
+    }
     if(!eee->client.curr_sn || !sn_has_transport(eee->client.curr_sn, tcp)) {
         eee->client.curr_sn = supernode_first(eee);
     }
@@ -399,6 +458,7 @@ void supernode_connect (struct n3n_runtime_data *eee) {
             return;
         }
         mainloop_register_fd(eee->sock, fd_info_proto_v3tcp);
+        eee->client.tcp_conn_rx = false;
 
         // REVISIT: TODO:
         // - add a management event for "new supernode socket" to make it simpler
@@ -1483,7 +1543,9 @@ void sort_supernodes (struct n3n_runtime_data *eee, time_t now) {
         sn_selection_sort(&(eee->client.supernodes), !eee->client.sn_other_family);
     }
 
-    if(eee->client.curr_sn != supernode_first(eee)) {
+    // over TCP the edge stays where it is registered: no PONGs tell the
+    // others apart there
+    if(!eee->client.tcp && (eee->client.curr_sn != supernode_first(eee))) {
         // we have not been connected to the best/top one
         send_unregister_super(eee);
         eee->client.curr_sn = supernode_first(eee);
@@ -1667,11 +1729,17 @@ void update_supernode_reg (struct n3n_runtime_data * eee, time_t now) {
 
     if(0 == eee->client.sup_attempts) {
         /* Give up on that supernode and try the next one. */
+        // Over TCP, a learned one that does not answer while another one
+        // did: it has no TCP there (while none answers, the network may be
+        // what fails, and it stays as it is)
+        if(eee->client.tcp_answered) {
+            sn_tcp_failed(eee, eee->client.curr_sn, "does not answer over TCP");
+        }
         if(eee->client.curr_sn) {
             eee->client.curr_sn->selection_criterion = sn_selection_criterion_bad();
         }
         sn_selection_sort(&(eee->client.supernodes), !eee->client.sn_other_family);
-        eee->client.curr_sn = supernode_first(eee);
+        eee->client.curr_sn = eee->client.tcp ? supernode_next_tcp(eee, eee->client.curr_sn) : supernode_first(eee);
         traceEvent(
             TRACE_WARNING,
             "supernode not responding, now trying [%s]",
@@ -2045,6 +2113,12 @@ void edge_rx_register_super_ack (struct n3n_runtime_data *eee, struct pdu_ctx *c
             traceEvent(TRACE_NORMAL, "Rx REGISTER_SUPER_ACK with wrong or old response to challenge, maybe indicating wrong federation public key (-P)");
         }
         return;
+    }
+
+    // the current supernode answers over TCP, see sn_tcp_failed()
+    if(eee->client.tcp) {
+        eee->client.tcp_answered = true;
+        eee->client.curr_sn->tcp_answered = true;
     }
 
     if(is_valid_peer_sock(&ra.sock)) {

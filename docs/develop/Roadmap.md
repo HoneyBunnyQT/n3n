@@ -131,8 +131,12 @@ tests and `make lint` pass after each.
       `community.supernode`: UDP and TCP on different ports (netns
       scenarios `tcp-port`, `tcp-only`).  Not planned for now: `udp4://`,
       `tcp6://` and the like, which would only matter for names to resolve.
-      Open: supernodes the federation tells about are tried over TCP at
-      their UDP port
+      Supernodes the federation tells about (v3 tells their UDP address
+      only) are tried over TCP at their UDP port; one that refuses there,
+      or does not answer while others do, is reached over UDP only from
+      then on (`sn_tcp_failed()`); over TCP the configured ones come first,
+      the edge goes round them in turn and stays where it is registered
+      (netns scenarios `tcp-learned`, `tcp-learned-refused`, 2026-10-11)
 - [x] The page and get_supernodes show each supernode's load and round
       trip, and the selection strategy; a warning while the management
       password is the default.  Found on the way: the supernode's load

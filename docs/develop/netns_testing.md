@@ -322,6 +322,8 @@ ports from all of it.
 | tcp-fallback-userpw | as tcp-fallback-back, with user/password authentication | direct, a back on UDP |
 | tcp-port | as tcp-fallback-back, the supernodes with UDP on 7654 and TCP on 4443 only (`sn_tcp_port`) | direct, after a over TCP to 4443 |
 | tcp-only | easy-kept with its supernodes as `tcp://` only (`tcp_only`) / public | relayed, a over TCP from the start |
+| tcp-learned | easy-kept knowing sn2 only, preferring the learned sn1 (`supernode_selection = mac`), which takes UDP only (`sn_udp_only`) / public; then UDP stops getting through at a (`udp_lost`) | direct, then relayed: a over TCP at sn2, sn1 never tried over TCP |
+| tcp-learned-refused | as tcp-learned with four supernodes (`sn_count`), a knowing sn3 only, sn2 and sn4 UDP only; over TCP at sn3, which then gets killed | a goes round the learned ones, marks those that refuse it UDP only, once each and no other (`marked`), and ends at sn1 over TCP |
 | sn-tcp-burst | hard-range / hard-range, 300 TCP connections to a's supernode at once, held while the frames go (`tcp_burst`) | relayed; the supernode takes all of them (its own sockets, not what waits in the kernel's queue) |
 | sn-tcp-1100 | as sn-tcp-burst with 1100 connections, the supernodes started with a soft limit of 1024 open files (`sn_nofile`), as under systemd | relayed; all taken: epoll, and the limit raised to the hard one |
 | tun-tap | easy-kept with `tuntap.type=tun` / easy-changed with a TAP device | direct, the TUN edge building the frames |
@@ -355,6 +357,16 @@ supernodes after the warm-up, `outage_then` names what happens 10 seconds
 into it (`("roam", site)`, `("restart", site)`, `("idle", seconds)`).
 `sn_tcp_port` of a `Scenario` has the supernodes take TCP on that port only
 (`bind = udp://... tcp://...`) and gives the edges `tcp://` entries for it;
+`sn_udp_only` names supernodes that take UDP only, no TCP at all, and
+`sn_count` gives more supernodes than the two (sn3, ...).  `udp_lost` of a
+`Scenario`, `(site, first, then)`, blocks UDP at that site after the
+warm-up, once its edge is at the supernode `first` (`None`: at any it
+learned), and checks that the edge goes on over TCP at `then` (`udp
+lost:`), marking no supernode as reached over UDP only on the way; the
+frames are relayed from then on.  `marked` lists the supernodes that edge
+may mark so by the end, each at most once, and no other (the check
+`marked`, from the log line "UDP only from now on") - whether it comes to
+one depends on the order it tries the learned ones in;
 `Site(tcp_only=True)` gives that edge only `tcp://` entries.  `sn_conf` of a `Scenario` sets options of the supernodes.
 `auth` of a `Scenario` turns on header encryption (`"header"`), or that
 and user/password authentication (`"userpw"`): the supernodes then get a

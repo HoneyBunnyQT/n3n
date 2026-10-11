@@ -165,6 +165,13 @@ supernode = tcp://sn.example.org:443
 `tcp_sockaddr`.  The fallback does
 not work with several packet threads (`daemon.threads`), which need UDP.
 
+Supernodes that the edge learns from the federation come with their UDP
+address only, so over TCP it tries the configured ones first, and a
+learned one at its UDP port - where an n3n supernode takes TCP by default.
+One that refuses there, or does not answer while others do, is reached
+over UDP only from then on (`transports`: `udp`, and a line in the log),
+until it drops out of the list and is learned again.
+
 
 ### Does n3n work together with n2n?
 

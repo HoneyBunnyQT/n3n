@@ -292,7 +292,9 @@ round over all of them, it connects to them over TCP instead
 (\fBconnection.tcp_fallback\fR, on by default), and all its traffic goes
 through the supernode then.  While on TCP, it tries a UDP ping to its
 supernode every three \fBconnection.register_interval\fRs and goes back to
-UDP as soon as one is answered.  \fBconnection.connect_tcp\fR=true uses TCP
+UDP as soon as one is answered.  Over TCP, the configured supernodes come
+first; one learned from the federation is tried at its UDP port, and
+reached over UDP only once it refuses there.  \fBconnection.connect_tcp\fR=true uses TCP
 from the start, and only TCP.  \fBn3nctl get_info\fR shows the transport in
 use.
 

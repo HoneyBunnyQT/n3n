@@ -204,6 +204,10 @@ static struct n3n_conf_option section_connection[] = {
                 "UDP, so over TCP everything goes through the supernode; "
                 "while a peer is heard directly over UDP, the edge stays "
                 "on it, as the supernodes are rather down than blocked.  "
+                "Over TCP the configured supernodes come first: one learned "
+                "from the federation, which tells its UDP address only, is "
+                "tried at that port, and reached over UDP only once it "
+                "refuses or does not answer there while others do.  "
                 "Not with several threads (daemon.threads).",
     },
     {
