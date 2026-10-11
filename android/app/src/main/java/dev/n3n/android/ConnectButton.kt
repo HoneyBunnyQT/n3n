@@ -42,7 +42,7 @@ import kotlin.math.min
  *
  * The LED is never colour alone, as night modes and grayscale screens do
  * not keep colours apart: off it is dark, connected it is lit, and on the
- * way there yellow stripes run through it.
+ * way there yellow stripes run through it, from left to right.
  *
  * A raised button: a shadow from its elevation, which goes down while it
  * is pressed (res/animator/press.xml), a face lit from above, a light edge
@@ -172,10 +172,11 @@ class ConnectButton(context: Context, attrs: AttributeSet?) : LinearLayout(conte
     }
 
     /**
-     * The LED, in an oval window let into the face: dark when off, lit
-     * green (with a glow) when connected, and thick yellow diagonals that
-     * run to the left while on the way.  Its colours are the same by day
-     * and by night, as a real LED's.
+     * The LED, in an oval window let into the face: dark glass when off,
+     * lit green when connected, and thick yellow diagonals that run to the
+     * right while on the way, each shaded round as it passes.  Lit, it is
+     * brighter in its middle and glows around its window.  Its colours are
+     * the same by day and by night, as a real LED's.
      */
     private class Led(context: Context) : View(context) {
 
@@ -198,11 +199,15 @@ class ConnectButton(context: Context, attrs: AttributeSet?) : LinearLayout(conte
         private val window = RectF()
         private val glass = RectF()
         private val clip = Path()
-        private val stripe = Path()
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val darkPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val stripePaint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val stripeMatrix = Matrix()
         private val bezelPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-        private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-        private val hotPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val glowOn = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val glowWait = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val hotOn = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val hotWait = Paint(Paint.ANTI_ALIAS_FLAG)
         private val shinePaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
         private var shift = 0f
@@ -212,6 +217,8 @@ class ConnectButton(context: Context, attrs: AttributeSet?) : LinearLayout(conte
             interpolator = LinearInterpolator()
             addUpdateListener {
                 shift = it.animatedValue as Float * period
+                stripeMatrix.setTranslate(shift, 0f)
+                stripePaint.shader?.setLocalMatrix(stripeMatrix)
                 invalidate()
             }
         }
@@ -224,57 +231,82 @@ class ConnectButton(context: Context, attrs: AttributeSet?) : LinearLayout(conte
             // a window let in: darker at its top edge, lighter at the bottom
             bezelPaint.shader = LinearGradient(
                 0f, window.top, 0f, window.bottom, 0x59000000, 0x26FFFFFF, Shader.TileMode.CLAMP)
-            // the glow around it, an ellipse as wide as the view
-            val on = context.getColor(R.color.led_on) and 0x00FFFFFF
-            glowPaint.shader = RadialGradient(
-                0f, 0f, 1f, intArrayOf(on or 0x73000000, on or 0x73000000, on), floatArrayOf(0f, 0.55f, 1f),
-                Shader.TileMode.CLAMP).apply {
+            glowOn.shader = glow(w, h, context.getColor(R.color.led_on), 0x73)
+            glowWait.shader = glow(w, h, context.getColor(R.color.led_wait), 0x4D)
+            // the glass, dark: a little lighter in its middle, as it
+            // reflects the light around it
+            val off = context.getColor(R.color.led_off)
+            darkPaint.shader = RadialGradient(
+                0f, 0f, 1f, mix(off, Color.WHITE, 0.12f), off, Shader.TileMode.CLAMP).apply {
                 setLocalMatrix(Matrix().apply {
-                    setScale(w / 2f, h / 2f)
-                    postTranslate(w / 2f, h / 2f)
+                    setScale(glass.width() / 2, glass.height() / 2)
+                    postTranslate(glass.centerX(), glass.centerY())
                 })
             }
-            // and brighter at its middle
-            hotPaint.shader = RadialGradient(
+            stripePaint.shader = stripes(off, context.getColor(R.color.led_wait)).apply {
+                setLocalMatrix(stripeMatrix)
+            }
+            // lit, brighter at its middle; less so over the stripes, whose
+            // dark ones would go grey
+            hotOn.shader = RadialGradient(
                 w / 2f, h / 2f, glass.width() / 2, 0x59FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP)
+            hotWait.shader = RadialGradient(
+                w / 2f, h / 2f, glass.width() / 2, 0x33FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP)
             shinePaint.shader = LinearGradient(
                 0f, glass.top, 0f, glass.centerY(), 0x66FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP)
         }
 
+        /** A glow of the colour, an ellipse as wide as the view */
+        private fun glow(w: Int, h: Int, color: Int, alpha: Int): Shader {
+            val c = color and 0x00FFFFFF
+            val a = c or (alpha shl 24)
+            return RadialGradient(0f, 0f, 1f, intArrayOf(a, a, c), floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
+                .apply {
+                    setLocalMatrix(Matrix().apply {
+                        setScale(w / 2f, h / 2f)
+                        postTranslate(w / 2f, h / 2f)
+                    })
+                }
+        }
+
+        /**
+         * The stripes, a dark and a yellow one per period, leaning right:
+         * one gradient along x + y, repeated, so that they move with its
+         * matrix.  Each is shaded across, darker at its edges and lighter
+         * in its middle - the yellow as a lit, round bar, the dark as
+         * glass.
+         */
+        private fun stripes(dark: Int, yellow: Int): Shader {
+            val darkEdge = mix(dark, Color.BLACK, 0.4f)
+            val darkMiddle = mix(dark, Color.WHITE, 0.12f)
+            val yellowEdge = mix(yellow, Color.BLACK, 0.18f)
+            val yellowMiddle = mix(yellow, Color.WHITE, 0.45f)
+            return LinearGradient(
+                0f, 0f, period / 2, period / 2,
+                intArrayOf(darkEdge, darkMiddle, darkEdge, yellowEdge, yellow, yellowMiddle, yellow, yellowEdge, darkEdge),
+                floatArrayOf(0f, 0.24f, 0.47f, 0.51f, 0.62f, 0.74f, 0.86f, 0.96f, 1f),
+                Shader.TileMode.REPEAT)
+        }
+
         override fun onDraw(canvas: Canvas) {
-            if (look == Look.ON) {
-                canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), glowPaint)
+            when (look) {
+                Look.ON -> canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), glowOn)
+                Look.BUSY -> canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), glowWait)
+                Look.OFF -> {}
             }
             canvas.drawRoundRect(window, window.height() / 2, window.height() / 2, bezelPaint)
             canvas.save()
             canvas.clipPath(clip)
             when (look) {
-                Look.OFF -> {
-                    paint.color = context.getColor(R.color.led_off)
-                    canvas.drawRect(glass, paint)
-                }
+                Look.OFF -> canvas.drawRect(glass, darkPaint)
                 Look.ON -> {
                     paint.color = context.getColor(R.color.led_on)
                     canvas.drawRect(glass, paint)
-                    canvas.drawRect(glass, hotPaint)
+                    canvas.drawRect(glass, hotOn)
                 }
                 Look.BUSY -> {
-                    paint.color = context.getColor(R.color.led_off)
-                    canvas.drawRect(glass, paint)
-                    paint.color = context.getColor(R.color.led_wait)
-                    val h = glass.height()
-                    // each stripe leans right, 45 degrees; shift moves them left
-                    var x = glass.left - h - period - shift
-                    while (x < glass.right + period) {
-                        stripe.reset()
-                        stripe.moveTo(x, glass.bottom)
-                        stripe.lineTo(x + h, glass.top)
-                        stripe.lineTo(x + h + period / 2, glass.top)
-                        stripe.lineTo(x + period / 2, glass.bottom)
-                        stripe.close()
-                        canvas.drawPath(stripe, paint)
-                        x += period
-                    }
+                    canvas.drawRect(glass, stripePaint)
+                    canvas.drawRect(glass, hotWait)
                 }
             }
             // the glass: a shine on its upper half
@@ -305,13 +337,14 @@ class ConnectButton(context: Context, attrs: AttributeSet?) : LinearLayout(conte
             }
         }
     }
+}
 
-    private fun mix(color: Int, with: Int, amount: Float): Int {
-        val keep = 1 - amount
-        return Color.rgb(
-            (Color.red(color) * keep + Color.red(with) * amount).toInt(),
-            (Color.green(color) * keep + Color.green(with) * amount).toInt(),
-            (Color.blue(color) * keep + Color.blue(with) * amount).toInt(),
-        )
-    }
+/** The colour, with some of another mixed in (0 none .. 1 all of it) */
+private fun mix(color: Int, with: Int, amount: Float): Int {
+    val keep = 1 - amount
+    return Color.rgb(
+        (Color.red(color) * keep + Color.red(with) * amount).toInt(),
+        (Color.green(color) * keep + Color.green(with) * amount).toInt(),
+        (Color.blue(color) * keep + Color.blue(with) * amount).toInt(),
+    )
 }
