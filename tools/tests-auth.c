@@ -21,8 +21,8 @@
 #include <n3n/hexdump.h>  // for fhexdump
 #include <stdint.h>   // for uint8_t
 #include <stdio.h>    // for printf, fprintf, stdout, stderr
-#include <string.h>   // for memset
-#include "auth.h"     // for ascii_to_bin, bin_to_ascii, generate_private_key
+#include <string.h>   // for memset, strncpy
+#include "auth.h"     // for ascii_to_bin, bin_to_ascii, generate_private_key, calculate_dynamic_key
 #include "n2n.h"      // for n2n_private_public_key_t
 
 
@@ -113,6 +113,28 @@ void test_generate_shared_secret (n2n_private_public_key_t prv, n2n_private_publ
     printf("\n");
 }
 
+void test_calculate_dynamic_key (uint32_t key_time, char *comm, char *fed) {
+    char *test_name = "calculate_dynamic_key";
+    n2n_community_t c, f;
+    uint8_t out[N2N_AUTH_CHALLENGE_SIZE];
+
+    memset(c, 0, sizeof(c));
+    memset(f, 0, sizeof(f));
+    strncpy((char *)c, comm, sizeof(c) - 1);
+    strncpy((char *)f, fed, sizeof(f) - 1);
+
+    printf("%s: input: time = %u, community = %s, federation = %s\n",
+           test_name, key_time, comm, fed);
+
+    calculate_dynamic_key(out, key_time, c, f);
+
+    printf("%s: output:\n", test_name);
+    fhexdump(0, out, sizeof(out), stdout);
+
+    fprintf(stderr, "%s: tested\n", test_name);
+    printf("\n");
+}
+
 int main (int argc, char * argv[]) {
 
     test_bin_to_ascii(PKT_CONTENT1, sizeof(PKT_CONTENT1));
@@ -126,6 +148,9 @@ int main (int argc, char * argv[]) {
     test_generate_private_key(PKT_CONTENT2, prv);
     test_generate_public_key(prv, pub);
     test_generate_shared_secret(prv, pub);
+
+    // the same on every host: federated supernodes have to agree on it
+    test_calculate_dynamic_key(1760000000, "home", "*Federation");
 
     return 0;
 }

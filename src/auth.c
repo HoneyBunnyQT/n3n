@@ -27,6 +27,7 @@
 #include "crypto/speck.h"  // for speck_context_t, speck_128_encrypt, speck_in
 #include "curve25519.h"  // for curve25519
 #include "pearson.h"     // for pearson_hash_128, pearson_hash_256
+#include "portable_endian.h"  // for htole32
 #include "n2n.h"
 
 
@@ -176,6 +177,9 @@ int calculate_dynamic_key (uint8_t out_key[N2N_AUTH_CHALLENGE_SIZE],
 
     speck_init((speck_context_t**)&ctx, key, 128);
 
+    // the time's bytes in little endian order, whatever the host's: all
+    // supernodes of a federation have to come to the same key
+    key_time = htole32(key_time);
     pearson_hash_128(tmp, (uint8_t*)&key_time, sizeof(key_time));
     pearson_hash_128(tmp, tmp, N2N_AUTH_CHALLENGE_SIZE);
     pearson_hash_128(out_key, tmp, N2N_AUTH_CHALLENGE_SIZE);
