@@ -39,11 +39,13 @@ tests/fuzz/fuzz-transop tests/fuzz/work/transop tests/fuzz/seeds/transop   # ^C 
 
 In CI, `make test` replays them on every build, `sanitizers.yml` with
 AddressSanitizer and UndefinedBehaviorSanitizer, and `fuzz.yml` searches
-with libFuzzer: a minute per target on every push, ten every night,
-going on from the corpus of the runs before (kept in the cache).  What
-crashes a target there is uploaded as the artifact `fuzz-crash`, with
-libFuzzer's log (its seed is in the line `INFO: Seed:`).  The same
-workflow runs `fuzz-spray` every night, see below.
+with libFuzzer a minute per target on every push and pull request, going
+on from the corpus of the runs before (kept in the cache).  What crashes
+a target there is uploaded as the artifact `fuzz-crash`, with libFuzzer's
+log (its seed is in the line `INFO: Seed:`).  The long nightly searches,
+and `fuzz-spray` (see below), run in a private repository, so a crash is
+not made public before its fix; that workflow checks this tree out as it
+is, nothing of it lives here.
 
 `make test.fuzz` builds the targets with `driver.c` instead of libFuzzer —
 `driver.c` runs each target over the files it is given (a file, or every
