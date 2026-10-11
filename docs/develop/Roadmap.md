@@ -392,6 +392,18 @@ while `peer` keeps getting what does not touch the wire, merged into
       something only edges get.  (v3 today: TCP only from edge to
       supernode, the federation over UDP, and the federation's supernode
       list carries no transport - its entry has a spare byte for it.)
+- [ ] Two layers: connections, and what goes over them.  A connection
+      (a UDP path, a TCP connection, later others) to a relay or a peer is
+      opened, kept and measured on its own, without being a registration:
+      a peer may hold a few to relays it is not registered with - warm, so
+      that moving to one is a hot swap, not a new start through all the
+      steps - and registering, the community's traffic, the frames, go over
+      whichever connection the path manager picks.  How many to hold open
+      is a question of its own: each costs keep-alives and, at a relay,
+      state; perhaps one or two warm ones, the rest opened on demand.  In
+      v3 these are one thing: the edge's TCP connection is its
+      registration, and a supernode the federation tells about has to be
+      tried by registering with it (see `sn_tcp_failed()`, 2026-10-11)
 - [ ] A peer store behind an interface, not files spread around: the
       relays and peers a peer has learned, with their addresses and keys,
       kept across restarts.  From it, a peer that finds no relay tries the
