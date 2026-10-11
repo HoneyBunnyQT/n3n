@@ -2,19 +2,29 @@
 name: Fuzz
 
 # The fuzz targets of tests/fuzz, with libFuzzer, AddressSanitizer and
-# UndefinedBehaviorSanitizer: a minute each on every push, twenty once a
-# week.  The corpus a run grows is kept in the cache for the next one.  An
-# input that crashes a target is uploaded: minimise it and put it into
-# tests/fuzz/regress/, see tests/fuzz/README.md.  ("make test" replays the
-# regression corpus and the seeds on every build, sanitizers.yml with the
-# sanitizers.)
+# UndefinedBehaviorSanitizer: a minute each on every push, ten every
+# night.  The corpus a run grows is kept in the cache for the next one.
+# ("make test" replays the regression corpus and the seeds on every
+# build, sanitizers.yml with the sanitizers.)
+#
+# Every night also the netns scenarios tagged spray - mutated PDUs at
+# running daemons, see docs/develop/netns_testing.md - five minutes each,
+# with a fresh seed, once with the sanitizers and once a plain build under
+# gdb (a fault there comes with its backtrace).
+#
+# What failed is uploaded (fuzz-crash, spray-asan, spray-plain): the
+# input that crashed a target, with libFuzzer's log and its seed; the
+# scenarios' logs, each with its seed in result.json, and summary.txt
+# with the command that repeats a failed one.  Minimise a crashing input
+# and put it into tests/fuzz/regress/, see tests/fuzz/README.md.  The
+# logs of a public repository are public.
 
 # yamllint disable-line rule:truthy
 on:
   push:
   pull_request:
   schedule:
-    - cron: "17 3 * * 0"
+    - cron: "23 2 * * *"
   workflow_dispatch:
 
 permissions:
@@ -25,7 +35,9 @@ jobs:
     name: libFuzzer
     runs-on: ubuntu-24.04
     env:
-      FUZZ_SECONDS: ${{ github.event_name == 'schedule' && 1200 || 60 }}
+      FUZZ_SECONDS: >-
+        ${{ (github.event_name == 'schedule'
+             || github.event_name == 'workflow_dispatch') && 600 || 60 }}
       SAN_FLAGS: >-
         -fsanitize=fuzzer-no-link,address,undefined
         -fno-sanitize-recover=all -fno-omit-frame-pointer -g -O1
@@ -59,17 +71,79 @@ jobs:
           rc=0
           for t in header transop wire; do
             mkdir -p tests/fuzz/work/$t tests/fuzz/crash/$t
-            # new inputs go to the first directory, the corpus kept
+            # new inputs go to the first directory, the corpus kept; the
+            # log has libFuzzer's seed ("INFO: Seed:") and what it found
             tests/fuzz/fuzz-$t -max_total_time="$FUZZ_SECONDS" \
               -artifact_prefix=tests/fuzz/crash/$t/ \
               tests/fuzz/work/$t tests/fuzz/regress/$t tests/fuzz/seeds/$t \
-              || rc=1
+              >tests/fuzz/crash/$t/fuzz.log 2>&1 || rc=1
+            grep -h "INFO: Seed:\|DONE\|ERROR\|SUMMARY" \
+              tests/fuzz/crash/$t/fuzz.log || true
           done
           exit $rc
 
       - if: ${{ failure() }}
-        name: Upload what crashed
+        name: Upload what crashed, with the logs
         uses: actions/upload-artifact@v6
         with:
           name: fuzz-crash
           path: tests/fuzz/crash
+
+  spray:
+    name: Spray (${{ matrix.build }}), nightly
+    if: ${{ github.event_name == 'schedule'
+            || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - build: asan
+            flags: >-
+              -fsanitize=address,undefined -fno-sanitize-recover=all
+              -fno-omit-frame-pointer -g -O1
+            wrap: ""
+          - build: plain
+            flags: -g -O2
+            wrap: gdb -q -batch -ex run -ex bt --args
+    env:
+      ASAN_OPTIONS: print_stacktrace=1
+      UBSAN_OPTIONS: print_stacktrace=1
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Fix Checkout
+        run: |
+          git fetch --force --tags
+
+      - name: Build
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nftables iproute2 gdb
+          ./autogen.sh
+          ./configure
+          make build-dep
+          ./configure CFLAGS="${{ matrix.flags }}" \
+            LDFLAGS="${{ matrix.flags }}"
+          make -j4 all fuzz
+
+      - name: Spray scenarios, five minutes each
+        run: |
+          # the daemons keep root, for LeakSanitizer, see sanitizers.yml;
+          # each scenario takes a fresh seed, in its log and result.json,
+          # and with a failure in the summary
+          set -o pipefail
+          sudo -E python3 tests/netns/run.py -j 3 --keep-root \
+            --spray-seconds 300 --wrap "${{ matrix.wrap }}" @spray \
+            | tee tests/netns/summary.txt
+
+      - if: ${{ failure() }}
+        name: Upload the logs
+        uses: actions/upload-artifact@v6
+        with:
+          name: spray-${{ matrix.build }}
+          path: |
+            tests/netns/summary.txt
+            tests/netns/out

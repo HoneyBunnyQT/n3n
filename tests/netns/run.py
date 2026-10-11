@@ -122,8 +122,10 @@ def report_github(results):
     for r in results:
         s = status(r)
         if s == "FAIL":
-            print("::error title=netns {} failed::{}".format(
-                r["scenario"], failed_checks(r.get("checks", []))))
+            print("::error title=netns {} failed::{}{}".format(
+                r["scenario"], failed_checks(r.get("checks", [])),
+                " (again: --spray-seed {})".format(r["spray"]["seed"])
+                if "spray" in r else ""))
         elif s == "FLAKY":
             print("::warning title=netns {} is flaky::failed, then passed "
                   "on try {}: {}".format(r["scenario"], r["flaky"]["tries"],

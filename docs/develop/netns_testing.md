@@ -151,7 +151,10 @@ sudo tests/netns/run.py --spray-seed 1234 spray        # the same PDUs again
 ```
 
 The seed of each run is in its log, its `result.json`, and with a
-failure in the summary, as the command that repeats it.  Under the
+failure in the summary, as the command that repeats it.  Every night
+`fuzz.yml` runs them for five minutes each with fresh seeds, once with
+the sanitizers and once a plain build under gdb; what failed is uploaded
+as `spray-asan` or `spray-plain`, logs, seeds and backtraces.  Under the
 sanitizers (`sanitizers.yml`) a finding comes with its stack in the
 daemon's log; for one in a plain build, `--wrap "gdb -q -batch -ex run
 -ex bt --args"` puts the backtrace there.
