@@ -233,9 +233,16 @@ tests and `make lint` pass after each.
 - [x] `n3n-edge help transform`: lists the ciphers and compressions built
       in, with the implementation of each (`*_IMPL` in `src/crypto/*.h`,
       `desc` of the transforms); also on `fixes`
-- [ ] `-O` on the command line for an instance (`-O "community home.key=x"`)
-- [ ] The edge reading the community file (the first entry), for a peer
-      whose roles share one config
+- [x] `-O` on the command line for a section with a name: `-O "community
+      home.key=x"` or `-O community.home.key=x`, the option after the last
+      dot, so that a community's name may have dots
+      (`n3n_config_set_arg()`); over the file's section of that name, or
+      one of the command line only - for simple setups no community file
+      and no configuration file (configure/Communities.md).  On the way:
+      `-O` and `-a` cut up the command line, which a reload parses again,
+      so a reload lost what they set; and an edge whose community is a
+      named section dropped a `-k` / `N3N_KEY` key without a word, now it
+      stops.  netns scenario `userpw-cli`
 - [x] Unit tests for the parts that become shared: the send layer's
       batches and `udp_drain()` (`tests-sock`); `pdu_in` (`tests-pdu-in`),
       the plain header check, the decryption with the dynamic and the
@@ -438,6 +445,11 @@ while `peer` keeps getting what does not touch the wire, merged into
       else explicit packets for finding the MTU of a path, which v4 can
       have.  Then ICMP "fragmentation needed" / "packet too big" into the
       TAP and TCP MSS clamping per peer on what is known
+- [ ] Communities handled the same for every role: one way to give them
+      (sections, a file, or what replaces both), the same for a peer
+      with a TAP device as for a relay, instead of v3's edge with one
+      community from the configuration and supernode with sections and a
+      community file (see Decisions 2026-10-12)
 - [ ] Relay lookup by DNS SRV (from v3's `resolve.c` TODO; waits for
       v4, see Decisions 2026-10-11)
 - [ ] Signed configurations: a QR code (or file) signed by who may hand
@@ -508,6 +520,10 @@ while `peer` keeps getting what does not touch the wire, merged into
 - 2026-10-11: Supernode lookup by DNS SRV waits for v4: in v3, and with
   header encryption above all, a community can live from not showing its
   supernodes' ports as n3n's, which `_n3n._udp` records would give away.
+- 2026-10-12: The edge does not read the community file in v3: for a
+  simple setup `-O "community NAME.option=value"` makes a file needless,
+  and a peer whose roles share one configuration is v4's matter, with the
+  rest of handling communities the same for all roles.
 - 2026-10-10: Development goes on on `main`, which has all of `peer`;
   `peer` is not worked on any more and goes.  The fork's packages are
   named `n3n-be`.
@@ -534,8 +550,6 @@ v4: the path MTU, DNS SRV, fuzzing the QR code (see Decisions).
 
 Open, in rough order:
 
-- Communities for both roles (below): the edge reading the community
-  file, `-O` for the options of one community.
 - IPv6 on the TAP device; fewer privileges (CAP_NET_ADMIN only,
   Landlock); UDP GSO/GRO.
 - Releases: the app's ID, the signing key, the channels - decisions to
@@ -606,9 +620,10 @@ community_regex = net[0-9]+     # may repeat
   uthash table `conf.communities`.  `n3n_conf_strlist` is the option type
   for repeatable options.
 - The supernode list stays one global list, whichever section adds to it.
-- The edge does not read the community file (yet); its one community is
-  `[community]` or the only `[community NAME]`
-  (`edge_conf_one_community()`).
+- The edge does not read the community file (not in v3, see Decisions
+  2026-10-12); its one community is `[community]` or the only
+  `[community NAME]` (`edge_conf_one_community()`).  On the command line:
+  `-O "community NAME.option=value"` (2026-10-12).
 - netns scenario `userpw-conf` runs with sections on both sides.
 
 ### Old branches on honeybunnyqt/n3n
