@@ -72,10 +72,15 @@ with nothing to set, and two communities clash only if their hashes do
 
 ## Steps
 
-1. The address in the core: `tuntap.address6`, `tuntap.prefix6`, working
-   it out, a unit test.
-2. The TUN edge's neighbour discovery; the address on the Linux device
-   (TUN and TAP); netns scenarios with ping over IPv6 inside the tunnel,
-   TUN to TAP and TUN to TUN (in CI, which has IPv6; locally `uml.sh`).
-3. The Android app.
-4. Later: other systems' devices; the routes for IPv6 through an exit peer.
+1. Done: the address in the core: `tuntap.address6`, `tuntap.prefix6`,
+   working it out (`src/ipv6.c`), `tests-ipv6`.
+2. Done: the TUN edge's neighbour discovery (`src/tun.c`, fuzzed by
+   `fuzz-tun`); the address on the Linux device (TUN and TAP, netlink);
+   neighbour solicitations past `filter.allow_multicast`; netns scenarios
+   `ipv6-tap`, `ipv6-tun-tap`, `ipv6-tun-tun` with a ping each way (they
+   need IPv6 in the kernel: CI; locally `uml.sh`, whose 6.8 kernel does not
+   boot on a host with AVX-512 - "ptrace set fp regs failed").
+3. Done: the Android app adds the address and its /64 to the
+   `VpnService.Builder`, as the core works it out (`Core.ipv6Address()`);
+   not yet tried on a phone.
+4. Later: other systems' devices; IPv6 through an exit peer.

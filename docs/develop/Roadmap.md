@@ -195,8 +195,7 @@ tests and `make lint` pass after each.
       restart), the edge of a supernode (`supernode.tap`) takes what of
       its own changes in the supernode's configuration (`sn-tap-reload`),
       and a new description reaches the peers at once
-- [ ] Ideas to pick from (all v3 compatible): names for peers (DNS); IPv6
-      on the TAP device from a prefix derived from the community; fewer
+- [ ] Ideas to pick from (all v3 compatible): names for peers (DNS); fewer
       privileges (CAP_NET_ADMIN only, Landlock); packages for the single
       binary; tools init / tools qr.  (Learned supernodes on disk wait for
       v4, see Decisions 2026-10-04; epoll, batched I/O, no alloc per
@@ -217,7 +216,8 @@ tests and `make lint` pass after each.
       [Mobile and TUN](MobileAndTun.md).  Done: `android/` next to the
       core, built from `src/` by the NDK, CI artifact; import a file or a
       QR code (`tools/n3n-qr`), connect, log, state view, network
-      changes.  Open: auto addresses, IPv6.  The revamp (asked
+      changes, IPv6 inside the tunnel (`tuntap.address6`, not yet tried
+      on a phone).  Open: auto addresses.  The revamp (asked
       2026-10-11), done: the state in one place, the service, which asks
       the edge; the notification follows it (it said "connected" before
       the edge was registered), with a Disconnect action and a small
@@ -367,7 +367,15 @@ tests and `make lint` pass after each.
 - [x] A benchmark of the whole packet path: `tests/netns/bench.py`, iperf3
       through the tunnel with the CPU per packet of each daemon, see
       testing.md
-- [ ] IPv6 address on the TAP device, from the config or assigned by the relay
+- [~] IPv6 inside the tunnel ([IPv6](IPv6.md), decided 2026-10-12):
+      `tuntap.address6` (`auto`: the prefix `tuntap.prefix6`, by default
+      from a hash of the community's name, and the IPv4 address or else
+      the MAC as interface ID - nothing on the wire), put on the device by
+      netlink on Linux; neighbour solicitations pass without
+      `filter.allow_multicast`; the TUN edge's neighbour discovery; the
+      Android app (`Core.ipv6Address()`, the core's address); netns
+      `ipv6-tap`, `ipv6-tun-tap`, `ipv6-tun-tun`.  Open: trying it on a
+      phone; other systems' devices; IPv6 through an exit peer
 - [ ] Supernode lookup by DNS SRV (`resolve.c` TODO): moved to v4, see
       Decisions
 
@@ -533,6 +541,12 @@ while `peer` keeps getting what does not touch the wire, merged into
 - 2026-10-11: Supernode lookup by DNS SRV waits for v4: in v3, and with
   header encryption above all, a community can live from not showing its
   supernodes' ports as n3n's, which `_n3n._udp` records would give away.
+- 2026-10-12: IPv6 inside the tunnel without anything on the wire: each
+  edge makes its own address (`tuntap.address6 = auto`), the prefix from
+  the community's name unless `tuntap.prefix6` gives one, the interface
+  ID its IPv4 address - static or from the supernode, which keeps those
+  it hands out unique - or else its MAC.  Off unless set; Android first,
+  where the TUN edge does neighbour discovery itself.  See IPv6.md.
 - 2026-10-12: The edge does not read the community file in v3: for a
   simple setup `-O "community NAME.option=value"` makes a file needless,
   and a peer whose roles share one configuration is v4's matter, with the
@@ -563,8 +577,8 @@ v4: the path MTU, DNS SRV, fuzzing the QR code (see Decisions).
 
 Open, in rough order:
 
-- IPv6 on the TAP device (to discuss first: addresses for the auto ip
-  service); fewer privileges (Landlock, CAP_NET_ADMIN only is there);
+- IPv6 inside the tunnel: on a phone, then other systems; fewer
+  privileges (Landlock, CAP_NET_ADMIN only is there);
   the supernode's forwards with GSO.
 - Releases: the app's ID, the signing key, the channels - decisions to
   take, then the first run of `release.yml`.
