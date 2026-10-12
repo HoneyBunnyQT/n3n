@@ -195,11 +195,12 @@ tests and `make lint` pass after each.
       restart), the edge of a supernode (`supernode.tap`) takes what of
       its own changes in the supernode's configuration (`sn-tap-reload`),
       and a new description reaches the peers at once
-- [ ] Ideas to pick from (all v3 compatible): keep learned supernodes on disk;
-      names for peers (DNS); IPv6 on the TAP device from a prefix derived
-      from the community; epoll and batched I/O; no alloc per
-      packet; fewer privileges (CAP_NET_ADMIN only, Landlock); packages for
-      the single binary; tools init / tools qr
+- [ ] Ideas to pick from (all v3 compatible): names for peers (DNS); IPv6
+      on the TAP device from a prefix derived from the community; UDP
+      GSO/GRO; fewer privileges (CAP_NET_ADMIN only, Landlock); packages
+      for the single binary; tools init / tools qr.  (Learned supernodes
+      on disk wait for v4, see Decisions 2026-10-04; epoll, batched I/O
+      and no alloc per packet are done, below)
 - [~] Releases of n3n BE (see [Releasing](Releasing.md)): the packages
       are `n3n-be` (.deb, .rpm, and a PKGBUILD for Arch), the user `n3n`
       from sysusers.d, the app's version that of the core and its release
@@ -236,7 +237,9 @@ tests and `make lint` pass after each.
 - [ ] The edge reading the community file (the first entry), for a peer
       whose roles share one config
 - [ ] Unit tests for the parts that become shared (send layer, `pdu_in`)
-- [ ] Integration test: a supernode with a TAP device next to plain edges
+- [x] Integration test: a supernode with a TAP device next to plain edges:
+      the netns scenarios `sn-tap`, `sn-tap-fed`, `sn-tap-userpw`,
+      `sn-tap-failover`, `sn-tap-reload` and `cross-ARCH-sn-tap`
 - [x] Run the netns NAT scenarios in CI: all of them on every push
       (`netns.yml`), plain build
 - [x] Flaky netns scenarios (see Scratchpad): the hard-range NAT never
@@ -302,8 +305,8 @@ tests and `make lint` pass after each.
       on big endian, unaligned loads in AES, Pearson, the tap path, the
       benchmarks' key length on 32 bit, libatomic for 64 bit atomics
 - [ ] Endianness of the hand written SIMD versions (NEON on big endian ARM
-      is rare) and of `src/crypto/speck.c`, which is not built at all -
-      remove it?
+      is rare); `src/crypto/speck.c`, which was not built at all, is
+      gone
 - [x] netns scenarios between byte orders: an edge and a supernode of
       this tree built for s390x, mips or arm64 (with the ARMv8 AES
       instructions and NEON), under qemu-user, next to the host's - each
@@ -510,33 +513,36 @@ while `peer` keeps getting what does not touch the wire, merged into
 
 Current ideas, half-decided things, commands worth keeping.
 
-### Where things stand (2026-10-05)
+### Where things stand (2026-10-12)
 
-Recently on `peer` and done: the whole netns suite runs in CI on every
-push (`netns.yml`), plus interop against the last upstream release and
-n2n 3.1.1 (`interop.yml`); SIGHUP / `n3nctl reload`; the supernode's
-federation-name guarded on the management page.  Android: the app crashed
-on connect / disconnect / connect - two bugs found and fixed (the
-management request was parsed as a C string but not terminated, see
-`connslot`; and an embedded edge could not run twice in a process because
-`edge_term()` tore down the global registries that the next run needed,
-see `embed`).  The share screen now hides the keyboard before showing the
-QR code.
+Recently on `main` and done: epoll and batched I/O (`recvmmsg()` /
+`sendmmsg()`), with `tests/netns/bench.py` for the whole packet path; the
+packages of n3n BE and `release.yml` (not run yet); fuzzing of the receive
+path, the TCP framing, the management interface and the TUN edge, plus
+`fuzz-spray` at running daemons, which found and fixed several bugs (see
+Fuzzing above); netns scenarios with builds for other CPUs under
+qemu-user; the steps before the dispatch in one place for both roles
+(`pdu_in_common()`); over TCP, the configured supernodes first and the
+learned ones marked once they turn out to be UDP only; a reload that
+compares and applies the filter rules and reaches the edge of a supernode
+(`supernode.tap`).  Android: the revamp - the state in the service, the
+notification following it, the connect button with its LED.  Postponed to
+v4: the path MTU, DNS SRV, fuzzing the QR code (see Decisions).
 
 Open, in rough order:
 
-- Android: a state view, auto addresses, reacting to network changes, IPv6
-  on the device; re-test routing through an exit node and the share screen
-  on a fresh build.
-- Path MTU on a 1280-byte path: send an ICMP "packet too big" back into
-  the TAP for the inner sender (and/or clamp TCP MSS per peer); today
-  oversize frames are fragmented or dropped, see the `mtu-1280*` scenarios.
+- Unit tests for the shared parts: `pdu_in_common()` and the send layer.
+- Communities for both roles (below): the edge reading the community
+  file, `-O` for the options of one community.
+- IPv6 on the TAP device; fewer privileges (CAP_NET_ADMIN only,
+  Landlock); UDP GSO/GRO.
+- Releases: the app's ID, the signing key, the channels - decisions to
+  take, then the first run of `release.yml`.
+- On real hardware: the Android app on a phone, the ARM benchmarks, the
+  benchmarks for the parked upstream PRs.
 - Keep in mind a real finding: the direct path between two edges can be
   the lossy one (an ISP spreading traffic over two peering legs, one
   dropping) while the relay is clean - see the v4 path-manager note above.
-- The `-O` command-line option, the edge reading the community file, unit
-  tests for the shared send layer, the performance work (epoll, batched
-  I/O, no alloc per packet) and the v4 ideas under "Later".
 
 Picking up in a new session: read this file and `docs/develop/*.md`, build
 with `./autogen.sh && ./configure && make`, and the tests are `make test`
