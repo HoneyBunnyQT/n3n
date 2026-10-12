@@ -118,7 +118,11 @@ n3n-edge start \
 ```
 
 A `-O` for a section that is also in the configuration file sets that
-option in it, the others stay as the file has them.
+option in it, the others stay as the file has them.  On the edge, the
+short options `-c` and `-k` (and `N3N_COMMUNITY`, `N3N_KEY` in the
+environment) set `[community]`, the section without a name: together with a
+named one, the edge stops - two communities, or a key that would be left
+unused.  `-l` adds a supernode, whichever section the community is in.
 
 
 ## Somewhat Flexible Community Names

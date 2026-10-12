@@ -218,6 +218,13 @@ int edge_conf_one_community (n2n_edge_conf_t *conf) {
                    count + (conf->community.community_name[0] != 0));
         return -1;
     }
+    // not dropped without a word: a key from -k or N3N_KEY, meant for the
+    // community of the named section
+    if(conf->community.encrypt_key) {
+        traceEvent(TRACE_ERROR, "the community is that of [community %s], but community.key (-k, N3N_KEY) "
+                   "is set without a name: set it as \"community %s.key\"", comm->instance, comm->instance);
+        return -1;
+    }
 
     if(comm->network.net_addr || comm->users) {
         traceEvent(TRACE_WARNING, "community.network and community.user are only for a supernode, ignoring");
