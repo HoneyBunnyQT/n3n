@@ -470,6 +470,49 @@ static void tun (void) {
         b[ip + 36] = 0; b[ip + 37] = 0; b[ip + 38] = 0; b[ip + 39] = 1;
         n += 40;
         put("tun", "ipv6-out-multicast", b, n);
+        // to the IPv4 address of a peer in the prefix, to one asked for
+        // with a neighbour solicitation, to a MAC's EUI-64, outside it
+        memcpy(b + ip + 24, "\xfd\x00\x00\x77\0\0\0\0\0\0\0\0\x0a\x00\x00\x02", 16);
+        put("tun", "ipv6-out-v4", b, n);
+        memcpy(b + ip + 24, "\xfd\x00\x00\x77\0\0\0\0\0\0\0\0\0\0\x0b\x0b", 16);
+        put("tun", "ipv6-out-solicit", b, n);
+        memcpy(b + ip + 24, "\xfe\x80\0\0\0\0\0\0\0\0\0\xff\xfe\0\0\x02", 16);
+        put("tun", "ipv6-out-eui64", b, n);
+        memcpy(b + ip + 24, "\x20\x01\x0d\xb8\0\0\0\0\0\0\0\0\0\0\0\x01", 16);
+        put("tun", "ipv6-out-elsewhere", b, n);
+    }
+
+    // a neighbour solicitation for the edge's IPv6 address, and an
+    // advertisement of a peer's, each with its link-layer address option
+    {
+        size_t n = 0;
+        b[n++] = 0;
+        memcpy(b + n, "\x33\x33\xff\x00\x00\x01", 6); n += 6;   // solicited-node
+        memcpy(b + n, peer, 6); n += 6;
+        b[n++] = 0x86; b[n++] = 0xdd;               // IPv6
+        size_t ip = n;
+        memset(b + n, 0, 40 + 32);
+        b[ip] = 0x60;
+        b[ip + 5] = 32;                             // payload length
+        b[ip + 6] = 58;                             // ICMPv6
+        b[ip + 7] = 255;                            // hop limit
+        memcpy(b + ip + 8, "\xfd\x00\x00\x77\0\0\0\0\0\0\0\0\x0a\x00\x00\x02", 16);
+        memcpy(b + ip + 24, "\xff\x02\0\0\0\0\0\0\0\0\0\x01\xff\x00\x00\x01", 16);
+        size_t icmp = ip + 40;
+        b[icmp] = 135;                              // solicitation
+        memcpy(b + icmp + 8, "\xfd\x00\x00\x77\0\0\0\0\0\0\0\0\x0a\x00\x00\x01", 16);
+        b[icmp + 24] = 1; b[icmp + 25] = 1;         // source link-layer address
+        memcpy(b + icmp + 26, peer, 6);
+        n += 40 + 32;
+        put("tun", "ipv6-solicit", b, n);
+        b[icmp] = 136;                              // advertisement, of the peer
+        memcpy(b + icmp + 8, b + ip + 8, 16);
+        b[icmp + 24] = 2;                           // target link-layer address
+        put("tun", "ipv6-advert", b, n);
+        memset(b + ip + 8, 0, 16);                  // a duplicate address check
+        b[icmp] = 135;
+        memcpy(b + icmp + 8, "\xfd\x00\x00\x77\0\0\0\0\0\0\0\0\x0a\x00\x00\x01", 16);
+        put("tun", "ipv6-solicit-dad", b, n);
     }
 }
 

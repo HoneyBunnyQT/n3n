@@ -3,19 +3,21 @@
  * SPDX-License-Identifier: GPL-3.0-only
  *
  * Fuzz target: the TUN edge (src/tun.c), which plays the part of the
- * kernel's Ethernet and ARP for an edge whose device carries IP packets.
+ * kernel's Ethernet, ARP and IPv6 neighbour discovery for an edge whose
+ * device carries IP packets.
  * Two directions, the first byte of the input picks which:
  *
  * - tun_from_frame(): a frame from the network (a peer), as role_tap
- *   hands it over - the untrusted side.  ARP is parsed and answered or
- *   learned from, an IP packet for this edge loses its header and goes to
- *   the (stubbed) device.
+ *   hands it over - the untrusted side.  ARP and neighbour solicitations
+ *   and advertisements are parsed and answered or learned from, an IP
+ *   packet for this edge loses its header and goes to the (stubbed)
+ *   device.
  * - tun_to_frame(): an IP packet from the device gets an Ethernet header,
  *   or becomes an ARP request.  The device is local, but a malformed
  *   packet should not crash the edge either.
  *
  * The edge is set up as its defaults make it, in TUN mode, with a fixed
- * MAC and address and no socket (eee->sock = -1): the ARP reply that
+ * MAC and IPv4 and IPv6 address (fd00:77::a00:1/64) and no socket (eee->sock = -1): the ARP reply that
  * tun_from_frame() may send is built and encoded, but edge_sendto_sock()
  * drops it rather than touch a socket.  See README.md.
  */
@@ -69,6 +71,10 @@ int LLVMFuzzerInitialize (int *argc, char ***argv) {
            "\x02\x00\x00\x00\x00\x01", 6);
     // a /24, so the broadcast and "outside the subnet" paths are reachable
     eee.conf.tap.tuntap_v4.net_bitlen = 24;
+    // and an IPv6 address, for neighbour discovery: the IPv4 one in a /64
+    memcpy(eee.tap.ip6, "\xfd\x00\x00\x77\0\0\0\0\0\0\0\0\x0a\x00\x00\x01", 16);
+    eee.tap.ip6_len = 64;
+    eee.tap.has_ip6 = true;
 
     // a running edge has a current supernode on its data path: the ARP
     // reply that tun_from_frame() sends is routed to it when the peer is

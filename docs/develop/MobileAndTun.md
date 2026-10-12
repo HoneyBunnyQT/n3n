@@ -65,9 +65,9 @@ This is what hin2n, the Android app of n2n, does as well.
   they need layer 2.
 - Routing other subnets through the tunnel (n3n-route) needs a next hop
   per route: a later step.
-- IPv6 needs neighbour discovery answered like ARP (neighbour solicitation
-  and advertisement), and an IPv6 address on the device, which the TAP
-  device does not have either yet (see the Roadmap).  So: IPv4 first.
+- IPv6: with `tuntap.address6`, the edge does neighbour discovery as it
+  does ARP (solicitations answered for its own address, asked for those it
+  does not know), see [IPv6](IPv6.md).
 
 ### Steps
 
@@ -76,7 +76,8 @@ This is what hin2n, the Android app of n2n, does as well.
 2. Done: netns scenarios `tun-tap` (a TUN edge and a TAP edge, direct) and
    `tun-tun` (relayed), traffic both ways.
 3. Done: `tuntap.fd`, for Android and for tests.
-4. IPv6 (neighbour discovery), later.
+4. Done: IPv6 (neighbour discovery, `tuntap.address6`), netns scenarios
+   `ipv6-tun-tap` and `ipv6-tun-tun`; the Android app next.
 
 ## Android app
 

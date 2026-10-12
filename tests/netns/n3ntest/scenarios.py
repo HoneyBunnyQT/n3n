@@ -601,6 +601,32 @@ SCENARIOS = [
         Site(["hard-range"], conf={"tuntap": {"type": "tun"}}),
         Site(["hard-range"], conf={"tuntap": {"type": "tun"}}),
         "relayed"),
+    Scenario(
+        "ipv6-tap",
+        "IPv6 inside the tunnel, two TAP edges with tuntap.address6 = "
+        "auto: the kernels' neighbour discovery passes without "
+        "filter.allow_multicast, a ping each way",
+        Site(["easy-kept"]), Site(["easy-changed"]),
+        "direct", inner6=True, tags=["quick", "ipv6"]),
+    Scenario(
+        "ipv6-tun-tap",
+        "IPv6 inside the tunnel, a TUN edge (auto, prefix6 given) and a "
+        "TAP edge with an address of its own in that prefix: the TUN edge "
+        "asks for its MAC with a neighbour solicitation and answers the "
+        "kernel's, a ping each way",
+        Site(["easy-kept"], conf={"tuntap": {
+            "type": "tun", "prefix6": "fd00:77::/64"}}),
+        Site(["easy-changed"], conf={"tuntap": {
+            "address6": "fd00:77::b0b/64"}}),
+        "direct", inner6=True, tags=["quick", "ipv6"]),
+    Scenario(
+        "ipv6-tun-tun",
+        "IPv6 inside the tunnel, two TUN edges, relayed: each finds the "
+        "other's MAC from the IPv4 address in its IPv6 one, a ping each "
+        "way",
+        Site(["hard-range"], conf={"tuntap": {"type": "tun"}}),
+        Site(["hard-range"], conf={"tuntap": {"type": "tun"}}),
+        "relayed", inner6=True, tags=["ipv6"]),
 ]
 
 

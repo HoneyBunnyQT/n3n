@@ -173,7 +173,7 @@ class Scenario:
                  outage_max_gap=None, reload=None, sn_versions=None,
                  direct_ok=None, sn_peer_family=4, sn_start_gap=0,
                  tcp_burst=0, spray=0, sn_nofile=None, sn_udp_only=(),
-                 udp_lost=None, sn_count=2, marked=()):
+                 udp_lost=None, sn_count=2, marked=(), inner6=False):
         self.name = name
         self.desc = desc
         self.sites = {"a": a, "b": b}
@@ -210,6 +210,9 @@ class Scenario:
         # The "internet", the supernodes and the edges on it without NAT
         # have IPv6 next to IPv4 (dual stack)
         self.ipv6 = ipv6
+        # IPv6 inside the tunnel: tuntap.address6 = auto on the edges (a
+        # site's conf may give another), a ping each way, see check_inner6()
+        self.inner6 = inner6
         # At most this many times an edge may move its peer to another
         # address ("peer ... changed" in its log) once they are direct
         self.max_moves = max_moves
@@ -429,7 +432,8 @@ class Run:
 
     def build(self):
         lab = self.lab
-        if self.sc.ipv6 and not os.path.exists("/proc/sys/net/ipv6"):
+        if (self.sc.ipv6 or self.sc.inner6) \
+                and not os.path.exists("/proc/sys/net/ipv6"):
             raise LabError("this kernel has no IPv6 (see tests/netns/uml.sh)")
         # n2n has no IPv6 at all
         versioned = [v for v in list(self.sc.sn_versions.values()) +
@@ -905,6 +909,8 @@ class Run:
         for overrides in (self.sc.conf, site.conf):
             for section, options in overrides.items():
                 conf.setdefault(section, {}).update(options)
+        if self.sc.inner6:
+            conf["tuntap"].setdefault("address6", "auto")
         if self.sc.gateway == sname:
             conf.setdefault("filter", {})["allow_routing"] = True
         elif self.sc.gateway:
@@ -1810,6 +1816,39 @@ class Run:
                    "{} of 20 datagrams to {} through {}".format(
                        got, GATEWAY_TARGET, gw))
 
+    def _address6(self, sname):
+        """An edge's IPv6 address, as its log says it"""
+        try:
+            with open(self.edges[sname]["daemon"].proc.log_path,
+                      errors="replace") as f:
+                for line in f:
+                    if "IPv6 address of the device: " in line:
+                        return line.split(": ")[-1].strip().split("/")[0]
+        except OSError:
+            pass
+        return None
+
+    def check_inner6(self):
+        """A ping over IPv6 inside the tunnel, each way: neighbour discovery
+        - the kernel's on a TAP device, the edge's on a TUN device"""
+        for src, dst in (("a", "b"), ("b", "a")):
+            addr = self._address6(dst)
+            if not addr:
+                self.check("ipv6:{}->{}".format(src, dst), False,
+                           "no IPv6 address in the log of " + dst)
+                continue
+            # the first may go while the MAC is asked for
+            p = subprocess.run(["ip", "netns", "exec", self.edges[src]["ns"],
+                                "ping", "-6", "-c", "5", "-i", "0.3",
+                                "-W", "2", addr],
+                               capture_output=True, text=True, timeout=30)
+            got = 0
+            for line in p.stdout.splitlines():
+                if " received" in line:
+                    got = int(line.split(",")[1].split()[0])
+            self.check("ipv6:{}->{}".format(src, dst), got >= 3,
+                       "{} of 5 pings to {} answered".format(got, addr))
+
     # 6. All of it
 
     def execute(self):
@@ -1853,6 +1892,8 @@ class Run:
                     self.check_descriptions("description after")
             if self.sc.gateway and self.check_alive("measurement"):
                 self.check_gateway()
+            if self.sc.inner6 and self.check_alive("measurement"):
+                self.check_inner6()
             if self.sc.max_moves is not None:
                 self.check_moves()
             self._dump_state()

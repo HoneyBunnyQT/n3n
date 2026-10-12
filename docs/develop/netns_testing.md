@@ -329,6 +329,9 @@ ports from all of it.
 | sn-tcp-1100 | as sn-tcp-burst with 1100 connections, the supernodes started with a soft limit of 1024 open files (`sn_nofile`), as under systemd | relayed; all taken: epoll, and the limit raised to the hard one |
 | tun-tap | easy-kept with `tuntap.type=tun` / easy-changed with a TAP device | direct, the TUN edge building the frames |
 | tun-tun | hard-range / hard-range, both with `tuntap.type=tun` | relayed |
+| ipv6-tap | easy-kept / easy-changed, both `tuntap.address6 = auto` (IPv6 inside the tunnel), ping each way | direct; the kernels' neighbour discovery passes without `filter.allow_multicast` |
+| ipv6-tun-tap | easy-kept with `tuntap.type=tun`, `address6 = auto`, `prefix6 = fd00:77::/64` / easy-changed, TAP, `address6 = fd00:77::b0b/64`, ping each way | direct; the TUN edge asks for the TAP edge's MAC (a neighbour solicitation) and answers the kernel's |
+| ipv6-tun-tun | hard-range / hard-range, both TUN, `address6 = auto`, ping each way | relayed; each finds the other's MAC from the IPv4 address in its IPv6 one |
 | reload | easy-kept / easy-changed; a's configuration loses the supernode a is at and gets another description and a filter rule, then SIGHUP | a applies all three while it runs, and nothing else changes, moves to the other supernode, and b sees its new description at once; direct |
 | sn-tap-reload | easy-kept / the TAP device of sn2; sn2's configuration gets another description and a filter rule for its edge, then SIGHUP (`reload` naming the site) | relayed; sn2's edge takes both, a sees its new description at once |
 | sn-outage | easy-kept / easy-changed; both supernodes killed while frames flow both ways, for 90s (longer than the registrations live) | direct throughout, the longest gap each way at most 3s |
