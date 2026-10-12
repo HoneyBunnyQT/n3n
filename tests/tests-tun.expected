@@ -1,0 +1,16 @@
+without an address of its own: nothing out: ok
+unknown: a solicitation: ok
+solicitation: to the solicited-node MAC, from the edge's: ok
+solicitation: to the solicited-node address, hop limit 255: ok
+solicitation: the address asked for as target: ok
+solicitation: the edge's MAC as source link-layer address: ok
+solicitation: the checksum: ok
+asked within the second: not again: ok
+an advertisement: not for the device: ok
+advertised: the packet to its MAC: ok
+the IPv4 address in it: its MAC from the IPv4 table: ok
+an EUI-64 interface ID: the MAC from the address: ok
+multicast: 33:33 and the last 32 bits: ok
+outside the prefix, no gateway: nothing out: ok
+a solicitation for the edge: not for the device: ok
+an IPv6 packet for the edge: to the device: ok

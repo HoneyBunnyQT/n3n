@@ -9,6 +9,7 @@ tests-decode-bounds
 tests-elliptic
 tests-pdu-in
 tests-ipv6
+tests-tun
 tests-peers
 tests-regex
 tests-sock

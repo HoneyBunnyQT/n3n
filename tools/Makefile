@@ -34,6 +34,7 @@ TESTS+=tests-decode-bounds
 TESTS+=tests-sock
 TESTS+=tests-pdu-in
 TESTS+=tests-ipv6
+TESTS+=tests-tun
 
 .PHONY: all clean install
 all: $(TOOLS) $(TESTS)

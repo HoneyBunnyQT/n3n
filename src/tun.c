@@ -234,6 +234,21 @@ static size_t nd_frame (struct n3n_runtime_data *eee, uint8_t *frame, uint8_t ty
     uint8_t *icmp = ip + IP6_HLEN;
     uint8_t mcast[16] = {0xff, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01, 0xff};
     uint8_t mcast_mac[6] = {0x33, 0x33, 0xff};
+    uint8_t to[16], about[16];
+    uint8_t eth_to[6];
+
+    // copies: they may point into frame, at the packet that the
+    // solicitation takes the place of
+    memcpy(about, target, 16);
+    target = about;
+    if(dst) {
+        memcpy(to, dst, 16);
+        dst = to;
+    }
+    if(eth_dst) {
+        memcpy(eth_to, eth_dst, 6);
+        eth_dst = eth_to;
+    }
 
     if(type == ND_SOLICIT) {
         memcpy(mcast + 13, target + 13, 3);

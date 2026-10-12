@@ -29,6 +29,7 @@ tests-decode-bounds
 tests-sock
 tests-pdu-in
 tests-ipv6
+tests-tun
 tests-auth.exe
 tests-compress.exe
 tests-elliptic.exe
@@ -44,3 +45,4 @@ tests-decode-bounds.exe
 tests-sock.exe
 tests-pdu-in.exe
 tests-ipv6.exe
+tests-tun.exe
