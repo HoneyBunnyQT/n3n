@@ -27,6 +27,10 @@
 #else
 #include <sys/socket.h>      // for sendto, sendmmsg, recvmmsg, sockaddr_storage
 #endif
+#ifdef __linux__
+#include <netinet/in.h>      // for IPPROTO_UDP
+#include <netinet/udp.h>     // for UDP_SEGMENT
+#endif
 
 // sendmmsg() and recvmmsg(): Linux (glibc, musl, Bionic)
 #ifdef __linux__
@@ -39,6 +43,19 @@
 // Datagrams one recvmmsg() takes, see udp_drain()
 #define SOCK_RX_BATCH 16
 
+// UDP GSO (Linux 4.18): datagrams of a batch for one destination, of one
+// size, go to the kernel as one, which cuts them apart again only at the
+// end of its path - the route, the firewall and the queues are passed once
+// for them all.  The datagrams on the wire are the same.
+#ifdef UDP_SEGMENT
+#define SOCK_GSO 1
+// what one send of several may carry: a datagram of IPv4 or IPv6 at most
+// (65535 bytes) less the headers
+#define SOCK_GSO_BYTES (65535 - 40 - 8)
+// sockets of a thread whose GSO is known, see gso_usable()
+#define SOCK_GSO_SOCKS 8
+#endif
+
 // A copy of each datagram: what the callers send from may be gone by the
 // time the batch goes, a buffer on the stack of a control message's sender
 static N3N_THREAD_LOCAL struct sock_tx_batch {
@@ -49,6 +66,18 @@ static N3N_THREAD_LOCAL struct sock_tx_batch {
     struct iovec iov[SOCK_TX_BATCH];
     struct sockaddr_storage dest[SOCK_TX_BATCH];
     uint8_t buf[SOCK_TX_BATCH][N2N_PKT_BUF_SIZE];
+#ifdef SOCK_GSO
+    // what goes to sendmmsg(): one message for each run of datagrams
+    struct mmsghdr out[SOCK_TX_BATCH];
+    int out_first[SOCK_TX_BATCH];       // the first datagram of each
+    int out_count[SOCK_TX_BATCH];       // how many
+    union {
+        char buf[CMSG_SPACE(sizeof(uint16_t))];
+        struct cmsghdr align;
+    } ctl[SOCK_TX_BATCH];
+    SOCKET gso_sock[SOCK_GSO_SOCKS];    // 0 for none yet
+    bool gso_ok[SOCK_GSO_SOCKS];
+#endif
 } *tx;
 
 static N3N_THREAD_LOCAL struct sock_rx_batch {
@@ -144,12 +173,132 @@ static void send_failed (const struct sockaddr *dest) {
 
 
 #ifdef SOCK_MMSG
+#ifdef SOCK_GSO
+// Whether a socket takes UDP_SEGMENT: asked of the kernel once per socket
+// and thread.  A kernel without GSO would send what is meant to be cut up
+// as one big datagram instead.
+static bool gso_usable (SOCKET sock) {
+
+    int free_slot = -1;
+
+    for(int i = 0; i < SOCK_GSO_SOCKS; i++) {
+        if(tx->gso_sock[i] == sock + 1) {
+            return tx->gso_ok[i];
+        }
+        if(!tx->gso_sock[i] && (free_slot < 0)) {
+            free_slot = i;
+        }
+    }
+
+    int size = 0;
+    socklen_t len = sizeof(size);
+    bool ok = getsockopt(sock, IPPROTO_UDP, UDP_SEGMENT, &size, &len) == 0;
+
+    if(free_slot < 0) {
+        // more sockets than slots: ask again next time, the oldest goes
+        free_slot = 0;
+    }
+    // stored as sock + 1, so that 0 is a free slot
+    tx->gso_sock[free_slot] = sock + 1;
+    tx->gso_ok[free_slot] = ok;
+    return ok;
+}
+
+// A send with GSO failed for good on this socket (EIO: a device that does
+// not compute the checksums), so the datagrams go one by one from now on
+static void gso_off (SOCKET sock) {
+
+    for(int i = 0; i < SOCK_GSO_SOCKS; i++) {
+        if(tx->gso_sock[i] == sock + 1) {
+            tx->gso_ok[i] = false;
+        }
+    }
+    traceEvent(TRACE_INFO, "UDP GSO does not work on this socket, sending without it");
+}
+
+// The datagrams first, ... of the batch as one message for sendmmsg(), with
+// UDP_SEGMENT if there are more than one
+static void gso_message (int j, int first, int count) {
+
+    struct msghdr *hdr = &tx->out[j].msg_hdr;
+
+    memset(&tx->out[j], 0, sizeof(tx->out[j]));
+    *hdr = tx->msg[first].msg_hdr;
+    hdr->msg_iovlen = count;
+    tx->out_first[j] = first;
+    tx->out_count[j] = count;
+    if(count > 1) {
+        uint16_t size = tx->iov[first].iov_len;
+
+        hdr->msg_control = tx->ctl[j].buf;
+        hdr->msg_controllen = sizeof(tx->ctl[j].buf);
+        struct cmsghdr *cm = CMSG_FIRSTHDR(hdr);
+        cm->cmsg_level = IPPROTO_UDP;
+        cm->cmsg_type = UDP_SEGMENT;
+        cm->cmsg_len = CMSG_LEN(sizeof(size));
+        memcpy(CMSG_DATA(cm), &size, sizeof(size));
+    }
+}
+
+// Whether datagram k can go with the run of datagrams first, ...: to the
+// same destination, as big as the first - the last of a run may be smaller
+// - and all of them not too big for one send
+static bool gso_joins (int first, int k, size_t bytes) {
+
+    size_t size = tx->iov[first].iov_len;
+
+    return (tx->msg[k].msg_hdr.msg_namelen == tx->msg[first].msg_hdr.msg_namelen)
+           && !memcmp(&tx->dest[k], &tx->dest[first], tx->msg[first].msg_hdr.msg_namelen)
+           && (tx->iov[k].iov_len <= size)
+           && (tx->iov[k - 1].iov_len == size)
+           && (bytes + tx->iov[k].iov_len <= SOCK_GSO_BYTES);
+}
+#endif
+
 // Send what the batch holds, all for one socket: sendmmsg() stops at a
 // datagram it cannot send, which is logged and skipped, as sendto_logged()
 // would have
 static void tx_flush (void) {
 
     int done = 0;
+
+#ifdef SOCK_GSO
+    if((tx->count > 1) && gso_usable(tx->sock)) {
+        int nout = 0;
+
+        for(int k = 0; k < tx->count;) {
+            int first = k;
+            size_t bytes = tx->iov[k].iov_len;
+
+            for(k++; (k < tx->count) && gso_joins(first, k, bytes); k++) {
+                bytes += tx->iov[k].iov_len;
+            }
+            gso_message(nout++, first, k - first);
+        }
+        while(done < nout) {
+            int n = sendmmsg(tx->sock, &tx->out[done], nout - done, 0);
+            if(n >= 0) {
+                done += n;
+                continue;
+            }
+            // a run that cannot go as one: EINVAL for datagrams too big
+            // for the path to go unfragmented, EIO for a device that does
+            // not do the checksums.  Its datagrams go one by one.
+            int first = tx->out_first[done], count = tx->out_count[done];
+            if((count > 1) && (errno == EIO)) {
+                gso_off(tx->sock);
+            }
+            for(int k = first; k < first + count; k++) {
+                if(sendmsg(tx->sock, &tx->msg[k].msg_hdr, 0) < 0) {
+                    send_failed((const struct sockaddr *)&tx->dest[k]);
+                }
+            }
+            done++;
+        }
+        tx->count = 0;
+        return;
+    }
+#endif
 
     while(done < tx->count) {
         int n = sendmmsg(tx->sock, &tx->msg[done], tx->count - done, 0);
@@ -235,6 +384,7 @@ ssize_t sendto_bind (struct n3n_runtime_data *rt, int i, const void *buf,
     return sendto_logged(bind_thread_sock(rt, i), buf, len,
                          (const struct sockaddr *)&dest_addr, dest_len);
 }
+
 
 
 int udp_drain (struct n3n_runtime_data *rt, SOCKET sock, struct n3n_pktbuf *pkt,
