@@ -22,8 +22,9 @@ what they announce of themselves, or by asking with ARP.  On the wire nothing
 changes, so edges with TUN and with TAP devices are in the same community.
 
 This is for systems that offer only TUN devices (Android, later others); on
-Linux it works too, and is what the tests use.  For now: IPv4 (and IPv6
-multicast and IPv6 coming in, but not IPv6 unicast going out), no bridging
+Linux it works too, and is what the tests use.  IPv4, and IPv6 with
+`tuntap.address6` (below), the edge doing neighbour discovery as it does
+ARP.  For now: no bridging
 (`filter.allow_routing` with a bridge), no `dhcp` address mode, one thread,
 Linux only.  Routes and address work as with a TAP device; there are no
 neighbour entries on a TUN device (`ip neigh`): the edge keeps its own.
@@ -75,29 +76,37 @@ If an edge of the community runs a DHCP server, the others could draw their IP a
 
 ### IPv6
 
-n3n supports the carriage of IPv6 packets within the n3n tunnel. n3n does not
-yet use IPv6 for transport between edges and supernodes.
+IPv6 inside the tunnel needs an address on the device of each edge:
+`tuntap.address6`.
 
-To make IPv6 carriage work you need to manually add IPv6 addresses to the TAP
-interfaces at each end. There is currently no way to specify an IPv6 address on
-the edge command line.
+```
+[tuntap]
+address6 = auto
+```
 
-For example, under Linux
+`auto` makes an address that is the edge's own without anyone handing it
+out, and without anything new on the wire:
 
-on hostA:
-`[hostA] $ /sbin/ip -6 addr add fc00:abcd:1234::7/48 dev n3n0`
+- the network (the upper 64 bits) from `tuntap.prefix6`, by default `fd`
+  and 40 bits of a hash of the community's name - the same /64 for all the
+  edges of a community, a private (unique local) one;
+- the lower part from the edge's IPv4 address, static or from the
+  supernode: with 10.77.0.5, `fd6c:bcdb:8e7b::10.77.0.5` (shown as
+  `fd6c:bcdb:8e7b::a4d:5`), or, for an edge without one, from its MAC
+  address, as the kernel makes the link-local address.
 
-on hostB:
-`[hostB] $ /sbin/ip -6 addr add fc00:abcd:1234::6/48 dev n3n0`
+Or give one: `address6 = fd00:77::5/64`.  The edge puts it on the device
+(Linux for now) and logs it ("IPv6 address of the device").  Neighbour
+solicitations, IPv6's ARP, then pass without `filter.allow_multicast`; on a
+TUN device the edge does the neighbour discovery itself.  The design, and
+what comes next: [IPv6](../develop/IPv6.md).
 
-You may find it useful to make use of `tunctl` from the uml-utilities
-package. `tunctl` allows you to bring up a TAP interface and configure addressing
-prior to starting the edge. It also allows the edge to be restarted without the
-interface closing (which would normally affect routing tables).
+Without the option, an address added by hand works as well, e.g. on Linux
+`ip -6 addr add fd00:77::7/64 dev n3n0` at each end - neighbour discovery
+then needs `filter.allow_multicast = true`.  Test it with `ping -6`.
 
-Once the IPv6 addresses are configured and edge is started, IPv6 neighbor discovery
-packets flow (get broadcast) and IPv6 entities self-arrange. Test your IPv6
-setup with `ping6` - the IPv6 ping command.
+(This is IPv6 inside the tunnel.  Between the edges and the supernodes,
+n3n speaks IPv6 too, see `connection.bind` and `community.supernode`.)
 
 ## MTU
 

@@ -28,6 +28,7 @@
 #include "config.h"
 #include "edge_utils.h"
 #include "header_encryption.h"
+#include "ipv6.h"              // for n3n_ipv6_address
 #include "minmax.h"
 #include "n2n_wire.h"
 #include "punch.h"
@@ -81,6 +82,14 @@ static int is_ethMulticast (const void * buf, size_t bufsize) {
 /** Destination MAC 33:33:0:00:00:00 - 33:33:FF:FF:FF:FF is reserved for IPv6
  *    neighbour discovery.
  */
+// A neighbour solicitation's multicast address (33:33:ff and 24 bits of
+// the address asked for, RFC 4861): IPv6's ARP, which passes without
+// filter.allow_multicast as ARP does, once the edge has an IPv6 address
+static bool is_ip6_solicitation (const struct n3n_runtime_data *eee, const uint8_t *frame, size_t len) {
+
+    return eee->tap.has_ip6 && (len >= 14) && (frame[0] == 0x33) && (frame[1] == 0x33) && (frame[2] == 0xff);
+}
+
 static int is_ip6_discovery (const void * buf, size_t bufsize) {
 
     int retval = 0;
@@ -321,7 +330,7 @@ static int handle_PACKET (struct n3n_runtime_data * eee,
 
     is_multicast = (is_ip6_discovery(eth_payload, eth_size) || is_ethMulticast(eth_payload, eth_size));
 
-    if(!eee->conf.tap.allow_multicast && is_multicast) {
+    if(!eee->conf.tap.allow_multicast && is_multicast && !is_ip6_solicitation(eee, eth_payload, eth_size)) {
         traceEvent(TRACE_INFO, "dropping RX multicast");
         STATS_INC(eee, rx_multicast_drop);
         return(-1);
@@ -772,32 +781,71 @@ void edge_send_packet2net (struct n3n_runtime_data * eee,
 }
 
 
+// The edge's IPv6 address (tuntap.address6), once the device is there and
+// with it the MAC and the IPv4 address: worked out, and on Linux put on
+// the device - not on one given as tuntap.fd, which its opener sets up,
+// as the Android app does with the same address.  -1 for an option that
+// cannot be used.
+static int edge_ipv6_setup (struct n3n_runtime_data *eee) {
+
+    uint32_t v4 = (eee->conf.tap.tuntap_ip_mode == TUNTAP_IP_MODE_DHCP) ? 0 : eee->conf.tap.tuntap_v4.net_addr;
+    char buf[INET6_ADDRSTRLEN];
+
+    eee->tap.has_ip6 = false;
+    int ret = n3n_ipv6_address(eee->conf.tap.address6, eee->conf.tap.prefix6,
+                               (const char *)eee->conf.community.community_name, v4,
+                               eee->tap.device.mac_addr, eee->tap.ip6, &eee->tap.ip6_len);
+    if(ret) {
+        return (ret < 0) ? -1 : 0;
+    }
+    traceEvent(TRACE_NORMAL, "IPv6 address of the device: %s/%u",
+               inet_ntop(AF_INET6, eee->tap.ip6, buf, sizeof(buf)), eee->tap.ip6_len);
+#ifdef __linux__
+    if(!eee->conf.tap.fd && (tuntap_set_ipv6(&eee->tap.device, eee->tap.ip6, eee->tap.ip6_len) != 0)) {
+        // the edge goes on without, as without the option
+        return 0;
+    }
+#else
+    traceEvent(TRACE_WARNING, "IPv6 address: put on the device on Linux only for now, see docs/develop/IPv6.md");
+#endif
+    eee->tap.has_ip6 = true;
+    return 0;
+}
+
+
 /* Open the tap device - with a queue for each thread that is going to handle
  * packets, now that there still are the privileges for that.
  */
 int edge_tap_open (struct n3n_runtime_data *eee) {
 
+    int fd;
+
     eee->tap.device.tun = eee->conf.tap.type == N3N_TUNTAP_TUN;
 #ifdef __linux__
     if(eee->conf.tap.fd) {
-        return tuntap_take_fd(&eee->tap.device, eee->conf.tap.fd, eee->conf.tap.tuntap_v4, eee->conf.tap.device_mac);
+        fd = tuntap_take_fd(&eee->tap.device, eee->conf.tap.fd, eee->conf.tap.tuntap_v4, eee->conf.tap.device_mac);
+    } else {
+        fd = tuntap_open_queues(&eee->tap.device, edge_threads_possible(&eee->conf),
+                                eee->conf.tap.tuntap_dev_name,
+                                eee->conf.tap.tuntap_ip_mode,
+                                eee->conf.tap.tuntap_v4,
+                                eee->conf.tap.device_mac,
+                                eee->conf.tap.mtu,
+                                eee->conf.tap.metric);
     }
-    return tuntap_open_queues(&eee->tap.device, edge_threads_possible(&eee->conf),
-                              eee->conf.tap.tuntap_dev_name,
-                              eee->conf.tap.tuntap_ip_mode,
-                              eee->conf.tap.tuntap_v4,
-                              eee->conf.tap.device_mac,
-                              eee->conf.tap.mtu,
-                              eee->conf.tap.metric);
 #else
-    return tuntap_open(&eee->tap.device,
-                       eee->conf.tap.tuntap_dev_name,
-                       eee->conf.tap.tuntap_ip_mode,
-                       eee->conf.tap.tuntap_v4,
-                       eee->conf.tap.device_mac,
-                       eee->conf.tap.mtu,
-                       eee->conf.tap.metric);
+    fd = tuntap_open(&eee->tap.device,
+                     eee->conf.tap.tuntap_dev_name,
+                     eee->conf.tap.tuntap_ip_mode,
+                     eee->conf.tap.tuntap_v4,
+                     eee->conf.tap.device_mac,
+                     eee->conf.tap.mtu,
+                     eee->conf.tap.metric);
 #endif
+    if((fd >= 0) && (edge_ipv6_setup(eee) < 0)) {
+        return -1;
+    }
+    return fd;
 }
 
 
@@ -874,7 +922,8 @@ static int edge_tap_take (struct n3n_runtime_data * eee,
 
     if(!eee->conf.tap.allow_multicast &&
        (is_ip6_discovery(eth_pkt, len) ||
-        is_ethMulticast(eth_pkt, len))) {
+        is_ethMulticast(eth_pkt, len)) &&
+       !is_ip6_solicitation(eee, eth_pkt, len)) {
         traceEvent(TRACE_INFO, "dropping Tx multicast");
         STATS_INC(eee, tx_multicast_drop);
         return 1;

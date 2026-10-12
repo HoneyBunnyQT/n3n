@@ -396,7 +396,9 @@ static struct n3n_conf_option section_filter[] = {
         .desc = "Optionally enable multicast traffic",
         .help = "Amongst other things, multicast is used for IPv6 neighbour "
                 "discovery.  If not allowed, then these multicast packets "
-                "are discarded.",
+                "are discarded - but for neighbour solicitations once the "
+                "edge has an IPv6 address of its own (tuntap.address6), "
+                "which pass as ARP does.",
     },
     {
         .name = "allow_routing",
@@ -695,9 +697,10 @@ static struct n3n_conf_option section_tuntap[] = {
                 "for its address and finds the MAC address of the others "
                 "from what they announce or by ARP, so on the wire nothing "
                 "changes and TUN and TAP edges share a community.  For "
-                "systems that offer only TUN devices (Android).  IPv4 only "
-                "for now, no bridging, no dhcp address_mode, one thread.  "
-                "Linux only.",
+                "systems that offer only TUN devices (Android).  IPv6 with "
+                "tuntap.address6, the edge then doing neighbour discovery "
+                "as it does ARP.  No bridging, no dhcp address_mode, one "
+                "thread.  Linux only.",
     },
     {
         .name = "gateway",

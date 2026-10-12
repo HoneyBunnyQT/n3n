@@ -401,6 +401,72 @@ void tuntap_close (struct tuntap_dev *tuntap) {
 }
 
 
+// An IPv6 address on the device, by netlink (RTM_NEWADDR) - the ioctl()
+// of IPv4 takes no IPv6 address.  Without duplicate address detection:
+// the address is unique in the community as it is made (see ipv6.h), and
+// usable at once rather than a second or two later.
+int tuntap_set_ipv6 (struct tuntap_dev *tuntap, const uint8_t addr[16], uint8_t len) {
+
+    struct {
+        struct nlmsghdr nh;
+        struct ifaddrmsg ifa;
+        char attrs[64];
+    } req;
+    unsigned int index = if_nametoindex(tuntap->dev_name);
+    int fd;
+
+    if(!index) {
+        traceEvent(TRACE_ERROR, "IPv6 address: no interface %s", tuntap->dev_name);
+        return -1;
+    }
+    memset(&req, 0, sizeof(req));
+    req.nh.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifaddrmsg));
+    req.nh.nlmsg_type = RTM_NEWADDR;
+    req.nh.nlmsg_flags = NLM_F_REQUEST | NLM_F_CREATE | NLM_F_REPLACE | NLM_F_ACK;
+    req.ifa.ifa_family = AF_INET6;
+    req.ifa.ifa_prefixlen = len;
+    req.ifa.ifa_flags = IFA_F_NODAD;
+    req.ifa.ifa_scope = RT_SCOPE_UNIVERSE;
+    req.ifa.ifa_index = index;
+
+    // IFA_LOCAL and IFA_ADDRESS, both the address
+    for(int type = IFA_LOCAL; type >= IFA_ADDRESS; type--) {
+        struct rtattr *rta = (struct rtattr *)((char *)&req + NLMSG_ALIGN(req.nh.nlmsg_len));
+        rta->rta_type = type;
+        rta->rta_len = RTA_LENGTH(16);
+        memcpy(RTA_DATA(rta), addr, 16);
+        req.nh.nlmsg_len = NLMSG_ALIGN(req.nh.nlmsg_len) + RTA_ALIGN(rta->rta_len);
+    }
+
+    fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
+    if(fd < 0) {
+        traceEvent(TRACE_ERROR, "IPv6 address: no netlink socket: %s", strerror(errno));
+        return -1;
+    }
+
+    int err = 0;
+    if(send(fd, &req, req.nh.nlmsg_len, 0) < 0) {
+        err = errno;
+    } else {
+        // the answer: an error message, 0 in it for success
+        char buf[512];
+        ssize_t n = recv(fd, buf, sizeof(buf), 0);
+        struct nlmsghdr *nh = (struct nlmsghdr *)buf;
+        if(n < 0) {
+            err = errno;
+        } else if(NLMSG_OK(nh, n) && (nh->nlmsg_type == NLMSG_ERROR)) {
+            err = -((struct nlmsgerr *)NLMSG_DATA(nh))->error;
+        }
+    }
+    close(fd);
+    if(err) {
+        traceEvent(TRACE_ERROR, "IPv6 address on %s failed: %s", tuntap->dev_name, strerror(err));
+        return -1;
+    }
+    return 0;
+}
+
+
 // fill out the ip_addr value from the interface, called to pick up dynamic address changes
 void tuntap_get_address (struct tuntap_dev *tuntap) {
 

@@ -494,6 +494,15 @@ struct n3n_tun_arp {
     time_t asked;                   /* the last ARP request for it */
 };
 
+/* With a TUN device and IPv6: who has an IPv6 address, as tun_arp, see tun.c */
+#define N3N_TUN_ND_SLOTS 64
+struct n3n_tun_nd {
+    uint8_t ip6[16];
+    n2n_mac_t mac;
+    bool known;                     /* else only asked for */
+    time_t asked;                   /* the last neighbour solicitation for it */
+};
+
 /* The communities, the federation, the addresses handed out: the relay role */
 struct n3n_conf_relay {
     bool tap;                           /* also an edge of community.name, see edge_start_local() */
@@ -736,6 +745,10 @@ struct n3n_rt_client {
 struct n3n_rt_tap {
     tuntap_dev device;                                                   /**< All about the TUNTAP device */
     struct n3n_tun_arp tun_arp[N3N_TUN_ARP_SLOTS];                       /**< with a TUN device, see tun.c */
+    struct n3n_tun_nd tun_nd[N3N_TUN_ND_SLOTS];                          /**< with a TUN device and IPv6 */
+    bool has_ip6;                                                        /**< an IPv6 address of its own, tuntap.address6 */
+    uint8_t ip6[16];                                                     /**< which, see ipv6.h */
+    uint8_t ip6_len;                                                     /**< and its prefix length */
     network_traffic_filter_t         *network_traffic_filter;
 #ifdef HAVE_BRIDGING_SUPPORT
     struct host_info *               known_hosts;                        /**< hosts we know. */
