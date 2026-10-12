@@ -32,14 +32,23 @@ struct n3n_embed {
     // The name of the session (its directory, the management socket's);
     // NULL: "edge"
     const char *session;
+    // The device, for n3n_edge_run() without one (tun_fd -1): a TUN device
+    // set up with the IPv4 address (dotted) and prefix length, returned as
+    // a file descriptor that the edge takes over and closes - or -1, and the
+    // edge stops.  With tuntap.address given, it is asked for at once; else
+    // (address_mode auto) once a supernode has handed the edge an address,
+    // when the edge registers.  On the edge's thread, once a run.
+    int (*device)(void *ctx, const char *address, int bitlen);
 };
 
 // Run an edge with a configuration in the INI format of the configuration
 // files (config) on the TUN device tun_fd, until n3n_edge_stop().  The
 // device must be set up already, with the address of tuntap.address - which
-// so has to be given (address_mode static).  The edge takes over tun_fd and
-// closes it.  Returns 0 after a stop, else a negative number at once.  One
-// edge per process at a time.
+// so has to be given (address_mode static).  Or tun_fd -1, and the edge
+// asks for its device with e->device, which then has to be given: with the
+// address of tuntap.address, or one that a supernode hands out.  The edge
+// takes over the device and closes it.  Returns 0 after a stop, else a
+// negative number.  One edge per process at a time.
 int n3n_edge_run (const char *config, int tun_fd, const struct n3n_embed *e);
 
 // Stop the edge that n3n_edge_run() runs, from any thread

@@ -90,9 +90,11 @@ This is what hin2n, the Android app of n2n, does as well.
   - `n3n_edge_run(config_text, tun_fd, callbacks)`: runs the edge (its main
     loop) on the thread that calls it, until it is stopped;
   - `n3n_edge_stop()`;
-  - callbacks for the log, for "address assigned" (with automatic
-    addresses the edge only knows its address after registering), and for
-    every socket the edge opens, see below.
+  - callbacks for the log, for every socket the edge opens (see below),
+    and for the device: with `tun_fd` -1 the edge asks for it once it
+    knows its address - at once with `tuntap.address`, else once a
+    supernode has handed it one (the edge registers without a MAC first,
+    as on Linux with `tuntap.address_mode = auto`).
 - **The app** (Kotlin): a `VpnService` that builds the TUN device and runs
   the edge in a foreground service with its notification, and a few
   screens: the networks, their state, the peers.
@@ -152,7 +154,8 @@ with the phone (always-on VPN).
 1. Done: TUN mode on Linux, with tests (see above).
 2. Done: the library entry point (`include/n3n/embed.h`) and the socket
    hook, tried from a small C program on Linux with a TUN fd handed over
-   (`apps/example_edge_embed_tun.c`).
+   (`apps/example_edge_embed_tun.c`, `auto` for an address from the
+   supernode).
 3. Done: libn3n built by the NDK, in the app's Gradle build, in CI (the
    `Android` workflow).
 4. Done in part: a minimal app in [android/](../../android/README.md):

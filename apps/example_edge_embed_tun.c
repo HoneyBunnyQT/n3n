@@ -8,9 +8,12 @@
  * text; it sees every socket the edge opens, and stops the edge from
  * another thread.
  *
- * usage: example_edge_embed_tun CONFIG_FILE ADDRESS/BITS [SECONDS]
+ * usage: example_edge_embed_tun CONFIG_FILE ADDRESS/BITS|auto [SECONDS]
  *
- * The configuration needs tuntap.address = ADDRESS/BITS.  Needs root (for
+ * With ADDRESS/BITS the device is opened first, and the configuration
+ * needs tuntap.address = ADDRESS/BITS.  With auto, the edge asks for the
+ * device (n3n_embed.device) once a supernode has handed it an address, as
+ * the app does for a configuration without tuntap.address.  Needs root (for
  * the device), Linux.
  */
 
@@ -91,9 +94,20 @@ static int open_tun (const char *name, const char *address) {
 }
 
 
+// n3n_embed.device: the device with the address a supernode handed out
+static int device (void *ctx, const char *address, int bitlen) {
+
+    char buf[64];
+
+    snprintf(buf, sizeof(buf), "%s/%d", address, bitlen);
+    printf("device: %s\n", buf);
+    return open_tun("embtun0", buf);
+}
+
 int main (int argc, char *argv[]) {
 
     struct n3n_embed e = {
+        .device = device,
         .protect = protect,
         .log = log_line,
         .rundir = "/tmp/n3n-embed",
@@ -107,7 +121,7 @@ int main (int argc, char *argv[]) {
     int rc;
 
     if(argc < 3) {
-        fprintf(stderr, "usage: %s CONFIG_FILE ADDRESS/BITS [SECONDS]\n", argv[0]);
+        fprintf(stderr, "usage: %s CONFIG_FILE ADDRESS/BITS|auto [SECONDS]\n", argv[0]);
         return 2;
     }
     if(argc > 3) {
@@ -128,9 +142,13 @@ int main (int argc, char *argv[]) {
     }
     fclose(f);
 
-    fd = open_tun("embtun0", argv[2]);
-    if(fd < 0) {
-        return 1;
+    if(!strcmp(argv[2], "auto")) {
+        fd = -1;
+    } else {
+        fd = open_tun("embtun0", argv[2]);
+        if(fd < 0) {
+            return 1;
+        }
     }
 
     pthread_create(&thread, NULL, stopper, NULL);
