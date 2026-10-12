@@ -457,6 +457,18 @@ Set the tuntap IP address.
 
 By default, the supernode will assign an address. The address defined here may be ignored depending on the value of the address_mode setting. The address can also contain an optional trailing '/' and subnet size.
 
+### tuntap.address6
+
+An IPv6 address for the device: auto, or an address.
+
+Not set by default: no IPv6 address of the edge's own. 'auto' makes one from tuntap.prefix6 and, as the lower part, the edge's IPv4 address (fd...::10.77.0.5) or, without one, its MAC address (as the kernel makes the link-local address) - unique in the community as these are, with nothing on the wire for it. Or an address with its prefix length, e.g. fd00:77::5/64. See docs/develop/IPv6.md.
+
+### tuntap.prefix6
+
+The IPv6 network for tuntap.address6 = auto.
+
+By default fd, then 40 bits of a hash of the community's name, and subnet 0, as a /64 - the same for all the edges of the community. A prefix of 64 bits or less, e.g. fd12:3456:789a:1::/64.
+
 ### tuntap.type
 
 The kind of device: tap or tun.

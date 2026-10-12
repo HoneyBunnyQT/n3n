@@ -33,6 +33,7 @@ TESTS+=tests-regex
 TESTS+=tests-decode-bounds
 TESTS+=tests-sock
 TESTS+=tests-pdu-in
+TESTS+=tests-ipv6
 
 .PHONY: all clean install
 all: $(TOOLS) $(TESTS)

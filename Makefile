@@ -153,6 +153,7 @@ OBJS=\
 	src/natclass.o \
 	src/network_traffic_filter.o \
 	src/notify.o \
+	src/ipv6.o \
 	src/pdu_in.o \
 	src/punch.o \
 	src/peer_info.o \

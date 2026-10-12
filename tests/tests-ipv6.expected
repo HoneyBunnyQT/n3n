@@ -1,0 +1,15 @@
+prefix of nettest                        fd6c:bcdb:8e7b::/64
+prefix of other                          fdc0:9a8:1306::/64
+the same for the same name               ok
+auto, IPv4 10.77.0.5                     fd6c:bcdb:8e7b::a4d:5/64
+auto, no IPv4: from the MAC              fd6c:bcdb:8e7b::ff:fe5e:1/64
+auto, prefix6 given                      fd12:3456:789a:1::a4d:5/64
+auto, prefix6 /48, bits beyond cleared   fd12:3456:789a::ff:fe5e:1/48
+an address                               fd00:77::5/64
+not set                                  none
+empty                                    none
+no prefix length                         error
+no address                               error
+prefix length 129                        error
+auto, prefix6 longer than 64             error
+auto, prefix6 no prefix                  error
