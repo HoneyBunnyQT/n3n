@@ -1,1 +1,2 @@
 sock: 40 datagrams through a batch, nested and overflowing, and one without: ok
+sock: 120 datagrams in runs of one size, after a first drain: ok

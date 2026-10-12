@@ -55,6 +55,15 @@
 // sockets of a thread whose GSO is known, see gso_usable()
 #define SOCK_GSO_SOCKS 8
 #endif
+// UDP GRO (Linux 5.0), the other end of it: the kernel hands over
+// datagrams of one sender, of one size, that came in a row as one - with
+// the size of each, to cut them apart here.  Each of a recvmmsg()'s
+// buffers then has to take what one datagram can hold at most, or the
+// rest would be lost.
+#ifdef UDP_GRO
+#define SOCK_GRO 1
+#define SOCK_GRO_BUF 65535
+#endif
 
 // A copy of each datagram: what the callers send from may be gone by the
 // time the batch goes, a buffer on the stack of a control message's sender
@@ -85,12 +94,27 @@ static N3N_THREAD_LOCAL struct sock_rx_batch {
     struct iovec iov[SOCK_RX_BATCH];
     struct sockaddr_storage from[SOCK_RX_BATCH];
     uint8_t buf[SOCK_RX_BATCH][N2N_PKT_BUF_SIZE];
+#ifdef SOCK_GRO
+    // the buffers for sockets with GRO, made with the first of them
+    uint8_t (*gro_buf)[SOCK_GRO_BUF];
+    union {
+        char buf[CMSG_SPACE(sizeof(int))];
+        struct cmsghdr align;
+    } ctl[SOCK_RX_BATCH];
+    SOCKET gro_sock[SOCK_GSO_SOCKS];    // as gso_sock
+    bool gro_ok[SOCK_GSO_SOCKS];
+#endif
 } *rx;
 
 static void batches_free (void) {
 
     free(tx);
     tx = NULL;
+#ifdef SOCK_GRO
+    if(rx) {
+        free(rx->gro_buf);
+    }
+#endif
     free(rx);
     rx = NULL;
 }
@@ -386,6 +410,56 @@ ssize_t sendto_bind (struct n3n_runtime_data *rt, int i, const void *buf,
 }
 
 
+#ifdef SOCK_GRO
+// Whether a socket hands over datagrams with GRO: switched on with the
+// first drain of it on this thread, once the buffers for it are there -
+// all its datagrams have to be read into them from then on
+static bool gro_usable (SOCKET sock) {
+
+    int free_slot = -1;
+
+    for(int i = 0; i < SOCK_GSO_SOCKS; i++) {
+        if(rx->gro_sock[i] == sock + 1) {
+            return rx->gro_ok[i];
+        }
+        if(!rx->gro_sock[i] && (free_slot < 0)) {
+            free_slot = i;
+        }
+    }
+    if(free_slot < 0) {
+        // more sockets than slots: without GRO, which stays as it was set
+        return false;
+    }
+
+    bool ok = false;
+    if(!rx->gro_buf) {
+        rx->gro_buf = malloc(SOCK_RX_BATCH * sizeof(*rx->gro_buf));
+    }
+    if(rx->gro_buf) {
+        int on = 1;
+        ok = setsockopt(sock, IPPROTO_UDP, UDP_GRO, &on, sizeof(on)) == 0;
+    }
+    rx->gro_sock[free_slot] = sock + 1;
+    rx->gro_ok[free_slot] = ok;
+    return ok;
+}
+
+// The size of each of the datagrams in message k, if the kernel joined
+// several; 0 if it holds one
+static int gro_size (int k) {
+
+    struct msghdr *hdr = &rx->msg[k].msg_hdr;
+
+    for(struct cmsghdr *cm = CMSG_FIRSTHDR(hdr); cm; cm = CMSG_NXTHDR(hdr, cm)) {
+        if((cm->cmsg_level == IPPROTO_UDP) && (cm->cmsg_type == UDP_GRO)) {
+            int size;
+            memcpy(&size, CMSG_DATA(cm), sizeof(size));
+            return size;
+        }
+    }
+    return 0;
+}
+#endif
 
 int udp_drain (struct n3n_runtime_data *rt, SOCKET sock, struct n3n_pktbuf *pkt,
                int max, time_t now, udp_read_fn read, udp_rx_fn rx_fn) {
@@ -397,6 +471,9 @@ int udp_drain (struct n3n_runtime_data *rt, SOCKET sock, struct n3n_pktbuf *pkt,
     // others (the TCP fallback's probe, the punch pools) are read one by
     // one, whose errors tell their roles something
     if((bind_entry_of_sock(rt, sock) >= 0) && batches_alloc()) {
+#ifdef SOCK_GRO
+        bool gro = gro_usable(sock);
+#endif
         while(taken < max) {
             int want = (max - taken < SOCK_RX_BATCH) ? max - taken : SOCK_RX_BATCH;
 
@@ -408,6 +485,14 @@ int udp_drain (struct n3n_runtime_data *rt, SOCKET sock, struct n3n_pktbuf *pkt,
                 rx->msg[k].msg_hdr.msg_namelen = sizeof(rx->from[k]);
                 rx->msg[k].msg_hdr.msg_iov = &rx->iov[k];
                 rx->msg[k].msg_hdr.msg_iovlen = 1;
+#ifdef SOCK_GRO
+                if(gro) {
+                    rx->iov[k].iov_base = rx->gro_buf[k];
+                    rx->iov[k].iov_len = sizeof(rx->gro_buf[k]);
+                    rx->msg[k].msg_hdr.msg_control = rx->ctl[k].buf;
+                    rx->msg[k].msg_hdr.msg_controllen = sizeof(rx->ctl[k].buf);
+                }
+#endif
             }
             int n = recvmmsg(sock, rx->msg, want, MSG_DONTWAIT, NULL);
             if(n < 0) {
@@ -421,10 +506,20 @@ int udp_drain (struct n3n_runtime_data *rt, SOCKET sock, struct n3n_pktbuf *pkt,
             // what handling them sends - a supernode forwarding, an edge
             // answering - goes out together as well
             for(int k = 0; k < n; k++) {
-                if(rx->msg[k].msg_len > 0) {
+                uint8_t *buf = rx->iov[k].iov_base;
+                size_t len = rx->msg[k].msg_len;
+                size_t size = len;
+#ifdef SOCK_GRO
+                if(gro && gro_size(k) > 0) {
+                    size = gro_size(k);
+                    // the others of the message count as taken too
+                    taken += (len - 1) / size;
+                }
+#endif
+                for(size_t at = 0; at < len; at += size) {
                     rx_fn(rt, sock, (struct sockaddr *)&rx->from[k],
                           rx->msg[k].msg_hdr.msg_namelen,
-                          rx->buf[k], rx->msg[k].msg_len, now);
+                          buf + at, (len - at < size) ? len - at : size, now);
                 }
             }
             taken += n;

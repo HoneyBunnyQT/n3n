@@ -11,6 +11,11 @@
  *   - a batch inside a batch sends nothing of its own
  *   - udp_drain() hands each datagram to the role once, in order: with
  *     recvmmsg() where there is one, one by one elsewhere
+ *   - on Linux, runs of datagrams of one size go with UDP GSO, and once
+ *     udp_drain() has switched GRO on for the socket - a second round -
+ *     come in joined: they still reach the role one by one, whole and in
+ *     order, also where the size changes (9 to 10 bytes) and where a
+ *     batch ends
  *
  * The output is the same on every system: where there is no sendmmsg(),
  * each datagram simply goes at once.
@@ -146,6 +151,34 @@ int main (int argc, char *argv[]) {
            "without: %s\n", COUNT, ok ? "ok" : "FAIL");
     if(!ok) {
         printf("sock: %d arrived, %d not as sent\n", next_expected, out_of_order);
+    }
+
+    // the second round, after the socket has been drained once: runs of
+    // equal size, longer from "dgram 1000" on, in two batches
+    int first = next_expected = 990;
+    int last = first;
+    sock_batch_begin();
+    for(int i = 0; i < 3 * COUNT; i++, last++) {
+        if(i == COUNT) {
+            sock_batch_end();
+            sock_batch_begin();
+        }
+        snprintf(buf, sizeof(buf), "dgram %d", last);
+        sendto_logged(tx, buf, strlen(buf), (struct sockaddr *)&addr, sizeof(addr));
+    }
+    sock_batch_end();
+    out_of_order = 0;
+    while((next_expected < last) && readable(rx)) {
+        if(!udp_drain(&rt, rx, NULL, 64, 0, read_one, rx_one)) {
+            break;
+        }
+    }
+    ok = (next_expected == last) && !out_of_order;
+    failed |= !ok;
+    printf("sock: %d datagrams in runs of one size, after a first drain: %s\n",
+           last - first, ok ? "ok" : "FAIL");
+    if(!ok) {
+        printf("sock: up to %d arrived, %d not as sent\n", next_expected, out_of_order);
     }
 
     closesocket(rx);
