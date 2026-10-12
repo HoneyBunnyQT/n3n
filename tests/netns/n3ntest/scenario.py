@@ -576,8 +576,11 @@ class Run:
                     SITE6_NET.format(i + 1, "2")), nodad=True)
                 self._route6(ns, "default", SITE6_NET.format(i + 1, "1"))
         # The TAP device comes up without IPv6, so no neighbour discovery
-        # or MLD frames get counted alongside the test frames
-        lab.sysctl(ns, "net.ipv6.conf.default.disable_ipv6", 1, optional=True)
+        # or MLD frames get counted alongside the test frames - but where
+        # the test is IPv6 inside the tunnel
+        if not self.sc.inner6:
+            lab.sysctl(ns, "net.ipv6.conf.default.disable_ipv6", 1,
+                       optional=True)
         if site.block_udp:
             lab.nft(ns, AIRPORT, sname + "-airport")
 
