@@ -139,9 +139,10 @@ tests/netns/bench.py --compare before.json after.json
 ```
 
 It runs iperf3 from one edge to the other through the tunnel - UDP with
-64 and 1200 byte payloads, and TCP - in three cases: the edges direct,
-relayed through a supernode, and direct with packet threads; each test
-three times, the median counting.  Besides the throughput (and the
+64 and 1200 byte payloads as fast as iperf3 can, the same at a fixed rate
+that every build carries (`udp64r`, `udp1200r`), and TCP - in three
+cases: the edges direct, relayed through a supernode, and direct with
+packet threads; each test three times, the median counting.  Besides the throughput (and the
 packets per second for UDP), it reads every daemon's CPU time from /proc,
 and gives the CPU per packet that arrived, all daemons together: on a
 busy or virtual machine the throughput wavers more than that.  Still,
@@ -149,6 +150,25 @@ differences of ten percent or so between two runs of the same build are
 not unusual in a VM; repeat (`-r`) or run longer (`-t`) before believing
 a small one.  `--wrap` runs the daemons under a profiler, e.g. a script
 that execs `perf record`.
+
+Reading the numbers:
+
+- The UDP tests without a rate send far more than the edges take, and
+  most of it is lost (85 to 95 percent); they show the limit, but a
+  change that makes one daemon faster can move the loss to the next one
+  and show up as less.  The fixed rates and TCP, which keeps to what
+  gets through, show what a change costs or saves.
+- The namespaces are joined by veth pairs, which hand a packet on at
+  once: the routers, the NAT and the receiving socket's work run in the
+  sending process's time.  A change that sends fewer, bigger packets
+  through the kernel (UDP GSO) saves more here than on a real network,
+  where the routers are other machines.
+- A path can change between runs (a relayed case through one supernode
+  or both, see the CPU of each daemon in the output): compare the runs,
+  not only the medians.
+- The default build has AES in plain C, where the cipher takes about half
+  the time; built with `CFLAGS="-O2 -march=native"` (AES-NI) the network
+  path is most of it.  Both are worth a run.
 
 ### Contributing performance changes
 

@@ -18,6 +18,11 @@ from edge a to edge b through the tunnel, as fast as it can:
   udp64     UDP with 64 byte payloads: the packets per second that arrive
   udp1200   UDP with 1200 byte payloads: the throughput
   tcp       one TCP connection: the throughput
+  udp64r    as udp64 at 20 Mbit/s, udp1200r as udp1200 at 300 Mbit/s: a
+            rate every build carries, for the CPU per packet without the
+            overload - the others send as fast as iperf3 can, far more than
+            the edges take, and where the most is lost moves with every
+            change of speed
 
 and each daemon's CPU time is read from /proc, before and after, to give
 the CPU it took per packet that arrived - the number least shaken by a
@@ -56,6 +61,8 @@ TESTS = {
     "udp64": ["-u", "-b", "0", "-l", "64"],
     "udp1200": ["-u", "-b", "0", "-l", "1200"],
     "tcp": [],
+    "udp64r": ["-u", "-b", "20M", "-l", "64"],
+    "udp1200r": ["-u", "-b", "300M", "-l", "1200"],
 }
 
 
