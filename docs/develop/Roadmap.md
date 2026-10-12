@@ -717,7 +717,11 @@ failed try uploaded.
 Earlier, seen once each in a few full runs, passing on re-runs:
 `roam-nowatch` (a few frames relayed as the burst starts) and
 `sn-tap-failover` (the check ran before the failover settled), in a full
-run with the outage scenarios (100s each) four at a time.
+run with the outage scenarios (100s each) four at a time.  Seen once more
+on 2026-10-12, as before in a full run four at a time: edge a had moved to
+sn2, the other edge's own supernode, before sn1 was to be killed, so there
+was nothing to kill; it passed on the retry, and in the runs before and
+after.
 
 ### ARM
 
