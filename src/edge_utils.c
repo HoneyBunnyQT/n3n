@@ -1647,6 +1647,10 @@ void edge_term_conf (n2n_edge_conf_t *conf) {
 
     free(conf->relay.community_file);
     free(conf->community.encrypt_key);
+    // also on the edge of a supernode, which has them from the supernode's
+    // [tuntap] section: the supernode leaves them to it
+    free(conf->tap.address6);
+    free(conf->tap.prefix6);
     n3n_config_free_communities(conf);
     free(conf->federation_public_key);
     free(conf->mgmt_password);
