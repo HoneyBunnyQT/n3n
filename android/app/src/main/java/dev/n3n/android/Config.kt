@@ -62,6 +62,9 @@ class Config(text: String) {
 
     private val values = HashMap<String, String>()
 
+    // the name after "[community", if the section has one
+    private var instance: String? = null
+
     init {
         var section = ""
         for (raw in text.lines()) {
@@ -71,7 +74,11 @@ class Config(text: String) {
             }
             if (line.startsWith("[") && line.endsWith("]")) {
                 // "[community home]" is the community section too
-                section = line.substring(1, line.length - 1).trim().split(Regex("\\s+"))[0]
+                val words = line.substring(1, line.length - 1).trim().split(Regex("\\s+"))
+                section = words[0]
+                if (section == "community" && words.size > 1 && instance == null) {
+                    instance = words[1]
+                }
                 continue
             }
             val eq = line.indexOf('=')
@@ -117,8 +124,37 @@ class Config(text: String) {
     val mtu: Int
         get() = values["tuntap.mtu"]?.toIntOrNull()?.takeIf { it in 576..9000 } ?: 1290
 
+    /** The community's name: its name option, else the name of its [community NAME] section */
     val community: String?
-        get() = values["community.name"]
+        get() = values["community.name"]?.takeIf { it.isNotEmpty() } ?: instance
+
+    /**
+     * tuntap.address6, as the edge makes it (see docs/develop/IPv6.md): the
+     * address and its prefix length, null without the option; throws for an
+     * option the edge would not take either
+     */
+    val address6: Pair<String, Int>?
+        get() {
+            val a6 = values["tuntap.address6"]?.takeIf { it.isNotEmpty() } ?: return null
+            val result = Core.ipv6Address(a6, values["tuntap.prefix6"] ?: "", community ?: "",
+                                          address?.first ?: "")
+                ?: return null
+            require(result.isNotEmpty()) { "tuntap.address6 or tuntap.prefix6 cannot be used" }
+            val parts = result.split("/")
+            return parts[0] to parts[1].toInt()
+        }
+
+    /** The network of tuntap.address6, for the route into the device */
+    val network6: Pair<String, Int>?
+        get() {
+            val (addr, bits) = address6 ?: return null
+            val bytes = java.net.InetAddress.getByName(addr).address
+            for (i in bytes.indices) {
+                val keep = (bits - i * 8).coerceIn(0, 8)
+                bytes[i] = (bytes[i].toInt() and (0xff00 shr keep)).toByte()
+            }
+            return java.net.InetAddress.getByAddress(bytes).hostAddress!! to bits
+        }
 
     /** What the peer calls itself (connection.description): the name to show */
     val description: String?

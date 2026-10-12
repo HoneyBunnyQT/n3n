@@ -16,10 +16,13 @@
 
 #include <jni.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <n3n/embed.h>
 #include <n3n/qr_seal.h>
+#include <arpa/inet.h>
+#include "ipv6.h"
 
 #ifdef __ANDROID__
 #include <android/log.h>
@@ -239,6 +242,55 @@ Java_dev_n3n_android_Seal_looksSealed (JNIEnv *env, jobject self, jstring code) 
     if(c) {
         result = qr_looks_sealed(c) ? JNI_TRUE : JNI_FALSE;
         (*env)->ReleaseStringUTFChars(env, code, c);
+    }
+    return result;
+}
+
+
+// Core.ipv6Address(): the edge's IPv6 address, as the edge itself works it
+// out (src/ipv6.c), for the VpnService.Builder before the edge starts.  The
+// MAC is no part of it: the app always has an IPv4 address, which gives the
+// lower part of an "auto" address.
+JNIEXPORT jstring JNICALL
+Java_dev_n3n_android_Core_ipv6Address (JNIEnv *env, jobject self, jstring address6, jstring prefix6,
+                                       jstring community, jstring ipv4) {
+
+    const char *a6 = (*env)->GetStringUTFChars(env, address6, NULL);
+    const char *p6 = (*env)->GetStringUTFChars(env, prefix6, NULL);
+    const char *comm = (*env)->GetStringUTFChars(env, community, NULL);
+    const char *v4s = (*env)->GetStringUTFChars(env, ipv4, NULL);
+    static const uint8_t no_mac[6] = {0};
+    jstring result = NULL;
+
+    if(a6 && p6 && comm && v4s) {
+        uint32_t v4 = 0;
+        uint8_t addr[16];
+        uint8_t len = 0;
+        char buf[INET6_ADDRSTRLEN + 8];
+
+        if(inet_pton(AF_INET, v4s, &v4) != 1) {
+            v4 = 0;
+        }
+        int ret = n3n_ipv6_address(a6, p6, comm, v4, no_mac, addr, &len);
+        if(ret == 0 && inet_ntop(AF_INET6, addr, buf, INET6_ADDRSTRLEN)) {
+            size_t n = strlen(buf);
+            snprintf(buf + n, sizeof(buf) - n, "/%u", len);
+            result = (*env)->NewStringUTF(env, buf);
+        } else if(ret < 0) {
+            result = (*env)->NewStringUTF(env, "");
+        }
+    }
+    if(a6) {
+        (*env)->ReleaseStringUTFChars(env, address6, a6);
+    }
+    if(p6) {
+        (*env)->ReleaseStringUTFChars(env, prefix6, p6);
+    }
+    if(comm) {
+        (*env)->ReleaseStringUTFChars(env, community, comm);
+    }
+    if(v4s) {
+        (*env)->ReleaseStringUTFChars(env, ipv4, v4s);
     }
     return result;
 }

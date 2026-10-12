@@ -23,7 +23,10 @@ what comes next.
   a QR code that `tools/n3n-qr` makes of it.  It needs a
   static address, `tuntap.address = 10.0.0.5/24` in `[tuntap]`, because
   Android sets the device up before the edge starts.  `tuntap.mtu` is
-  taken too (1290 when not given).
+  taken too (1290 when not given), and `tuntap.address6` for IPv6 inside
+  the tunnel (`auto`: the community's prefix and the IPv4 address, worked
+  out by the core as the edge does, see
+  [IPv6](../docs/develop/IPv6.md)).
 - Connect asks Android for the VPN permission the first time, then sets up
   the device with the address and a route for its network, and starts the
   edge in a foreground service (with its notification).
@@ -60,8 +63,8 @@ what comes next.
 
 The main screen's "Route all traffic through a peer" sends everything the
 phone does through the VPN to one peer, which takes it on to the internet:
-the app routes all IPv4 into the device (IPv6 too, where it is dropped, so
-that nothing goes around the exit peer), sets the DNS server given there
+the app routes all IPv4 into the device (IPv6 too, which the exit peer
+drops unless it routes IPv6, so that nothing goes around it), sets the DNS server given there
 (1.1.1.1 by default), and tells the edge `tuntap.gateway`, see
 [Options](../docs/configure/Options.md).  The edge's own traffic stays
 outside, through `protect()`: every socket the edge opens is bound to the
@@ -99,8 +102,9 @@ the app tells the edge (`n3n_edge_network_changed()`), which registers
 again at once, with the supernode and its peers, instead of with its next
 round, up to 20 seconds later; the log says "the phone's network changed".
 
-Limits for now: IPv4 only, one network at a time, no automatic addresses
-(`tuntap.address_mode = auto`).
+Limits for now: one network at a time, no automatic IPv4 addresses
+(`tuntap.address_mode = auto`); IPv6 inside the tunnel with
+`tuntap.address6`, not yet tried on a phone.
 
 ## How it is put together
 

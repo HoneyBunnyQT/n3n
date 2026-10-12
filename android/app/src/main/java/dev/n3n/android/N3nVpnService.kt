@@ -248,6 +248,15 @@ class N3nVpnService : VpnService() {
             stopSelf()
             return false
         }
+        // tuntap.address6: worked out by the core, as the edge does it
+        val address6 = try {
+            config.address6?.let { it to config.network6!! }
+        } catch (e: IllegalArgumentException) {
+            addLog(e.message ?: "tuntap.address6 cannot be used")
+            setState(Snapshot(Phase.OFF, failed = true))
+            stopSelf()
+            return false
+        }
 
         via = gateway
         name = config.description
@@ -265,10 +274,17 @@ class N3nVpnService : VpnService() {
             .addAddress(address.first, address.second)
             .addRoute(network.first, network.second)
             .setMtu(config.mtu)
+        if (address6 != null) {
+            val (a6, net6) = address6
+            addLog("IPv6 address of the device: ${a6.first}/${a6.second}")
+            builder.addAddress(a6.first, a6.second)
+                .addRoute(net6.first, net6.second)
+        }
         if (gateway != null) {
             // everything into the device; the edge's own sockets stay out
-            // of it through protect().  IPv6 too, where it is dropped: the
-            // exit peer takes IPv4 only, and nothing should go around it.
+            // of it through protect().  IPv6 too: what is not for the
+            // community's prefix goes to the exit peer, which drops it
+            // unless it routes IPv6 - nothing should go around it.
             builder.addRoute("0.0.0.0", 0)
             try {
                 builder.addRoute("::", 0)
