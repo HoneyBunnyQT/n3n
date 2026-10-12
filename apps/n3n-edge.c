@@ -179,9 +179,11 @@ static void loadFromCLI (int argc, char *argv[], n2n_edge_conf_t *conf) {
                  */
                 char *field2 = strchr(optarg, ':');
                 if(field2) {
-                    // We have a field #1, extract it
-                    *field2++ = 0;
+                    // We have a field #1, extract it - and the ':' back
+                    // after it, as a reload parses the command line again
+                    *field2 = 0;
                     set_option_wrap(conf, "tuntap", "address_mode", optarg);
+                    *field2++ = ':';
                 } else {
                     set_option_wrap(conf, "tuntap", "address_mode", "static");
                     field2 = optarg;
