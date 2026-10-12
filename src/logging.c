@@ -18,6 +18,8 @@
 #include <syslog.h>  // for closelog, openlog, syslog, LOG_DAEMON
 #endif
 
+// read by every thread that logs, set by the main thread - also while
+// they run, by a reload that changes logging.verbose: hence atomic
 static int traceLevel = 2 /* NORMAL */;
 static int useSyslog = 0;
 static int syslog_opened = 0;
@@ -52,12 +54,12 @@ void setTraceCallback (void (*fn)(void *ctx, int level, const char *line), void 
 
 int getTraceLevel () {
 
-    return(traceLevel);
+    return __atomic_load_n(&traceLevel, __ATOMIC_RELAXED);
 }
 
 void setTraceLevel (int level) {
 
-    traceLevel = level;
+    __atomic_store_n(&traceLevel, level, __ATOMIC_RELAXED);
 }
 
 void setUseSyslog (int use_syslog) {
@@ -80,7 +82,7 @@ void closeTraceFile () {
 void _traceEvent (int eventTraceLevel, char* file, int line, char * format, ...) {
     va_list va_ap;
 
-    if(eventTraceLevel > traceLevel) {
+    if(eventTraceLevel > getTraceLevel()) {
         return;
     }
 
