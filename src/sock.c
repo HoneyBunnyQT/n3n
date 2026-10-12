@@ -28,8 +28,10 @@
 #include <sys/socket.h>      // for sendto, sendmmsg, recvmmsg, sockaddr_storage
 #endif
 #ifdef __linux__
-#include <netinet/in.h>      // for IPPROTO_UDP
-#include <netinet/udp.h>     // for UDP_SEGMENT
+#include <arpa/inet.h>       // for htonl
+#include <netinet/in.h>      // for IPPROTO_UDP, INADDR_LOOPBACK
+#include <netinet/udp.h>     // for UDP_SEGMENT, UDP_GRO
+#include <unistd.h>          // for close
 #endif
 
 // sendmmsg() and recvmmsg(): Linux (glibc, musl, Bionic)
@@ -59,8 +61,9 @@
 // datagrams of one sender, of one size, that came in a row as one - with
 // the size of each, to cut them apart here.  Each of a recvmmsg()'s
 // buffers then has to take what one datagram can hold at most, or the
-// rest would be lost.
-#ifdef UDP_GRO
+// rest would be lost.  Only with GSO, which offload_probe() needs to see
+// that GRO works.
+#if defined(UDP_GRO) && defined(SOCK_GSO)
 #define SOCK_GRO 1
 #define SOCK_GRO_BUF 65535
 #endif
@@ -96,7 +99,7 @@ static N3N_THREAD_LOCAL struct sock_rx_batch {
     uint8_t buf[SOCK_RX_BATCH][N2N_PKT_BUF_SIZE];
 #ifdef SOCK_GRO
     // the buffers for sockets with GRO, made with the first of them
-    uint8_t (*gro_buf)[SOCK_GRO_BUF];
+    uint8_t(*gro_buf)[SOCK_GRO_BUF];
     union {
         char buf[CMSG_SPACE(sizeof(int))];
         struct cmsghdr align;
@@ -198,45 +201,156 @@ static void send_failed (const struct sockaddr *dest) {
 
 #ifdef SOCK_MMSG
 #ifdef SOCK_GSO
-// Whether a socket takes UDP_SEGMENT: asked of the kernel once per socket
-// and thread.  A kernel without GSO would send what is meant to be cut up
-// as one big datagram instead.
+// What GSO and GRO do here, found out once per process by trying them on
+// the loopback address: a run of three datagrams sent as one, to a socket
+// with GRO.  GSO works if the three come in as they went - as three, or
+// joined with the right size - and GRO if they come in joined.  Asking the
+// kernel whether it knows the options is not enough: qemu-user, which the
+// tests use for other CPUs, passes them on, but not the sizes in the
+// control messages, which on another byte order are then wrong - the run
+// would leave as one big datagram, and joined ones would be cut wrong.
+enum { OFFLOAD_UNKNOWN = 0, OFFLOAD_NONE, OFFLOAD_GSO, OFFLOAD_GSO_GRO };
+static int offload_state;
+
+static int offload_try (SOCKET rx_sock, SOCKET tx_sock) {
+
+    static const uint8_t sent[6] = { 'a', 'a', 'b', 'b', 'c', 'c' };
+    struct sockaddr_in addr;
+    socklen_t addr_len = sizeof(addr);
+    int on = 1;
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    if(bind(rx_sock, (struct sockaddr *)&addr, sizeof(addr))
+       || getsockname(rx_sock, (struct sockaddr *)&addr, &addr_len)) {
+        return OFFLOAD_NONE;
+    }
+    bool gro = setsockopt(rx_sock, IPPROTO_UDP, UDP_GRO, &on, sizeof(on)) == 0;
+
+    // the run: three datagrams of two bytes
+    struct iovec iov = { (void *)sent, sizeof(sent) };
+    union {
+        char buf[CMSG_SPACE(sizeof(uint16_t))];
+        struct cmsghdr align;
+    } ctl;
+    struct msghdr hdr;
+    uint16_t size = 2;
+    memset(&hdr, 0, sizeof(hdr));
+    hdr.msg_name = &addr;
+    hdr.msg_namelen = addr_len;
+    hdr.msg_iov = &iov;
+    hdr.msg_iovlen = 1;
+    hdr.msg_control = ctl.buf;
+    hdr.msg_controllen = sizeof(ctl.buf);
+    struct cmsghdr *cm = CMSG_FIRSTHDR(&hdr);
+    cm->cmsg_level = IPPROTO_UDP;
+    cm->cmsg_type = UDP_SEGMENT;
+    cm->cmsg_len = CMSG_LEN(sizeof(size));
+    memcpy(CMSG_DATA(cm), &size, sizeof(size));
+    if(sendmsg(tx_sock, &hdr, 0) != (ssize_t)sizeof(sent)) {
+        return OFFLOAD_NONE;
+    }
+
+    // what came in, cut apart as udp_drain() would; on the loopback
+    // address it is there once the send is back
+    uint8_t got[sizeof(sent)];
+    size_t got_len = 0;
+    bool joined = false, wrong = false;
+    for(int n = 0; (n < 4) && !wrong; n++) {
+        uint8_t buf[64];
+        union {
+            char buf[CMSG_SPACE(sizeof(int))];
+            struct cmsghdr align;
+        } rctl;
+        struct iovec riov = { buf, sizeof(buf) };
+        struct msghdr rhdr;
+        memset(&rhdr, 0, sizeof(rhdr));
+        rhdr.msg_iov = &riov;
+        rhdr.msg_iovlen = 1;
+        rhdr.msg_control = rctl.buf;
+        rhdr.msg_controllen = sizeof(rctl.buf);
+        ssize_t len = recvmsg(rx_sock, &rhdr, MSG_DONTWAIT);
+        if(len <= 0) {
+            break;
+        }
+        int seg = 0;
+        for(struct cmsghdr *c = CMSG_FIRSTHDR(&rhdr); c; c = CMSG_NXTHDR(&rhdr, c)) {
+            if((c->cmsg_level == IPPROTO_UDP) && (c->cmsg_type == UDP_GRO)) {
+                memcpy(&seg, CMSG_DATA(c), sizeof(seg));
+            }
+        }
+        if(seg) {
+            joined = true;
+        } else {
+            seg = len;
+        }
+        // each piece two bytes, the next of what was sent
+        wrong = (seg != 2) || (len % 2) || (got_len + len > sizeof(sent));
+        if(!wrong) {
+            memcpy(got + got_len, buf, len);
+            got_len += len;
+        }
+    }
+    if(wrong || (got_len != sizeof(sent)) || memcmp(got, sent, sizeof(sent))) {
+        return OFFLOAD_NONE;
+    }
+    return (gro && joined) ? OFFLOAD_GSO_GRO : OFFLOAD_GSO;
+}
+
+static int offload_probe (void) {
+
+    int state = __atomic_load_n(&offload_state, __ATOMIC_ACQUIRE);
+
+    if(state != OFFLOAD_UNKNOWN) {
+        return state;
+    }
+    // two threads at once both try, with the same outcome
+    SOCKET rx_sock = socket(AF_INET, SOCK_DGRAM, 0);
+    SOCKET tx_sock = socket(AF_INET, SOCK_DGRAM, 0);
+    state = ((rx_sock >= 0) && (tx_sock >= 0)) ? offload_try(rx_sock, tx_sock) : OFFLOAD_NONE;
+    if(rx_sock >= 0) {
+        close(rx_sock);
+    }
+    if(tx_sock >= 0) {
+        close(tx_sock);
+    }
+    traceEvent(TRACE_INFO, "UDP GSO %s, GRO %s", (state >= OFFLOAD_GSO) ? "on" : "off",
+               (state == OFFLOAD_GSO_GRO) ? "on" : "off");
+    __atomic_store_n(&offload_state, state, __ATOMIC_RELEASE);
+    return state;
+}
+
+// Whether a run can go with GSO on this socket: if GSO works here, and
+// the socket has not refused it (see gso_off())
 static bool gso_usable (SOCKET sock) {
 
-    int free_slot = -1;
-
+    if(offload_probe() < OFFLOAD_GSO) {
+        return false;
+    }
     for(int i = 0; i < SOCK_GSO_SOCKS; i++) {
         if(tx->gso_sock[i] == sock + 1) {
             return tx->gso_ok[i];
         }
-        if(!tx->gso_sock[i] && (free_slot < 0)) {
-            free_slot = i;
-        }
     }
-
-    int size = 0;
-    socklen_t len = sizeof(size);
-    bool ok = getsockopt(sock, IPPROTO_UDP, UDP_SEGMENT, &size, &len) == 0;
-
-    if(free_slot < 0) {
-        // more sockets than slots: ask again next time, the oldest goes
-        free_slot = 0;
-    }
-    // stored as sock + 1, so that 0 is a free slot
-    tx->gso_sock[free_slot] = sock + 1;
-    tx->gso_ok[free_slot] = ok;
-    return ok;
+    return true;
 }
 
 // A send with GSO failed for good on this socket (EIO: a device that does
 // not compute the checksums), so the datagrams go one by one from now on
 static void gso_off (SOCKET sock) {
 
-    for(int i = 0; i < SOCK_GSO_SOCKS; i++) {
-        if(tx->gso_sock[i] == sock + 1) {
-            tx->gso_ok[i] = false;
+    int slot = 0;
+
+    for(int i = SOCK_GSO_SOCKS - 1; i >= 0; i--) {
+        if(!tx->gso_sock[i] || (tx->gso_sock[i] == sock + 1)) {
+            slot = i;
         }
     }
+    // stored as sock + 1, so that 0 is a free slot; with more sockets than
+    // slots, the first one's goes
+    tx->gso_sock[slot] = sock + 1;
+    tx->gso_ok[slot] = false;
     traceEvent(TRACE_INFO, "UDP GSO does not work on this socket, sending without it");
 }
 
@@ -432,7 +546,9 @@ static bool gro_usable (SOCKET sock) {
     }
 
     bool ok = false;
-    if(!rx->gro_buf) {
+    if(offload_probe() != OFFLOAD_GSO_GRO) {
+        // without GRO, which is never switched on for it then
+    } else if(!rx->gro_buf) {
         rx->gro_buf = malloc(SOCK_RX_BATCH * sizeof(*rx->gro_buf));
     }
     if(rx->gro_buf) {
