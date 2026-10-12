@@ -1,0 +1,33 @@
+plain: an encoded header of each type: ok
+plain: one byte short of a header: ok
+plain: another version: ok
+plain: a type beyond the last: ok
+plain: flags beyond the known ones: ok
+plain: a community name not ended: ok
+decrypt: an encrypted header is not plain: ok
+decrypt: the static keys, as the dynamic ones: ok
+decrypt: the PDU as it was sent: ok
+decrypt: its time stamp: ok
+decrypt: user/password, the dynamic keys: ok
+decrypt: user/password, the static keys, but the hash: ok
+decrypt: the hash of the PDU still encrypted: ok
+decrypt: the hash after it left alone: ok
+decrypt: another community's keys fit neither: ok
+decrypt: a PDU shorter than a header: ok
+common: a plain PACKET from an edge: ok
+common: what is left after the common header: ok
+common: a PDU shorter than a common header: ok
+common: another version: ok
+common: user/password, a PACKET under the dynamic keys: ok
+common: user/password, a PACKET under the static keys: ok
+common: user/password, a PACKET with a plain header: ok
+common: user/password, a REGISTER_SUPER under the static keys: ok
+common: user/password, a REGISTER_SUPER_ACK under the static keys: ok
+common: user/password, a PEER_INFO under the static keys: ok
+common: from a supernode known: ok
+common: from a supernode not known: ok
+common: from a supernode not known, of a type let through: ok
+common: no supernode added for them: ok
+dispatch: the handler of its type, once: ok
+dispatch: a type without a handler: ok
+dispatch: a type beyond the last: ok

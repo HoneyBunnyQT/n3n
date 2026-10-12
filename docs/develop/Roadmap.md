@@ -236,7 +236,10 @@ tests and `make lint` pass after each.
 - [ ] `-O` on the command line for an instance (`-O "community home.key=x"`)
 - [ ] The edge reading the community file (the first entry), for a peer
       whose roles share one config
-- [ ] Unit tests for the parts that become shared (send layer, `pdu_in`)
+- [x] Unit tests for the parts that become shared: the send layer's
+      batches and `udp_drain()` (`tests-sock`); `pdu_in` (`tests-pdu-in`),
+      the plain header check, the decryption with the dynamic and the
+      static keys, what `pdu_in_common()` drops, and the dispatch
 - [x] Integration test: a supernode with a TAP device next to plain edges:
       the netns scenarios `sn-tap`, `sn-tap-fed`, `sn-tap-userpw`,
       `sn-tap-failover`, `sn-tap-reload` and `cross-ARCH-sn-tap`
@@ -531,7 +534,6 @@ v4: the path MTU, DNS SRV, fuzzing the QR code (see Decisions).
 
 Open, in rough order:
 
-- Unit tests for the shared parts: `pdu_in_common()` and the send layer.
 - Communities for both roles (below): the edge reading the community
   file, `-O` for the options of one community.
 - IPv6 on the TAP device; fewer privileges (CAP_NET_ADMIN only,

@@ -32,6 +32,7 @@ TESTS+=tests-wire-numsn
 TESTS+=tests-regex
 TESTS+=tests-decode-bounds
 TESTS+=tests-sock
+TESTS+=tests-pdu-in
 
 .PHONY: all clean install
 all: $(TOOLS) $(TESTS)

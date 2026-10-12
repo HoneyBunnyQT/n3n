@@ -7,6 +7,7 @@ tests-cc20
 tests-compress
 tests-decode-bounds
 tests-elliptic
+tests-pdu-in
 tests-peers
 tests-regex
 tests-sock
