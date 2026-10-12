@@ -33,7 +33,8 @@
     <string name="log">Log</string>
     <string name="no_network">No network yet</string>
     <string name="no_config_hint">Scan the QR code of a network, made with n3n-qr or shown by another phone, or write its configuration.</string>
-    <string name="no_address">The configuration needs an address of this phone in the network: address = 10.1.2.3/24 in [tuntap].</string>
+    <string name="no_address">The address of this phone in the network is no IPv4 address: address = 10.1.2.3/24 in [tuntap], or none, and the supernode hands one out.</string>
+    <string name="address_auto">from the supernode</string>
     <string name="channel">VPN</string>
     <plurals name="notify_connected">
         <item quantity="one">%1$s · %2$d peer (%3$d direct)</item>
@@ -53,7 +54,7 @@
 
     <!-- configuration -->
     <string name="config_hint">The configuration, as in a .conf file of n3n:\n\n[community]\nname = mynetwork\nkey = mysecret\nsupernode = sn.example.org:7654\n\n[tuntap]\naddress = 10.1.2.3/24</string>
-    <string name="address_hint">Each device needs an address of its own in the network: address = … in [tuntap]. Saved when you leave this screen; a running connection takes it on the next connect.</string>
+    <string name="address_hint">Each device needs an address of its own in the network: address = … in [tuntap], or none, and the supernode hands one out. Saved when you leave this screen; a running connection takes it on the next connect.</string>
     <string name="import_file">Import file</string>
     <string name="saved_reconnect">Saved: connect again to use it</string>
 

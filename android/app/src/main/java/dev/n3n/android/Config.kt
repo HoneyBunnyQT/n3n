@@ -12,6 +12,20 @@ package dev.n3n.android
 class Config(text: String) {
 
     companion object {
+        /** The network of an address (IPv4 or IPv6), for the route into the device */
+        fun networkOf(address: String, bits: Int): Pair<String, Int>? {
+            val bytes = try {
+                java.net.InetAddress.getByName(address).address
+            } catch (e: Exception) {
+                return null
+            }
+            for (i in bytes.indices) {
+                val keep = (bits - i * 8).coerceIn(0, 8)
+                bytes[i] = (bytes[i].toInt() and (0xff00 shr keep)).toByte()
+            }
+            return java.net.InetAddress.getByAddress(bytes).hostAddress!! to bits
+        }
+
         /**
          * The text for a QR code, as tools/n3n-qr makes it: without comments,
          * "a = b" as "a=b", blank lines in a row as one - and, if asked,
@@ -109,17 +123,9 @@ class Config(text: String) {
             return parts[0] to bits
         }
 
-    /** The network of tuntap.address, for the route into the device */
-    val network: Pair<String, Int>?
-        get() {
-            val (addr, bits) = address ?: return null
-            val octets = addr.split(".").map { it.toIntOrNull() ?: return null }
-            val ip = octets.fold(0L) { acc, o -> (acc shl 8) or (o.toLong() and 0xff) }
-            val mask = if (bits == 0) 0L else (0xffffffffL shl (32 - bits)) and 0xffffffffL
-            val net = ip and mask
-            val text = (3 downTo 0).joinToString(".") { ((net shr (it * 8)) and 0xff).toString() }
-            return text to bits
-        }
+    /** tuntap.address is given, but no address: without it, the supernode hands one out */
+    val addressInvalid: Boolean
+        get() = values["tuntap.address"]?.isNotEmpty() == true && address == null
 
     val mtu: Int
         get() = values["tuntap.mtu"]?.toIntOrNull()?.takeIf { it in 576..9000 } ?: 1290
@@ -129,32 +135,18 @@ class Config(text: String) {
         get() = values["community.name"]?.takeIf { it.isNotEmpty() } ?: instance
 
     /**
-     * tuntap.address6, as the edge makes it (see docs/develop/IPv6.md): the
-     * address and its prefix length, null without the option; throws for an
-     * option the edge would not take either
+     * tuntap.address6, as the edge makes it (see docs/develop/IPv6.md) with
+     * this IPv4 address: the address and its prefix length, null without
+     * the option; throws for an option the edge would not take either
      */
-    val address6: Pair<String, Int>?
-        get() {
-            val a6 = values["tuntap.address6"]?.takeIf { it.isNotEmpty() } ?: return null
-            val result = Core.ipv6Address(a6, values["tuntap.prefix6"] ?: "", community ?: "",
-                                          address?.first ?: "")
-                ?: return null
-            require(result.isNotEmpty()) { "tuntap.address6 or tuntap.prefix6 cannot be used" }
-            val parts = result.split("/")
-            return parts[0] to parts[1].toInt()
-        }
-
-    /** The network of tuntap.address6, for the route into the device */
-    val network6: Pair<String, Int>?
-        get() {
-            val (addr, bits) = address6 ?: return null
-            val bytes = java.net.InetAddress.getByName(addr).address
-            for (i in bytes.indices) {
-                val keep = (bits - i * 8).coerceIn(0, 8)
-                bytes[i] = (bytes[i].toInt() and (0xff00 shr keep)).toByte()
-            }
-            return java.net.InetAddress.getByAddress(bytes).hostAddress!! to bits
-        }
+    fun address6For(ipv4: String): Pair<String, Int>? {
+        val a6 = values["tuntap.address6"]?.takeIf { it.isNotEmpty() } ?: return null
+        val result = Core.ipv6Address(a6, values["tuntap.prefix6"] ?: "", community ?: "", ipv4)
+            ?: return null
+        require(result.isNotEmpty()) { "tuntap.address6 or tuntap.prefix6 cannot be used" }
+        val parts = result.split("/")
+        return parts[0] to parts[1].toInt()
+    }
 
     /** What the peer calls itself (connection.description): the name to show */
     val description: String?

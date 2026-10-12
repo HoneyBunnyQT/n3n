@@ -121,11 +121,15 @@ class MainActivity : Activity() {
             text.isBlank() -> getString(R.string.no_network)
             else -> config.description ?: getString(R.string.unnamed)
         }
-        address.text = if (addr != null) "${addr.first}/${addr.second}" else getString(R.string.none)
+        address.text = when {
+            addr != null -> "${addr.first}/${addr.second}"
+            config.addressInvalid || text.isBlank() -> getString(R.string.none)
+            else -> getString(R.string.address_auto)
+        }
         findViewById<Button>(R.id.share).isEnabled = text.isNotBlank()
         when {
             text.isBlank() -> showHint(R.string.no_config_hint)
-            addr == null -> showHint(R.string.no_address)
+            config.addressInvalid -> showHint(R.string.no_address)
             else -> hint.visibility = View.GONE
         }
     }
@@ -141,7 +145,7 @@ class MainActivity : Activity() {
             return
         }
         val config = Config(Store.load(this))
-        if (config.community == null || config.address == null) {
+        if (config.community == null || config.addressInvalid) {
             AlertDialog.Builder(this)
                 .setMessage(if (config.community == null) R.string.no_config_hint else R.string.no_address)
                 .setPositiveButton(R.string.edit) { _, _ ->

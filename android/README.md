@@ -20,16 +20,21 @@ what comes next.
 
 - The configuration is the same as on other systems: an edge's `.conf`
   file, typed or pasted into the app, imported from a file, or read from
-  a QR code that `tools/n3n-qr` makes of it.  It needs a
-  static address, `tuntap.address = 10.0.0.5/24` in `[tuntap]`, because
-  Android sets the device up before the edge starts.  `tuntap.mtu` is
+  a QR code that `tools/n3n-qr` makes of it.  The phone's address in the
+  network: `tuntap.address = 10.0.0.5/24` in `[tuntap]`, or none, and the
+  supernode hands one out (as `tuntap.address_mode = auto` does on other
+  systems; the screen says "from the supernode").  `tuntap.mtu` is
   taken too (1290 when not given), and `tuntap.address6` for IPv6 inside
   the tunnel (`auto`: the community's prefix and the IPv4 address, worked
   out by the core as the edge does, see
   [IPv6](../docs/develop/IPv6.md)).
-- Connect asks Android for the VPN permission the first time, then sets up
-  the device with the address and a route for its network, and starts the
-  edge in a foreground service (with its notification).
+- Connect asks Android for the VPN permission the first time, then starts
+  the edge in a foreground service (with its notification).  Once the edge
+  knows its address - at once with `tuntap.address`, else when a supernode
+  has handed it one - it asks the app for the device, which sets it up
+  with the address and a route for its network (`onDevice()`).  Without
+  an answer from a supernode the edge tries the next one every few
+  seconds, and Disconnect stops it.
 - The edge runs in TUN mode (`tuntap.type = tun`) on the device that
   Android hands over (`tuntap.fd`), see
   [TAP or TUN](../docs/configure/TapConfiguration.md).  Everything else of
@@ -102,9 +107,8 @@ the app tells the edge (`n3n_edge_network_changed()`), which registers
 again at once, with the supernode and its peers, instead of with its next
 round, up to 20 seconds later; the log says "the phone's network changed".
 
-Limits for now: one network at a time, no automatic IPv4 addresses
-(`tuntap.address_mode = auto`); IPv6 inside the tunnel with
-`tuntap.address6`, not yet tried on a phone.
+Limits for now: one network at a time; addresses from the supernode and
+IPv6 inside the tunnel with `tuntap.address6`, not yet tried on a phone.
 
 ## How it is put together
 
@@ -211,6 +215,9 @@ cmake --build build-android-native
    [tuntap]
    address = 10.0.0.5/24
    ```
+
+   Without the `[tuntap]` lines the supernode hands the phone an address
+   (the log and the notification show it).
 
    Three ways to get it there:
    - **QR code**: make one on a computer with `tools/n3n-qr phone.conf`

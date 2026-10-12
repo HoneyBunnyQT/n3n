@@ -67,8 +67,8 @@ with nothing to set, and two communities clash only if their hashes do
   - multicast goes out to the multicast MAC (33:33:...), as now.
 - **Android**: the app adds the address and the /64 to its
   `VpnService.Builder`, with the address worked out by the core, so that
-  the app and the edge agree.  Android's static IPv4 address (the app needs
-  one before the edge starts) gives the interface ID.
+  the app and the edge agree, when the edge asks for the device: its IPv4
+  address (static, or from the supernode) gives the interface ID.
 
 ## Steps
 

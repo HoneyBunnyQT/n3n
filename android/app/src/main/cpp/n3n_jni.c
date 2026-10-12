@@ -5,7 +5,8 @@
  * The app's way into the core: N3nVpnService.nativeRun() runs the edge (see
  * n3n/embed.h) on the thread that calls it, until nativeStop().  Every socket
  * the edge opens goes to VpnService.protect(), every log line to logcat and
- * to the service's onLog().
+ * to the service's onLog(); the device comes from the service's onDevice(),
+ * once the edge knows its address (static, or from the supernode).
  *
  * The callbacks do not only come from that thread: the edge's other threads
  * (the name resolver, packet threads) open sockets and log too.  A JNIEnv
@@ -35,6 +36,7 @@ struct jni_ctx {
     jobject service;        // a global reference: valid on every thread
     jmethodID protect;
     jmethodID on_log;
+    jmethodID on_device;
 };
 
 
@@ -128,6 +130,32 @@ static void log_line (void *ctx, int level, const char *line) {
 }
 
 
+// The VPN device, from N3nVpnService.onDevice() once the edge knows its
+// address: a file descriptor, or -1
+static int device (void *ctx, const char *address, int bitlen) {
+
+    struct jni_ctx *c = ctx;
+    bool attached;
+    JNIEnv *env = thread_env(c, &attached);
+    int fd = -1;
+
+    if(!env) {
+        return -1;
+    }
+    // an address in dotted form: plain ASCII
+    jstring s = (*env)->NewStringUTF(env, address);
+    if(s) {
+        fd = (*env)->CallIntMethod(env, c->service, c->on_device, s, (jint)bitlen);
+        if((*env)->ExceptionCheck(env)) {
+            fd = -1;
+        }
+        (*env)->DeleteLocalRef(env, s);
+    }
+    thread_done(c, env, attached);
+    return fd;
+}
+
+
 JNIEXPORT jint JNICALL
 Java_dev_n3n_android_N3nVpnService_nativeRun (JNIEnv *env, jobject service, jstring config, jint tun_fd, jstring rundir) {
 
@@ -136,9 +164,10 @@ Java_dev_n3n_android_N3nVpnService_nativeRun (JNIEnv *env, jobject service, jstr
         .service = (*env)->NewGlobalRef(env, service),
         .protect = (*env)->GetMethodID(env, cls, "protect", "(I)Z"),
         .on_log = (*env)->GetMethodID(env, cls, "onLog", "(ILjava/lang/String;)V"),
+        .on_device = (*env)->GetMethodID(env, cls, "onDevice", "(Ljava/lang/String;I)I"),
     };
 
-    if(((*env)->GetJavaVM(env, &c.vm) != JNI_OK) || !c.service || !c.protect || !c.on_log) {
+    if(((*env)->GetJavaVM(env, &c.vm) != JNI_OK) || !c.service || !c.protect || !c.on_log || !c.on_device) {
         if(c.service) {
             (*env)->DeleteGlobalRef(env, c.service);
         }
@@ -151,6 +180,7 @@ Java_dev_n3n_android_N3nVpnService_nativeRun (JNIEnv *env, jobject service, jstr
         .ctx = &c,
         .protect = protect,
         .log = log_line,
+        .device = device,
         .rundir = dir,
         .session = "app",
     };
@@ -248,9 +278,9 @@ Java_dev_n3n_android_Seal_looksSealed (JNIEnv *env, jobject self, jstring code) 
 
 
 // Core.ipv6Address(): the edge's IPv6 address, as the edge itself works it
-// out (src/ipv6.c), for the VpnService.Builder before the edge starts.  The
-// MAC is no part of it: the app always has an IPv4 address, which gives the
-// lower part of an "auto" address.
+// out (src/ipv6.c), for the VpnService.Builder.  The MAC is no part of it:
+// the device is set up once the edge has an IPv4 address (static or from the
+// supernode), which gives the lower part of an "auto" address.
 JNIEXPORT jstring JNICALL
 Java_dev_n3n_android_Core_ipv6Address (JNIEnv *env, jobject self, jstring address6, jstring prefix6,
                                        jstring community, jstring ipv4) {

@@ -217,7 +217,9 @@ tests and `make lint` pass after each.
       core, built from `src/` by the NDK, CI artifact; import a file or a
       QR code (`tools/n3n-qr`), connect, log, state view, network
       changes, IPv6 inside the tunnel (`tuntap.address6`, not yet tried
-      on a phone).  Open: auto addresses.  The revamp (asked
+      on a phone), addresses from the supernode (the edge asks the app
+      for the device once it has one, `n3n_embed.device`; not yet tried
+      on a phone).  The revamp (asked
       2026-10-11), done: the state in one place, the service, which asks
       the edge; the notification follows it (it said "connected" before
       the edge was registered), with a Disconnect action and a small

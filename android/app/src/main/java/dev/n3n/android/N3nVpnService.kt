@@ -203,6 +203,74 @@ class N3nVpnService : VpnService() {
         addLog(line)
     }
 
+    // what a start sets the device up with, see onDevice()
+    private class Starting(val config: Config, val gateway: String?, val dns: String?)
+
+    @Volatile
+    private var starting: Starting? = null
+
+    /**
+     * From the native code, on the edge's thread: the device, with the
+     * edge's IPv4 address - that of tuntap.address, or the one a supernode
+     * handed out, which comes only once the edge has registered.  Its file
+     * descriptor, which the edge takes over, or -1.
+     */
+    @Suppress("unused")
+    fun onDevice(address: String, bits: Int): Int {
+        val s = starting ?: return -1
+        val config = s.config
+        // tuntap.address6: worked out by the core, as the edge does it,
+        // from this IPv4 address
+        val address6 = try {
+            config.address6For(address)
+        } catch (e: IllegalArgumentException) {
+            addLog(e.message ?: "tuntap.address6 cannot be used")
+            return -1
+        }
+        main.post { this.address = address }
+
+        val network = Config.networkOf(address, bits) ?: return -1
+        // the name Android shows for the VPN: never the community's, which
+        // may be the key of the headers
+        val builder = Builder()
+            .setSession(config.description ?: "n3n")
+            .addAddress(address, bits)
+            .addRoute(network.first, network.second)
+            .setMtu(config.mtu)
+        if (address6 != null) {
+            addLog("IPv6 address of the device: ${address6.first}/${address6.second}")
+            val net6 = Config.networkOf(address6.first, address6.second)!!
+            builder.addAddress(address6.first, address6.second)
+                .addRoute(net6.first, net6.second)
+        }
+        if (s.gateway != null) {
+            // everything into the device; the edge's own sockets stay out
+            // of it through protect().  IPv6 too: what is not for the
+            // community's prefix goes to the exit peer, which drops it
+            // unless it routes IPv6 - nothing should go around it.
+            builder.addRoute("0.0.0.0", 0)
+            try {
+                builder.addRoute("::", 0)
+            } catch (e: IllegalArgumentException) {
+            }
+            if (s.dns != null) {
+                builder.addDnsServer(s.dns)
+            }
+        }
+        val tun = try {
+            builder.establish()
+        } catch (e: Exception) {
+            addLog("the VPN cannot be set up: ${e.message}")
+            null
+        }
+        if (tun == null) {
+            addLog("the VPN is not allowed (anymore)")
+            return -1
+        }
+        // the edge takes the device over, and closes it
+        return tun.detachFd()
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             next = null
@@ -240,19 +308,8 @@ class N3nVpnService : VpnService() {
         // (tuntap.gateway); a later value overrides one in the configuration
         val text = if (gateway != null) "$configText\n\n[tuntap]\ngateway = $gateway\n" else configText
         val config = Config(text)
-        val address = config.address
-        val network = config.network
-        if (address == null || network == null) {
+        if (config.addressInvalid) {
             addLog(getString(R.string.no_address))
-            setState(Snapshot(Phase.OFF, failed = true))
-            stopSelf()
-            return false
-        }
-        // tuntap.address6: worked out by the core, as the edge does it
-        val address6 = try {
-            config.address6?.let { it to config.network6!! }
-        } catch (e: IllegalArgumentException) {
-            addLog(e.message ?: "tuntap.address6 cannot be used")
             setState(Snapshot(Phase.OFF, failed = true))
             stopSelf()
             return false
@@ -260,60 +317,21 @@ class N3nVpnService : VpnService() {
 
         via = gateway
         name = config.description
-        this.address = address.first
+        // with tuntap.address; else the supernode's, once onDevice() has it
+        this.address = config.address?.first
         answered = false
         everRegistered = false
         lostSince = 0L
         setState(Snapshot(Phase.STARTING))
         startForeground()
+        // what onDevice() sets the device up with
+        starting = Starting(config, gateway, dns)
 
-        // the name Android shows for the VPN: never the community's, which
-        // may be the key of the headers
-        val builder = Builder()
-            .setSession(config.description ?: "n3n")
-            .addAddress(address.first, address.second)
-            .addRoute(network.first, network.second)
-            .setMtu(config.mtu)
-        if (address6 != null) {
-            val (a6, net6) = address6
-            addLog("IPv6 address of the device: ${a6.first}/${a6.second}")
-            builder.addAddress(a6.first, a6.second)
-                .addRoute(net6.first, net6.second)
-        }
-        if (gateway != null) {
-            // everything into the device; the edge's own sockets stay out
-            // of it through protect().  IPv6 too: what is not for the
-            // community's prefix goes to the exit peer, which drops it
-            // unless it routes IPv6 - nothing should go around it.
-            builder.addRoute("0.0.0.0", 0)
-            try {
-                builder.addRoute("::", 0)
-            } catch (e: IllegalArgumentException) {
-            }
-            if (dns != null) {
-                builder.addDnsServer(dns)
-            }
-        }
-        val tun = try {
-            builder.establish()
-        } catch (e: Exception) {
-            addLog("the VPN cannot be set up: ${e.message}")
-            null
-        }
-        if (tun == null) {
-            addLog("the VPN is not allowed (anymore)")
-            setState(Snapshot(Phase.OFF, failed = true))
-            leaveForeground()
-            stopSelf()
-            return false
-        }
-
-        // the edge takes the device over, and closes it
-        val fd = tun.detachFd()
         running = true
         stopping = false
         val thread = Thread({
-            val rc = nativeRun(text, fd, filesDir.absolutePath)
+            // no device yet: the edge asks for it, see onDevice()
+            val rc = nativeRun(text, -1, filesDir.absolutePath)
             addLog("edge stopped ($rc)")
             main.post { edgeEnded() }
         }, "n3n-edge")
