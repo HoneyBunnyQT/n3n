@@ -456,6 +456,17 @@ SCENARIOS = [
         Site(["hard-range"], supernodes=["sn2"]),
         "relayed", auth="userpw", community_conf=True, tags=["quick"]),
     Scenario(
+        "userpw-cli",
+        "as userpw-conf, the community's sections on the command line "
+        "(-O \"community nettest.cli.user=...\" for the supernodes, -O "
+        "community.nettest.cli.key=... for the edges) but for the "
+        "supernodes the edges are given; then a reload of a: what the "
+        "command line set stays",
+        Site(["easy-kept"], conf={"daemon": {"userid": 0, "groupid": 0}}),
+        Site(["easy-changed"]),
+        "direct", auth="userpw", community_cli=True, reload="a",
+        tags=["quick"]),
+    Scenario(
         "sn-tcp-burst",
         "as hard-hard, and 300 TCP connections to the supernode of a "
         "at once, held while the frames go: it stays up and relays",

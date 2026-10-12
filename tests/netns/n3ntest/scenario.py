@@ -44,7 +44,7 @@ import time
 from . import nat
 from .lab import Lab, LabError, describe_exit, run, wait_for
 from .node import (Edge, MgmtError, N2nEdge, N2nSupernode, Supernode,
-                   stats_delta, write_conf)
+                   cli_options, stats_delta, write_conf)
 
 INET_NET = "203.0.113.{}"
 INET_PREFIX = 24
@@ -165,6 +165,7 @@ class Scenario:
     def __init__(self, name, desc, a, b, expect, traffic="both",
                  tags=(), conf=None, connect_timeout=None, failover=None,
                  sn_conf=None, auth=None, community_conf=False,
+                 community_cli=False,
                  unblock_udp=False, sn_tcp_port=None, gateway=None,
                  ipv6=False, max_moves=None, delay6=None, sn_block6=False,
                  roam=None, roam_max_gap=None, roam_direct=True,
@@ -188,7 +189,10 @@ class Scenario:
         # With auth: the supernodes have the community, and its users, in
         # a [community NAME] section of their configuration instead of the
         # file, and the edges have theirs in such a section too
-        self.community_conf = community_conf
+        self.community_conf = community_conf or community_cli
+        # the community's sections on the command line, as -O, an instance
+        # name with a dot (see cli_options())
+        self.community_cli = community_cli
         self.connect_timeout = connect_timeout
         # After the warm-up, kill (SIGKILL) the supernode this site's edge
         # is registered at, and measure once the edges moved to the other
@@ -813,9 +817,12 @@ class Run:
                 sections["supernode"].append(
                     ("community_file", community_file))
             if self.sc.auth and self.sc.community_conf:
-                sections["community " + COMMUNITY] = [
+                sections[self._community_section()] = [
                     ("header_encryption", True)
                 ] + [("user", "{} {}".format(*user)) for user in users]
+                if self.sc.community_cli:
+                    sections[self._community_section()].append(
+                        ("name", COMMUNITY))
             for sname, e in self.edges.items():
                 if e.get("on_supernode") == name:
                     self._tap_sections(sections, sname, e)
@@ -825,10 +832,11 @@ class Run:
                     (o, v) for o, v in sections[section] if o not in options
                 ] + list(options.items())
             version = self.sc.sn_versions.get(name)
+            cli = cli_options(sections) if self.sc.community_cli else []
             d = (N2nSupernode if is_n2n(version) else Supernode)(
                 self.lab, name, sn["ns"], self._session(name),
                 self.st.binary("n3n-supernode", version),
-                sections, wrap=self._sn_wrap())
+                sections, wrap=self._sn_wrap(), cli=cli)
             d.start()
             self._log_left_out(name, d)
             sn["daemon"] = d
@@ -856,6 +864,13 @@ class Run:
             # the supernode knows the public key of its federation
             sections["auth"] = [(o, v) for o, v in edge["auth"]
                                 if o != "pubkey"]
+
+    def _community_section(self):
+        """The section of the community, with community_conf"""
+        if self.sc.community_cli:
+            # its name in a name option
+            return "community " + COMMUNITY + ".cli"
+        return "community " + COMMUNITY
 
     def _edge_sections(self, sname, site, e):
         conf = {
@@ -897,7 +912,9 @@ class Run:
         community = "community"
         if self.sc.community_conf:
             # the edge's only community, from a named section
-            community = "community " + conf["community"].pop("name")
+            community = self._community_section()
+            if not self.sc.community_cli:
+                conf["community"].pop("name")
             conf[community] = conf.pop("community")
         sections = {s: list(o.items()) for s, o in conf.items()}
         tcp_port = self.sc.sn_tcp_port or SN_PORT
@@ -923,11 +940,14 @@ class Run:
             if site.on_supernode:
                 e["registered_at"] = "{}:{}".format(e["ip"], SN_PORT)
                 continue
+            sections = self._edge_sections(sname, site, e)
+            cli = cli_options(sections, dotted=True) \
+                if self.sc.community_cli else []
             d = (N2nEdge if is_n2n(site.version) else Edge)(
                 self.lab, "edge-" + sname, e["ns"], self._session(sname),
-                self.st.binary("n3n-edge", site.version),
-                self._edge_sections(sname, site, e),
-                wrap=self.st.wrap, overlay_ip=e["overlay"], mac=e["mac"])
+                self.st.binary("n3n-edge", site.version), sections,
+                wrap=self.st.wrap, overlay_ip=e["overlay"], mac=e["mac"],
+                cli=cli)
             d.start()
             self._log_left_out("edge " + sname, d)
             e["daemon"] = d
@@ -1411,13 +1431,17 @@ class Run:
                               "edge {} is at no known supernode ({!r})"
                               .format(site, at))
         ip = self.supernodes[victim]["ip"] + ":"
+        # with user/password authentication the description is the user
+        # name, which needs a restart
+        new_desc = self.sc.auth != "userpw"
         for section, options in d.sections.items():
             d.sections[section] = [
                 (o, v) for o, v in options
                 if not (o == "supernode" and v.split("//")[-1].startswith(ip))
-                and o != "description"]
-        d.sections.setdefault("connection", []).append(
-            ("description", site + "-reloaded"))
+                and not (new_desc and o == "description")]
+        if new_desc:
+            d.sections.setdefault("connection", []).append(
+                ("description", site + "-reloaded"))
         d.sections.setdefault("filter", []).append(("rule", self.RELOAD_RULE))
         write_conf(d.conf, d.sections)
         self.log("{}: without {} in its configuration, SIGHUP".format(
@@ -1438,19 +1462,22 @@ class Run:
         lines = self._reload_log(d)
         applied = any("applied:" in line
                       and "community.supernode" in line
-                      and "connection.description" in line
+                      and ("connection.description" in line or not new_desc)
                       and "filter.rule" in line
                       for line in lines)
         rule = any(self.RELOAD_RULE in line for line in lines)
-        self.check("reload", ok and applied and rule,
+        # and nothing else changed: what the command line set (-O) is
+        # set again
+        restart = [line for line in lines if "needs a restart" in line]
+        self.check("reload", ok and applied and rule and not restart,
                    "{} at {} after {}s, {}".format(
                        site, d.current_supernode(), took,
-                       "the three options applied, the rule in the filter"
-                       if applied and rule
+                       "the options applied, the rule in the filter"
+                       if applied and rule and not restart
                        else "its log of the reload: {}".format(
                            " | ".join(lines[-4:]) or "none")))
         # the peers hear of the new description at once
-        desc = site + "-reloaded"
+        desc = site + ("-reloaded" if new_desc else "")
         others = [e for s, e in self.edges.items()
                   if "daemon" in e and s != site]
 

@@ -313,6 +313,7 @@ ports from all of it.
 | userpw | as header-enc, with user/password authentication (ChaCha20); the supernodes start 1.1 s apart, with different key times | direct |
 | userpw-relayed | hard-range / hard-range, user/password, each edge at its own supernode | relayed, across the federation |
 | userpw-conf | as userpw-relayed, the community and users in `[community NAME]` sections | relayed, across the federation |
+| userpw-cli | easy-kept / easy-changed, user/password; the community's sections on the command line (`-O "community nettest.cli.user=..."`, `-O community.nettest.cli.key=...`), only the edges' supernodes in the file; then a reload of a, which drops one of them | direct; the reload applies the supernode and the filter rule, nothing set by `-O` changes |
 | sn-tap | hard-range / the TAP device of sn2 (`supernode.tap`), the edge at sn2 | relayed |
 | sn-tap-fed | easy-kept at sn1 / the TAP device of sn2 | relayed, across the federation |
 | sn-tap-userpw | as sn-tap-fed, with user/password authentication | relayed, across the federation |
@@ -328,7 +329,7 @@ ports from all of it.
 | sn-tcp-1100 | as sn-tcp-burst with 1100 connections, the supernodes started with a soft limit of 1024 open files (`sn_nofile`), as under systemd | relayed; all taken: epoll, and the limit raised to the hard one |
 | tun-tap | easy-kept with `tuntap.type=tun` / easy-changed with a TAP device | direct, the TUN edge building the frames |
 | tun-tun | hard-range / hard-range, both with `tuntap.type=tun` | relayed |
-| reload | easy-kept / easy-changed; a's configuration loses the supernode a is at and gets another description and a filter rule, then SIGHUP | a applies all three while it runs, moves to the other supernode, and b sees its new description at once; direct |
+| reload | easy-kept / easy-changed; a's configuration loses the supernode a is at and gets another description and a filter rule, then SIGHUP | a applies all three while it runs, and nothing else changes, moves to the other supernode, and b sees its new description at once; direct |
 | sn-tap-reload | easy-kept / the TAP device of sn2; sn2's configuration gets another description and a filter rule for its edge, then SIGHUP (`reload` naming the site) | relayed; sn2's edge takes both, a sees its new description at once |
 | sn-outage | easy-kept / easy-changed; both supernodes killed while frames flow both ways, for 90s (longer than the registrations live) | direct throughout, the longest gap each way at most 3s |
 | sn-outage-idle | as sn-outage, the frames stopping for 40s 10s into it | direct again at once (gap at most 3s): the edges keep their idle peers while no supernode answers |

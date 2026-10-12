@@ -121,6 +121,29 @@ def known_options(binary):
     return _known[binary]
 
 
+def cli_options(sections, dotted=False):
+    """The options of the sections "community NAME" as -O on the command
+    line, taken out of sections - but for their supernodes, which stay in
+    the file for a reload to change: "-O", "community NAME.option=value",
+    or with dotted "community.NAME.option=value"."""
+    argv = []
+    for section in [s for s in sections if s.startswith("community ")]:
+        prefix = section.replace(" ", ".", 1) if dotted else section
+        kept = []
+        for option, value in sections[section]:
+            if option == "supernode":
+                kept.append((option, value))
+                continue
+            if isinstance(value, bool):
+                value = "true" if value else "false"
+            argv += ["-O", "{}.{}={}".format(prefix, option, value)]
+        if kept:
+            sections[section] = kept
+        else:
+            del sections[section]
+    return argv
+
+
 def write_conf(path, sections, known=None):
     """Write an n3n config file from {section: [(option, value), ...]};
     with known, the "section.option"s the binary knows, only those (an
@@ -148,7 +171,8 @@ class Daemon:
     # run.py --keep-root: daemon.userid and groupid 0
     keep_root = False
 
-    def __init__(self, lab, name, ns, session, binary, sections, wrap=()):
+    def __init__(self, lab, name, ns, session, binary, sections, wrap=(),
+                 cli=()):
         self.lab = lab
         self.name = name
         self.ns = ns
@@ -156,6 +180,8 @@ class Daemon:
         self.binary = binary
         self.sections = sections
         self.wrap = list(wrap)
+        # options on the command line, before the subcommand: ["-O", ...]
+        self.cli = list(cli)
         self.mgmt = Mgmt(session)
         self.proc = None
         # The config file name gives the session name
@@ -169,7 +195,7 @@ class Daemon:
                                                 ("groupid", 0)]
         self.left_out = write_conf(self.conf, self.sections,
                                    known_options(self.binary))
-        argv = self.wrap + [self.binary, "start", self.conf]
+        argv = self.wrap + [self.binary] + self.cli + ["start", self.conf]
         self.proc = self.lab.spawn(self.name, self.ns, argv)
 
     def wait_mgmt(self, timeout=10):
