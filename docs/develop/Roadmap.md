@@ -196,11 +196,11 @@ tests and `make lint` pass after each.
       its own changes in the supernode's configuration (`sn-tap-reload`),
       and a new description reaches the peers at once
 - [ ] Ideas to pick from (all v3 compatible): names for peers (DNS); IPv6
-      on the TAP device from a prefix derived from the community; UDP
-      GSO/GRO; fewer privileges (CAP_NET_ADMIN only, Landlock); packages
-      for the single binary; tools init / tools qr.  (Learned supernodes
-      on disk wait for v4, see Decisions 2026-10-04; epoll, batched I/O
-      and no alloc per packet are done, below)
+      on the TAP device from a prefix derived from the community; fewer
+      privileges (CAP_NET_ADMIN only, Landlock); packages for the single
+      binary; tools init / tools qr.  (Learned supernodes on disk wait for
+      v4, see Decisions 2026-10-04; epoll, batched I/O, no alloc per
+      packet and UDP GSO/GRO are done, below)
 - [~] Releases of n3n BE (see [Releasing](Releasing.md)): the packages
       are `n3n-be` (.deb, .rpm, and a PKGBUILD for Arch), the user `n3n`
       from sysusers.d, the app's version that of the core and its release
@@ -347,7 +347,20 @@ tests and `make lint` pass after each.
       and all receives on the sockets of `connection.bind`: up to a third
       more throughput, a third less CPU per packet for small packets
       (4102317).  Not batched: what a supernode forwards (no difference
-      measured).  Open: UDP GSO/GRO
+      measured).
+- [x] UDP GSO and GRO on Linux (`sock.c`): a batch's runs of datagrams
+      for one destination, of one size, go to the kernel as one send
+      (`UDP_SEGMENT`), and the sockets of `connection.bind` take joined
+      datagrams (`UDP_GRO`) and cut them apart; the datagrams on the wire
+      are the same.  Asked of each socket before it is used; a run the
+      kernel refuses (too big for the path, a device without checksum
+      offload) goes datagram by datagram.  `bench.py` (2026-10-12, in a
+      VM with 4 cores): TCP direct 1.11 -> 1.32 Gbit/s with AES in plain
+      C, 2.06 -> 4.39 Gbit/s with AES-NI; relayed with AES-NI 2.22 ->
+      2.80 Gbit/s; at a fixed rate the CPU per packet direct -50 % (64
+      byte frames) and -17 % (1200 byte).  The lab overstates the sending
+      side (see testing.md, "Reading the numbers").  Open: what a
+      supernode forwards, still one by one, with GSO too
 - [x] No `alloc()` on the packet path: so already (the pktbuf pool, the tap
       batch once per thread); counted with a malloc wrapper, 9x the frames
       add at most two allocations over a daemon's life
@@ -550,8 +563,9 @@ v4: the path MTU, DNS SRV, fuzzing the QR code (see Decisions).
 
 Open, in rough order:
 
-- IPv6 on the TAP device; fewer privileges (CAP_NET_ADMIN only,
-  Landlock); UDP GSO/GRO.
+- IPv6 on the TAP device (to discuss first: addresses for the auto ip
+  service); fewer privileges (Landlock, CAP_NET_ADMIN only is there);
+  the supernode's forwards with GSO.
 - Releases: the app's ID, the signing key, the channels - decisions to
   take, then the first run of `release.yml`.
 - On real hardware: the Android app on a phone, the ARM benchmarks, the
