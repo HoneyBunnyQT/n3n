@@ -1687,13 +1687,13 @@ void edge_term (struct n3n_runtime_data * eee) {
 
 #ifndef SKIP_MULTICAST_PEERS_DISCOVERY
     if(eee->client.udp_multicast_sock_v4 >= 0) {
-        closesocket(eee->client.udp_multicast_sock_v4);
         mainloop_unregister_fd(eee->client.udp_multicast_sock_v4);
+        closesocket(eee->client.udp_multicast_sock_v4);
         eee->client.udp_multicast_sock_v4 = -1;
     }
     if(eee->client.udp_multicast_sock_v6 >= 0) {
-        closesocket(eee->client.udp_multicast_sock_v6);
         mainloop_unregister_fd(eee->client.udp_multicast_sock_v6);
+        closesocket(eee->client.udp_multicast_sock_v6);
         eee->client.udp_multicast_sock_v6 = -1;
     }
 #endif
@@ -1802,13 +1802,13 @@ static int edge_init_sockets (struct n3n_runtime_data *eee) {
     // So, perhaps we should do that here?
 
     if(eee->client.udp_multicast_sock_v4 >= 0) {
-        closesocket(eee->client.udp_multicast_sock_v4);
         mainloop_unregister_fd(eee->client.udp_multicast_sock_v4);
+        closesocket(eee->client.udp_multicast_sock_v4);
         eee->client.udp_multicast_sock_v4 = -1;
     }
     if(eee->client.udp_multicast_sock_v6 >= 0) {
-        closesocket(eee->client.udp_multicast_sock_v6);
         mainloop_unregister_fd(eee->client.udp_multicast_sock_v6);
+        closesocket(eee->client.udp_multicast_sock_v6);
         eee->client.udp_multicast_sock_v6 = -1;
     }
 

@@ -57,6 +57,7 @@ int mainloop_v3tcp_pdus (struct conn *conn, mainloop_pdu_fn fn, void *arg);
 // a process can have more than one, see local_link.h
 int mainloop_register_fd (int, enum fd_info_proto);
 int mainloop_register_fd_rt (int, enum fd_info_proto, struct n3n_runtime_data *);
+// before the fd is closed: its number can be another thread's socket after
 void mainloop_unregister_fd (int);
 
 // Close a socket and, if it is registered, its connection, and unregister it

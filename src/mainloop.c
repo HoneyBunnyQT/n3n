@@ -482,6 +482,18 @@ static int fdlist_findslot (int fd) {
     return -1;
 }
 
+// Take the fd of a slot out of the epoll set: before it is closed, as its
+// number can be another thread's new socket right after the close
+static void fdlist_unwatch (int slot) {
+#ifdef MAINLOOP_EPOLL
+    if(fdlist[slot].events) {
+        epoll_ctl(epfd, EPOLL_CTL_DEL, fdlist[slot].fd, NULL);
+        fdlist[slot].events = 0;
+    }
+#endif
+}
+
+// Forget the slot of an fd, before the fd is closed (see fdlist_unwatch)
 static void fdlist_freefd (int fd) {
     int slot = 0;
     if(fd == -1) {
@@ -494,14 +506,7 @@ static void fdlist_freefd (int fd) {
             continue;
         }
         metrics.unregister_fd++;
-#ifdef MAINLOOP_EPOLL
-        if(fdlist[slot].events) {
-            // fails if the fd is closed already, which took it out of the
-            // set anyway
-            epoll_ctl(epfd, EPOLL_CTL_DEL, fd, NULL);
-            fdlist[slot].events = 0;
-        }
-#endif
+        fdlist_unwatch(slot);
         if(fdlist[slot].connnr != -1) {
             connlist_free(fdlist[slot].connnr);
             fdlist[slot].connnr = -1;
@@ -523,6 +528,7 @@ static void fdlist_close_slot (int slot) {
     int fd = fdlist[slot].fd;
     int connnr = fdlist[slot].connnr;
 
+    fdlist_unwatch(slot);
     if(connnr != -1) {
         conn_free_reply(connlist[connnr]);
         conn_close(connlist[connnr], fd);
@@ -807,8 +813,8 @@ static void handle_fd (const time_t now, int slot, struct n3n_runtime_data *eee)
                 // TODO:
                 // - increment error stats
                 send(client, "HTTP/1.1 503 full\r\n", 19, 0);
-                closesocket(client);
                 fdlist_freefd(client);
+                closesocket(client);
                 return;
             }
 
