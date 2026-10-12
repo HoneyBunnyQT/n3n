@@ -83,6 +83,10 @@ void n3n_config_register_section_instanced(char *, char *, struct n3n_conf_optio
                                            n3n_conf_instance_fn, n3n_conf_instance_nth_fn);
 
 int n3n_config_set_option (void *, char *, char *, char *);
+// "section.option=value" or "section instance.option=value" (also
+// "section.instance.option=value"), as -O takes it; arg is left as it was.  Returns -1 if it is none of these, or the
+// option cannot be set to the value.
+int n3n_config_set_arg (void *conf, const char *arg);
 
 struct sockaddr_storage;
 int n3n_config_parse_sockaddr (struct sockaddr_storage *out, const char *value);

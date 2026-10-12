@@ -45,10 +45,8 @@ which can be loaded by
 sudo ./n3n-edge start testing
 ```
 
-If needed, the settings from the config file can all be overridden using a
-command line parameter:
-
-If required, additional command line parameters can also be supplied:
+If needed, the settings from the config file can all be overridden, or
+added to, on the command line:
 
 ```
 sudo n3n-edge start testing \
@@ -78,7 +76,8 @@ what came before:
    (or a path given instead of a session name, starting with `/` or `./`)
 3. the environment: `N3N_KEY` (also sets the cipher to AES), `N3N_COMMUNITY`,
    `N3N_PASSWORD`
-4. the command line, `-O section.option=value` and the shortcuts
+4. the command line, `-O section.option=value` and the shortcuts; for a
+   [section with a name](#sections-with-a-name), `-O "section NAME.option=value"`
 
 To see the result:
 
@@ -93,6 +92,19 @@ section's own: `[community home]`.  A supernode takes each such
 `[community NAME]` as a community it allows, see
 [Communities](Communities.md#communities-in-the-configuration-file); an edge
 takes its one community from `[community]` or from its only named section.
+
+On the command line, the name goes between the section and the option,
+after a space or a dot - the name may have dots of its own, the option is
+what follows the last one:
+
+```
+n3n-edge start -O "community home.key=secret" -O community.home.cipher=AES
+```
+
+Such an option sets that one option of the section: of the file's section
+of that name if there is one (overriding or, for an option given more than
+once, adding to it), else of a section that only the command line has.  On
+a reload, the command line is applied again over the file, as at the start.
 
 ## Options Given More Than Once
 

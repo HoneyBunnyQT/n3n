@@ -616,6 +616,39 @@ try_uint32:
     return -1;
 }
 
+
+int n3n_config_set_arg (void *conf, const char *arg) {
+    // a copy to cut up: the command line is parsed again on a reload
+    char *copy = strdup(arg);
+    if(!copy) {
+        return -1;
+    }
+
+    // the value is what follows the first '=', the option what follows the
+    // last '.' before it: the name of a community, as the instance of its
+    // section, may have dots of its own ("community my.net.key=x")
+    char *value = strchr(copy, '=');
+    char *dot = NULL;
+    if(value) {
+        *value++ = 0;
+        dot = strrchr(copy, '.');
+    }
+    if(!dot || (dot == copy) || !dot[1]) {
+        free(copy);
+        return -1;
+    }
+    *dot = 0;
+    // no section name has a dot: "community.home" is "community home"
+    char *instance = strchr(copy, '.');
+    if(instance && !strchr(copy, ' ')) {
+        *instance = ' ';
+    }
+
+    int rc = n3n_config_set_option(conf, copy, dot + 1, value);
+    free(copy);
+    return rc;
+}
+
 static void dump_wordwrap (FILE *f, char *prefix, const char *line, int width) {
     char *line_copy = strdup(line);
 

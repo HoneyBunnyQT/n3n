@@ -97,6 +97,29 @@ An edge joins exactly one community: the one of `[community]`, or of its only
 `[community NAME]` section.  More than one community makes the edge stop with
 an error.
 
+### On the Command Line
+
+Each option of such a section can also be given on the command line, as
+`-O "community NAME.option=value"` or `-O community.NAME.option=value`, see
+[Configuration Files](ConfigurationFiles.md#sections-with-a-name).  For
+simple setups that is enough, without a community file or a configuration
+file:
+
+```
+n3n-supernode start \
+    -O community.home.header_encryption=true \
+    -O "community.home.user=logan nHWum+r42k1qDXdIeH-WFKeylK5UyLStRzxofRNAgpG"
+
+n3n-edge start \
+    -O community.home.key=secret \
+    -O community.home.header_encryption=true \
+    -O community.home.supernode=sn.example.org:7654 \
+    -O auth.password=007 -O connection.description=logan
+```
+
+A `-O` for a section that is also in the configuration file sets that
+option in it, the others stay as the file has them.
+
 
 ## Somewhat Flexible Community Names
 

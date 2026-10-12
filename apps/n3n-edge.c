@@ -163,13 +163,11 @@ static void loadFromCLI (int argc, char *argv[], n2n_edge_conf_t *conf) {
         /* traceEvent(TRACE_NORMAL, "Option %c = %s", optkey, optarg ? optarg : ""); */
 
         switch(c) {
-            case 'O': { // Set any config option
-                char *section = strtok(optarg, ".");
-                char *option = strtok(NULL, "=");
-                char *value = strtok(NULL, "");
-                set_option_wrap(conf, section, option, value);
+            case 'O': // Set any config option
+                if(n3n_config_set_arg(conf, optarg) != 0) {
+                    traceEvent(TRACE_WARNING, "Error setting %s", optarg);
+                }
                 break;
-            }
             case 'a': /* IP address and mode of TUNTAP interface */ {
                 /*
                  * of the form:

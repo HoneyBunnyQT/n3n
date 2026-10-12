@@ -54,7 +54,10 @@ all of them with:
 .SH OPTIONS
 .TP
 \fB\-O \fR<\fIsection\fR>.<\fIoption\fR>=<\fIvalue\fR>
-Sets any config option value.
+Sets any config option value.  For a section with a name, such as
+[community home], the name goes after the section, following a space or a
+dot: \fB\-O "community home.key=secret"\fR or
+\fB\-O community.home.key=secret\fR.
 .TP
 \fB\-h\fR, \fB\--help\fR
 Show some quick usage notes.

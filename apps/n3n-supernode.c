@@ -84,18 +84,6 @@ static const struct n3n_config_getopt option_map[] = {
 
 /* *************************************************** */
 
-// little wrapper to show errors if the conffile parser has a problem
-static void set_option_wrap (n2n_edge_conf_t *conf, char *section, char *option, char *value) {
-    int i = n3n_config_set_option(conf, section, option, value);
-    if(i==0) {
-        return;
-    }
-
-    traceEvent(TRACE_WARNING, "Error setting %s.%s=%s\n", section, option, value);
-}
-
-/* *************************************************** */
-
 /* read command line options */
 static void loadFromCLI (int argc, char * const argv[], struct n3n_runtime_data *sss) {
     struct n2n_edge_conf *conf = &sss->conf;
@@ -114,13 +102,11 @@ static void loadFromCLI (int argc, char * const argv[], struct n3n_runtime_data 
         //traceEvent(TRACE_NORMAL, "Option %c = %s", optkey, optarg ? optarg : "");
 
         switch(c) {
-            case 'O': { // Set any config option
-                char *section = strtok(optarg, ".");
-                char *option = strtok(NULL, "=");
-                char *value = strtok(NULL, "");
-                set_option_wrap(conf, section, option, value);
+            case 'O': // Set any config option
+                if(n3n_config_set_arg(conf, optarg) != 0) {
+                    traceEvent(TRACE_WARNING, "Error setting %s", optarg);
+                }
                 break;
-            }
 
             case 'v': /* verbose */
                 setTraceLevel(getTraceLevel() + 1);
