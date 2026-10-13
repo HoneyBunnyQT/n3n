@@ -218,8 +218,8 @@ tests and `make lint` pass after each.
       QR code (`tools/n3n-qr`), connect, log, state view, network
       changes, IPv6 inside the tunnel (`tuntap.address6`, not yet tried
       on a phone), addresses from the supernode (the edge asks the app
-      for the device once it has one, `n3n_embed.device`; not yet tried
-      on a phone).  The revamp (asked
+      for the device once it has one, `n3n_embed.device`; tried on a
+      phone, 2026-10-13).  The revamp (asked
       2026-10-11), done: the state in one place, the service, which asks
       the edge; the notification follows it (it said "connected" before
       the edge was registered), with a Disconnect action and a small
@@ -227,10 +227,12 @@ tests and `make lint` pass after each.
       doing, looks raised, and has an LED (dark, running yellow stripes,
       lit green) so that the state does not hang on colour, which a black
       and white night mode does not show; an adaptive launcher icon with
-      a monochrome layer; icons on the tiles.  Open: try it on a phone;
+      a monochrome layer; the four tiles below it now raised round keys
+      like it, and the accent bunny-pink, the pink of the docs'
+      drawings (asked 2026-10-13).  Open: try it on a phone;
       the QR code again, with a fuzz target for `qr_seal` and the
       configuration it opens (postponed, 2026-10-11, see Decisions); maybe a
-      navigation bar instead of the four tiles, should the app get more
+      navigation bar instead of the four keys, should the app get more
       screens (several networks, peers)
 - [x] `n3n-edge help transform`: lists the ciphers and compressions built
       in, with the implementation of each (`*_IMPL` in `src/crypto/*.h`,

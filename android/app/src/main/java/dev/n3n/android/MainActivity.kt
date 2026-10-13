@@ -12,7 +12,6 @@ import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.View
-import android.widget.Button
 import android.widget.EditText
 import android.widget.Switch
 import android.widget.TextView
@@ -55,16 +54,16 @@ class MainActivity : Activity() {
         setupRoute()
 
         connect.setOnClickListener { toggle() }
-        findViewById<Button>(R.id.scan).setOnClickListener {
+        findViewById<View>(R.id.scan).setOnClickListener {
             startActivity(Intent(this, EditActivity::class.java).putExtra(EditActivity.EXTRA_SCAN, true))
         }
-        findViewById<Button>(R.id.edit).setOnClickListener {
+        findViewById<View>(R.id.edit).setOnClickListener {
             startActivity(Intent(this, EditActivity::class.java))
         }
-        findViewById<Button>(R.id.share).setOnClickListener {
+        findViewById<View>(R.id.share).setOnClickListener {
             startActivity(Intent(this, ShareActivity::class.java))
         }
-        findViewById<Button>(R.id.log).setOnClickListener {
+        findViewById<View>(R.id.log).setOnClickListener {
             startActivity(Intent(this, LogActivity::class.java))
         }
 
@@ -126,7 +125,7 @@ class MainActivity : Activity() {
             config.addressInvalid || text.isBlank() -> getString(R.string.none)
             else -> getString(R.string.address_auto)
         }
-        findViewById<Button>(R.id.share).isEnabled = text.isNotBlank()
+        findViewById<View>(R.id.share).isEnabled = text.isNotBlank()
         when {
             text.isBlank() -> showHint(R.string.no_config_hint)
             config.addressInvalid -> showHint(R.string.no_address)

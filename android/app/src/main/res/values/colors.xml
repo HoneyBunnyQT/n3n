@@ -5,8 +5,9 @@
     <color name="text">#16181D</color>
     <color name="text_dim">#5E6573</color>
     <color name="line">#E3E7EE</color>
-    <color name="accent">#1F6FEB</color>
-    <color name="accent_soft">#E3EDFD</color>
+    <!-- bunny-pink, as in the drawings of the docs (docs/images) -->
+    <color name="accent">#C2185B</color>
+    <color name="accent_soft">#FDF0F6</color>
     <color name="on_accent">#FFFFFF</color>
     <!-- the connect button: its rim, the light along its top edge, the
          ripple -->

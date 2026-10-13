@@ -56,7 +56,9 @@ what comes next.
   does, and an LED let into it that tells the state without depending on
   colour - dark when off, yellow stripes running while on the way, lit
   green when connected - as a night mode in black and white keeps
-  colours apart no better than some eyes do.
+  colours apart no better than some eyes do.  Below it, four round keys
+  built the same way: Scan, Configure, Share, Log.  The accent is
+  bunny-pink, the pink of the drawings in the docs.
 - The name shown is the peer's own (`description` in `[connection]`),
   never the community's: with header encryption, that is the key of the
   headers.
@@ -107,8 +109,8 @@ the app tells the edge (`n3n_edge_network_changed()`), which registers
 again at once, with the supernode and its peers, instead of with its next
 round, up to 20 seconds later; the log says "the phone's network changed".
 
-Limits for now: one network at a time; addresses from the supernode and
-IPv6 inside the tunnel with `tuntap.address6`, not yet tried on a phone.
+Limits for now: one network at a time; IPv6 inside the tunnel with
+`tuntap.address6`, not yet tried on a phone.
 
 ## How it is put together
 
@@ -125,6 +127,8 @@ android/
     java/dev/n3n/android/
       MainActivity.kt                     the main screen: state, connect
       ConnectButton.kt                    the connect button, with its LED
+      Key.kt, RaisedFace.kt               the keys below it, the raised look
+                                          the two share
       Connection.kt                       what the connection is doing
       EditActivity.kt                     the configuration: edit, import, scan
       ShareActivity.kt                    the configuration as a QR code

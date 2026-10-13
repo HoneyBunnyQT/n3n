@@ -46,7 +46,7 @@ import kotlin.math.min
  *
  * A raised button: a shadow from its elevation, which goes down while it
  * is pressed (res/animator/press.xml), a face lit from above, a light edge
- * at the top; the LED sits in a window let into the face.
+ * at the top (RaisedFace); the LED sits in a window let into the face.
  */
 class ConnectButton(context: Context, attrs: AttributeSet?) : LinearLayout(context, attrs) {
 
@@ -63,15 +63,7 @@ class ConnectButton(context: Context, attrs: AttributeSet?) : LinearLayout(conte
 
     private var actionLabel: String? = null
 
-    private val facePaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val rimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = rimWidth
-    }
-    private val edgePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = edgeWidth
-    }
+    private val face = RaisedFace(context, rimWidth, edgeWidth)
 
     init {
         orientation = VERTICAL
@@ -127,7 +119,6 @@ class ConnectButton(context: Context, attrs: AttributeSet?) : LinearLayout(conte
         for (child in arrayOf(icon, title, detail, led)) {
             child.importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
         }
-        rimPaint.color = context.getColor(R.color.button_rim)
     }
 
     /**
@@ -144,23 +135,11 @@ class ConnectButton(context: Context, attrs: AttributeSet?) : LinearLayout(conte
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        val cy = h / 2f
-        val r = min(w, h) / 2f
-        val face = context.getColor(R.color.card)
-        facePaint.shader = LinearGradient(
-            0f, cy - r, 0f, cy + r, mix(face, Color.WHITE, 0.10f), mix(face, Color.BLACK, 0.06f), Shader.TileMode.CLAMP)
-        val light = context.getColor(R.color.button_edge)
-        edgePaint.shader = LinearGradient(0f, cy - r, 0f, cy, light, light and 0x00FFFFFF, Shader.TileMode.CLAMP)
+        face.layout(h / 2f, min(w, h) / 2f)
     }
 
     override fun onDraw(canvas: Canvas) {
-        val cx = width / 2f
-        val cy = height / 2f
-        val r = min(width, height) / 2f
-        canvas.drawCircle(cx, cy, r, facePaint)
-        canvas.drawCircle(cx, cy, r - rimWidth / 2, rimPaint)
-        // the light along the top, just inside the rim
-        canvas.drawCircle(cx, cy, r - rimWidth - edgeWidth / 2, edgePaint)
+        face.draw(canvas, width / 2f, height / 2f, min(width, height) / 2f)
     }
 
     override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
@@ -337,14 +316,4 @@ class ConnectButton(context: Context, attrs: AttributeSet?) : LinearLayout(conte
             }
         }
     }
-}
-
-/** The colour, with some of another mixed in (0 none .. 1 all of it) */
-private fun mix(color: Int, with: Int, amount: Float): Int {
-    val keep = 1 - amount
-    return Color.rgb(
-        (Color.red(color) * keep + Color.red(with) * amount).toInt(),
-        (Color.green(color) * keep + Color.green(with) * amount).toInt(),
-        (Color.blue(color) * keep + Color.blue(with) * amount).toInt(),
-    )
 }

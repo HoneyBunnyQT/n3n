@@ -29,6 +29,9 @@
     <string name="rtt">%1$s · %2$d ms</string>
     <string name="scan">Scan QR code</string>
     <string name="edit">Configuration</string>
+    <!-- the keys of the main screen: short, four in a row -->
+    <string name="key_scan">Scan</string>
+    <string name="key_edit">Configure</string>
     <string name="share">Share</string>
     <string name="log">Log</string>
     <string name="no_network">No network yet</string>

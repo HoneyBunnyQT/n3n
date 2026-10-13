@@ -102,6 +102,54 @@
             </TableLayout>
         </LinearLayout>
 
+        <!-- what else there is, as keys -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:orientation="horizontal">
+
+            <dev.n3n.android.Key
+                android:id="@+id/scan"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:src="@drawable/ic_scan"
+                android:text="@string/key_scan" />
+
+            <dev.n3n.android.Key
+                android:id="@+id/edit"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:src="@drawable/ic_edit"
+                android:text="@string/key_edit" />
+
+            <dev.n3n.android.Key
+                android:id="@+id/share"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:src="@drawable/ic_share"
+                android:text="@string/share" />
+
+            <dev.n3n.android.Key
+                android:id="@+id/log"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:src="@drawable/ic_log"
+                android:text="@string/log" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/hint"
+            style="@style/Label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:visibility="gone" />
+
         <!-- routing everything through a peer, an exit node -->
         <LinearLayout
             style="@style/Card"
@@ -178,69 +226,6 @@
                     android:layout_marginTop="12dp"
                     android:text="@string/route_note" />
             </LinearLayout>
-        </LinearLayout>
-
-        <TextView
-            android:id="@+id/hint"
-            style="@style/Label"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:visibility="gone" />
-
-        <!-- what else there is -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:orientation="horizontal">
-
-            <Button
-                android:id="@+id/scan"
-                style="@style/Tile"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="6dp"
-                android:layout_weight="1"
-                android:drawableTop="@drawable/ic_scan"
-                android:text="@string/scan" />
-
-            <Button
-                android:id="@+id/edit"
-                style="@style/Tile"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="6dp"
-                android:layout_weight="1"
-                android:drawableTop="@drawable/ic_edit"
-                android:text="@string/edit" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:orientation="horizontal">
-
-            <Button
-                android:id="@+id/share"
-                style="@style/Tile"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="6dp"
-                android:layout_weight="1"
-                android:drawableTop="@drawable/ic_share"
-                android:text="@string/share" />
-
-            <Button
-                android:id="@+id/log"
-                style="@style/Tile"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="6dp"
-                android:layout_weight="1"
-                android:drawableTop="@drawable/ic_log"
-                android:text="@string/log" />
         </LinearLayout>
     </LinearLayout>
 </ScrollView>

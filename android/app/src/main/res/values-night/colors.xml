@@ -5,8 +5,8 @@
     <color name="text">#E8EAEE</color>
     <color name="text_dim">#9AA2B1</color>
     <color name="line">#2B313C</color>
-    <color name="accent">#5B9BFF</color>
-    <color name="accent_soft">#1C2B44</color>
+    <color name="accent">#F06BA4</color>
+    <color name="accent_soft">#3A1F2C</color>
     <color name="on_accent">#0F1217</color>
     <color name="button_rim">#2F3541</color>
     <color name="button_edge">#40FFFFFF</color>

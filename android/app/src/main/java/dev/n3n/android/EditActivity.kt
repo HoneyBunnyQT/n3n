@@ -8,7 +8,7 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
 import android.text.InputType
-import android.widget.Button
+import android.view.View
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.Toast
@@ -38,8 +38,8 @@ class EditActivity : Activity() {
             config.setText(Store.load(this))
         }
 
-        findViewById<Button>(R.id.scan).setOnClickListener { scan() }
-        findViewById<Button>(R.id.import_file).setOnClickListener {
+        findViewById<View>(R.id.scan).setOnClickListener { scan() }
+        findViewById<View>(R.id.import_file).setOnClickListener {
             val pick = Intent(Intent.ACTION_OPEN_DOCUMENT)
                 .addCategory(Intent.CATEGORY_OPENABLE)
                 .setType("*/*")
