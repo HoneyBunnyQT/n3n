@@ -111,6 +111,8 @@ class MainActivity : Activity() {
 
         val save = {
             Store.saveRoute(this, Store.Route(routeAll.isChecked, gateway.text.toString().trim(), dns.text.toString().trim()))
+            // the exit peer's address may be what a tap needs
+            show(N3nVpnService.state)
         }
         routeAll.setOnCheckedChangeListener { _, on ->
             findViewById<View>(R.id.route_row).visibility = if (on) View.VISIBLE else View.GONE
@@ -215,7 +217,20 @@ class MainActivity : Activity() {
         )
         // a tap while stopping connects again, once the edge is down
         val starts = s.phase == Phase.OFF || s.phase == Phase.STOPPING
-        connect.show(look, s.title(this), detail, getString(if (starts) R.string.connect else R.string.disconnect))
+        // what keeps a tap from connecting: the symbol is grey, and the
+        // line below says what is missing (a tap says more)
+        val missing = if (starts) N3nVpnService.notReady(this) else null
+        val needs = when (missing) {
+            null -> null
+            R.string.no_address -> R.string.needs_address
+            R.string.route_need_gateway -> R.string.needs_gateway
+            else -> R.string.needs_config
+        }
+        connect.show(
+            look, s.title(this),
+            if (needs != null && s.phase == Phase.OFF && !s.failed) getString(needs) else detail,
+            getString(if (starts) R.string.connect else R.string.disconnect),
+            usable = missing == null)
 
         val info = if (s.phase == Phase.OFF) null else s.info
         val sn = info?.supernode

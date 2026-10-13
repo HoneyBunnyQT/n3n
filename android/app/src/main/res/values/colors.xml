@@ -16,7 +16,8 @@
     <color name="button_ripple">#22000000</color>
     <!-- its LED, the same by day and by night: dark, lit, stripes -->
     <color name="led_off">#16181C</color>
-    <color name="led_on">#3DDC84</color>
+    <!-- lit: bunny-pink, the night accent, bright on both -->
+    <color name="led_on">#F06BA4</color>
     <color name="led_wait">#FFC21A</color>
     <color name="code_bg">#FFFFFF</color>
 </resources>

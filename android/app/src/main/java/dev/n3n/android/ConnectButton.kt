@@ -38,11 +38,14 @@ import kotlin.math.min
 /**
  * The big round button of the main screen: it connects and disconnects,
  * and it shows the state - in a word or two, what it is doing right now
- * (or what a tap does), and an LED.
+ * (or what a tap does), and an LED.  Its symbol is in the accent colour,
+ * and grey while a tap cannot connect yet (no configuration, say): the
+ * line below the title says what is missing.
  *
  * The LED is never colour alone, as night modes and grayscale screens do
- * not keep colours apart: off it is dark, connected it is lit, and on the
- * way there yellow stripes run through it, from left to right.
+ * not keep colours apart: off it is dark, connected it is lit (pink, as
+ * the accent), and on the way there yellow stripes run through it, from
+ * left to right.
  *
  * A raised button: a shadow from its elevation, which goes down while it
  * is pressed (res/animator/press.xml), a face lit from above, a light edge
@@ -90,7 +93,6 @@ class ConnectButton(context: Context, attrs: AttributeSet?) : LinearLayout(conte
 
         val iconSize = (30 * density).toInt()
         icon.setImageResource(R.drawable.ic_power)
-        icon.imageTintList = ColorStateList.valueOf(context.getColor(R.color.text_dim))
         addView(icon, LayoutParams(iconSize, iconSize))
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f)
         title.typeface = Typeface.DEFAULT_BOLD
@@ -122,10 +124,13 @@ class ConnectButton(context: Context, attrs: AttributeSet?) : LinearLayout(conte
     }
 
     /**
-     * The look, the state in a word or two, the line below it, and what a
-     * tap does (for screen readers: "double-tap to <action>")
+     * The look, the state in a word or two, the line below it, what a tap
+     * does (for screen readers: "double-tap to <action>"), and whether it
+     * can do that now: else the symbol is grey
      */
-    fun show(look: Look, title: String, detail: String?, action: String?) {
+    fun show(look: Look, title: String, detail: String?, action: String?, usable: Boolean = true) {
+        icon.imageTintList = ColorStateList.valueOf(
+            if (usable) context.getColor(R.color.accent) else context.getColor(R.color.text_dim) and 0x00FFFFFF or 0x80000000.toInt())
         this.title.text = title
         this.detail.text = detail ?: ""
         actionLabel = action
@@ -152,7 +157,7 @@ class ConnectButton(context: Context, attrs: AttributeSet?) : LinearLayout(conte
 
     /**
      * The LED, in an oval window let into the face: dark glass when off,
-     * lit green when connected, and thick yellow diagonals that run to the
+     * lit pink when connected, and thick yellow diagonals that run to the
      * right while on the way, each shaded round as it passes.  Lit, it is
      * brighter in its middle and glows around its window.  Its colours are
      * the same by day and by night, as a real LED's.

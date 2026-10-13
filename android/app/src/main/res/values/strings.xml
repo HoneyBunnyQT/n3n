@@ -20,6 +20,10 @@
     <string name="doing_stop">Stopping the edge</string>
     <string name="tap_connect">Tap to connect</string>
     <string name="tap_disconnect">Tap to disconnect</string>
+    <!-- below "Not connected", while a tap cannot connect yet -->
+    <string name="needs_config">Needs a configuration</string>
+    <string name="needs_address">Needs an IPv4 address</string>
+    <string name="needs_gateway">Needs the exit peer\'s address</string>
     <string name="stopped_see_log">Stopped by itself: see the log</string>
     <string name="address">Address</string>
     <string name="supernode">Supernode</string>
