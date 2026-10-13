@@ -94,6 +94,43 @@ class N3nVpnService : VpnService() {
             }
         }
 
+        /**
+         * Why the configuration and route kept (Store) cannot be started as
+         * they are - a string for the user - or null: no configuration (or
+         * no community in it), no IPv4 address, the exit peer without one
+         */
+        fun notReady(context: Context): Int? {
+            val config = Config(Store.load(context))
+            val route = Store.route(context)
+            return when {
+                config.community == null -> R.string.no_config_hint
+                config.addressInvalid -> R.string.no_address
+                route.all && !Store.isIpv4(route.gateway) -> R.string.route_need_gateway
+                else -> null
+            }
+        }
+
+        /**
+         * Starts the edge with the configuration and route kept, once the
+         * VPN is allowed (VpnService.prepare()) - from Connect, and from
+         * the tile in the quick settings
+         */
+        fun start(context: Context) {
+            val intent = Intent(context, N3nVpnService::class.java)
+                .setAction(ACTION_START)
+                .putExtra(EXTRA_CONFIG, Store.load(context))
+            val route = Store.route(context)
+            if (route.all) {
+                intent.putExtra(EXTRA_GATEWAY, route.gateway)
+                intent.putExtra(EXTRA_DNS, if (Store.isIpv4(route.dns)) route.dns else "1.1.1.1")
+            }
+            if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent) else context.startService(intent)
+        }
+
+        fun stop(context: Context) {
+            context.startService(Intent(context, N3nVpnService::class.java).setAction(ACTION_STOP))
+        }
+
         fun addLog(line: String) {
             main.post {
                 log.addLast(line)
@@ -466,8 +503,12 @@ class N3nVpnService : VpnService() {
 
     // main thread
     private fun setState(s: Snapshot) {
+        val was = state
         state = s
         stateListener?.invoke(s)
+        if (s.phase != was.phase || s.noAnswer != was.noAnswer) {
+            ConnectTile.update(this)
+        }
         if (foreground && s.phase != Phase.OFF) {
             val key = notificationText(s).joinToString("\n")
             if (key != shownKey) {

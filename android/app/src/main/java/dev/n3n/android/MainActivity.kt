@@ -24,8 +24,11 @@ import android.widget.Toast
  */
 class MainActivity : Activity() {
 
-    private companion object {
-        const val REQUEST_VPN = 1
+    companion object {
+        private const val REQUEST_VPN = 1
+        // from the tile in the quick settings: connect as Connect does,
+        // see ConnectTile
+        const val EXTRA_CONNECT = "connect"
     }
 
     private lateinit var connect: ConnectButton
@@ -69,6 +72,21 @@ class MainActivity : Activity() {
 
         if (Build.VERSION.SDK_INT >= 33) {
             requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 0)
+        }
+        if (savedInstanceState == null) {
+            connectIfAsked(intent)
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        connectIfAsked(intent)
+    }
+
+    private fun connectIfAsked(intent: Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_CONNECT, false) == true && !N3nVpnService.running) {
+            intent.removeExtra(EXTRA_CONNECT)
+            toggle()
         }
     }
 
@@ -140,25 +158,26 @@ class MainActivity : Activity() {
 
     private fun toggle() {
         if (N3nVpnService.running) {
-            startService(Intent(this, N3nVpnService::class.java).setAction(N3nVpnService.ACTION_STOP))
+            N3nVpnService.stop(this)
             return
         }
-        val config = Config(Store.load(this))
-        if (config.community == null || config.addressInvalid) {
-            AlertDialog.Builder(this)
-                .setMessage(if (config.community == null) R.string.no_config_hint else R.string.no_address)
-                .setPositiveButton(R.string.edit) { _, _ ->
-                    startActivity(Intent(this, EditActivity::class.java))
-                }
-                .setNegativeButton(android.R.string.cancel, null)
-                .show()
-            return
-        }
-        val route = Store.route(this)
-        if (route.all && !Store.isIpv4(route.gateway)) {
-            Toast.makeText(this, R.string.route_need_gateway, Toast.LENGTH_LONG).show()
-            gateway.requestFocus()
-            return
+        when (val why = N3nVpnService.notReady(this)) {
+            null -> {}
+            R.string.route_need_gateway -> {
+                Toast.makeText(this, why, Toast.LENGTH_LONG).show()
+                gateway.requestFocus()
+                return
+            }
+            else -> {
+                AlertDialog.Builder(this)
+                    .setMessage(why)
+                    .setPositiveButton(R.string.edit) { _, _ ->
+                        startActivity(Intent(this, EditActivity::class.java))
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+                return
+            }
         }
         // asks the user the first time; null when allowed already
         val ask = VpnService.prepare(this)
@@ -169,17 +188,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun start() {
-        val intent = Intent(this, N3nVpnService::class.java)
-            .setAction(N3nVpnService.ACTION_START)
-            .putExtra(N3nVpnService.EXTRA_CONFIG, Store.load(this))
-        val route = Store.route(this)
-        if (route.all) {
-            intent.putExtra(N3nVpnService.EXTRA_GATEWAY, route.gateway)
-            intent.putExtra(N3nVpnService.EXTRA_DNS, if (Store.isIpv4(route.dns)) route.dns else "1.1.1.1")
-        }
-        if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent) else startService(intent)
-    }
+    private fun start() = N3nVpnService.start(this)
 
     @Deprecated("the platform's own Activity, no AndroidX")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

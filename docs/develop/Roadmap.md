@@ -219,7 +219,7 @@ tests and `make lint` pass after each.
       changes, IPv6 inside the tunnel (`tuntap.address6`, not yet tried
       on a phone), addresses from the supernode (the edge asks the app
       for the device once it has one, `n3n_embed.device`; tried on a
-      phone, 2026-10-13).  The revamp (asked
+      phone, 2026-10-13), a tile in the quick settings.  The revamp (asked
       2026-10-11), done: the state in one place, the service, which asks
       the edge; the notification follows it (it said "connected" before
       the edge was registered), with a Disconnect action and a small

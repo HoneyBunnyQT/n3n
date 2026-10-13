@@ -59,6 +59,13 @@ what comes next.
   colours apart no better than some eyes do.  Below it, four round keys
   built the same way: Scan, Configure, Share, Log.  The accent is
   bunny-pink, the pink of the drawings in the docs.
+- A tile in the quick settings connects and disconnects without opening
+  the app (add it by editing the quick settings), and shows the state
+  below the network's name (Android 10 and later); a long press opens
+  the app.  What only the app can do - asking Android, the first time,
+  whether it may be a VPN, or saying what the configuration lacks -
+  opens the main screen, which goes on as Connect would.  On a locked
+  phone the tile asks for the unlock first.
 - The name shown is the peer's own (`description` in `[connection]`),
   never the community's: with header encryption, that is the key of the
   headers.
@@ -129,6 +136,7 @@ android/
       ConnectButton.kt                    the connect button, with its LED
       Key.kt, RaisedFace.kt               the keys below it, the raised look
                                           the two share
+      ConnectTile.kt                      the tile in the quick settings
       Connection.kt                       what the connection is doing
       EditActivity.kt                     the configuration: edit, import, scan
       ShareActivity.kt                    the configuration as a QR code
