@@ -312,12 +312,24 @@ try_uint32:
             return -1;
         }
         case n3n_conf_transform: {
-            uint8_t *val = (uint8_t *)valvoid;
+            struct n3n_conf_cipher *val = (struct n3n_conf_cipher *)valvoid;
+
+            // "AES", or "AES/AES-NI": the transform, and its variant
+            char name[32];
+            const char *slash = strchr(value, '/');
+            size_t len = slash ? (size_t)(slash - value) : strlen(value);
+            if(len >= sizeof(name) || (slash && strlen(slash + 1) >= sizeof(val->impl))) {
+                return -1;
+            }
+            memcpy(name, value, len);
+            name[len] = 0;
 
             struct n3n_transform *transform;
-            transform = n3n_transform_lookup_name(value);
+            transform = n3n_transform_lookup_name(name);
             if(transform) {
-                *val = transform->id;
+                val->id = transform->id;
+                strncpy(val->impl, slash ? slash + 1 : "", sizeof(val->impl) - 1);
+                val->impl[sizeof(val->impl) - 1] = 0;
                 return 0;
             }
             return -1;
@@ -726,8 +738,14 @@ static const char * stringify_option (void *conf, struct n3n_conf_option option,
             return *val;
         }
         case n3n_conf_transform: {
-            uint8_t *val = (uint8_t *)valvoid;
-            return n3n_transform_id2str(*val);
+            struct n3n_conf_cipher *val = (struct n3n_conf_cipher *)valvoid;
+            if(!val->impl[0]) {
+                return n3n_transform_id2str(val->id);
+            }
+            // for the one dump at a time
+            static char buf[64];
+            snprintf(buf, sizeof(buf), "%s/%s", n3n_transform_id2str(val->id), val->impl);
+            return buf;
         }
         case n3n_conf_headerenc: {
             uint8_t *val = (uint8_t *)valvoid;
@@ -909,7 +927,7 @@ static int option_storagesize (const struct n3n_conf_option option) {
             return sizeof(*val);
         }
         case n3n_conf_transform: {
-            uint8_t *val = (uint8_t *)valvoid;
+            struct n3n_conf_cipher *val = (struct n3n_conf_cipher *)valvoid;
             return sizeof(*val);
         }
         case n3n_conf_headerenc: {

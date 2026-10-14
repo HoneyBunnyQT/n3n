@@ -265,7 +265,10 @@ be different on all edges in the same community,
 .SH ENCRYPTION
 With a key (\fB-k\fR, \fBcommunity.key\fR or N3N_KEY) the payload is
 encrypted with \fBcommunity.cipher\fR, AES if no cipher is given; all edges
-of a community need the same key and cipher.  Without a key, the edge sends
+of a community need the same key and cipher.  AES and Speck take the
+fastest variant this CPU has; \fBcommunity.cipher\fR=AES/plainc asks for
+one of those \fBn3n-edge help transform\fR lists instead, and does not
+change what goes over the wire.  Without a key, the edge sends
 the payload in cleartext (cipher null), which is useful for debugging as the
 packet contents can be seen clearly.
 

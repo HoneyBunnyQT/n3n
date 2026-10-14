@@ -184,7 +184,22 @@ int n2n_transop_speck_init (const n2n_edge_conf_t *conf, n2n_trans_op_t *ttt) {
     ttt->priv = priv;
 
     // setup the cipher and key
-    return setup_speck_key(priv, encrypt_key, encrypt_key_len, NULL);
+    // the variant asked for, if any: one this CPU does not have is no
+    // reason not to start - the configuration may come from another
+    const struct speck_impl *impl = NULL;
+    const char *asked = conf->community.cipher.impl;
+    if(asked[0]) {
+        impl = speck_impl_find(asked);
+        if(!impl) {
+            traceEvent(TRACE_WARNING, "cipher Speck/%s: no such variant on this CPU, using %s "
+                       "(n3n-edge help transform lists them)", asked, speck_impl_chosen()->name);
+        }
+    }
+    if(impl) {
+        traceEvent(TRACE_NORMAL, "Speck: the %s variant, as asked", impl->name);
+    }
+
+    return setup_speck_key(priv, encrypt_key, encrypt_key_len, impl);
 }
 
 struct bench_ctx {

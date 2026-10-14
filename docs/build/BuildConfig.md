@@ -199,7 +199,8 @@ x86-64 or aarch64, as distributions make them, uses AVX2 or AVX-512 for
 SPECK and AES-NI or the ARMv8 AES instructions for AES where the CPU has
 them.  `n3n-edge help transform` names the one taken and those there are,
 and `n3n-edge test benchmark speck_encr aes_encr` (and `_decr`) measures
-each of them, slowest first.  On Windows,
+each of them, slowest first.  `community.cipher = AES/plain C` asks for
+one of them instead (see [Options](../configure/Options.md)).  On Windows,
 AVX2 and AVX-512 are left out: GCC does not align its stack there for
 their vectors (GCC bug 54412).
 

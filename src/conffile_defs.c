@@ -39,12 +39,16 @@ static struct n3n_conf_option section_community[] = {
     {
         .name = "cipher",
         .type = n3n_conf_transform,
-        .offset = offsetof(struct n3n_conf_community, transop_id),
+        .offset = offsetof(struct n3n_conf_community, cipher),
         .desc = "The name of the cipher to use",
         .help = "Choose from any of the registered ciphers for payload "
                 "encryption (requires a key). "
                 "(eg: Twofish, AES, ChaCha20, Speck; n3n-edge help "
-                "transform lists those built in).",
+                "transform lists those built in).  The fastest variant "
+                "this CPU has is taken; one of them can be asked for "
+                "after a slash, e.g. AES/AES-NI or Speck/plain C (the "
+                "names as n3n-edge help transform has them, in any "
+                "case, the blanks and dashes left out as you like).",
     },
     {
         .name = "compression",

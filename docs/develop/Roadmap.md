@@ -350,8 +350,9 @@ tests and `make lint` pass after each.
       aligned area each variant lays out its own way, the fastest the CPU
       has taken at init; `tests-speck` and `tests-aes` hold every variant
       to plain C (and plain C to the test vectors), and the benchmark and
-      `test check` have an item per variant, slowest first.  Speck
-      (2026-10-14): a baseline
+      `test check` have an item per variant, slowest first;
+      `community.cipher = AES/AES-NI` asks for one (a warning, and the
+      fastest, if the CPU has not got it).  Speck (2026-10-14): a baseline
       x86-64 build here, 694 MB/s (SSE2) before, 4980 (AVX-512) now;
       AVX2/AVX-512 not on Windows (GCC bug 54412).  AES (2026-10-14): plain
       C, OpenSSL (with `--with-openssl`), AES-NI, ARMv8 CE (aarch64:

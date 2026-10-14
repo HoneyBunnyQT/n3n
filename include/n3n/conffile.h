@@ -11,7 +11,16 @@
 #include <getopt.h>
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
+
+// community.cipher: a transform, and which of its variants ("AES/AES-NI"),
+// see n3n_conf_transform
+#define N3N_CIPHER_IMPL_SIZE 16
+struct n3n_conf_cipher {
+    uint8_t id;                         // the transform's
+    char impl[N3N_CIPHER_IMPL_SIZE];    // "" for the fastest this CPU has
+};
 
 enum n3n_conf_type {
     n3n_conf_strncpy,

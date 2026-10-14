@@ -21,6 +21,7 @@
 #ifndef _N2N_TYPEDEFS_H_
 #define _N2N_TYPEDEFS_H_
 
+#include <n3n/conffile.h>   // for struct n3n_conf_cipher
 #include <n3n/ethernet.h>   // for n2n_mac_t
 #include <n3n/network_traffic_filter.h>
 #include <n3n/resolve.h>
@@ -524,7 +525,10 @@ struct n3n_conf_community {
     char instance[N2N_COMMUNITY_SIZE];               /**< "home" of a [community home] section, "" for [community] */
     n2n_community_t community_name;                  /**< The community. 16 full octets. */
     uint8_t header_encryption;                       /**< Header encryption indicator. */
-    uint8_t transop_id;                              /**< The transop to use. */
+    union {
+        uint8_t transop_id;                          /**< The transop to use. */
+        struct n3n_conf_cipher cipher;               /**< it (.id), and the variant asked for: community.cipher */
+    };
     uint8_t compression;                             /**< Compress outgoing data packets before encryption */
     char                     *encrypt_key;
     // only on a supernode

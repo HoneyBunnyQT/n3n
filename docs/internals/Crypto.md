@@ -33,7 +33,8 @@ n3n has all four ciphers built-in as basic versions. Some of them optionally
 compile to faster versions by the means of available hardware support (AES-NI,
 SSE, AVX – please see the [Building document](../build/index.md) for
 details; AES and SPECK have all their variants built and take the fastest
-the CPU has when the edge starts). Depending on your platform, ChaCha20 might also draw notable
+the CPU has when the edge starts, `community.cipher = AES/plain C` asks for
+one). Depending on your platform, ChaCha20 might also draw notable
 acceleration from optionally compiling with openSSL 1.1 support.
 
 The`-k <key>` command line parameter supplies the key. As even non-privileged
