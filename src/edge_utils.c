@@ -1411,7 +1411,12 @@ void edge_netwatch_update (struct n3n_runtime_data *eee) {
     bool watch = eee->conf.client.watch_network && !eee->conf.client.local_link;
 
     if(watch && (eee->client.netwatch_fd < 0)) {
+#ifdef _WIN32
+        // nothing to watch with there yet (netwatch.c), and no dev_name
+        eee->client.netwatch_fd = netwatch_open(NULL);
+#else
         eee->client.netwatch_fd = netwatch_open(eee->tap.device.dev_name);
+#endif
         if(eee->client.netwatch_fd >= 0) {
             mainloop_register_fd(eee->client.netwatch_fd, fd_info_proto_netwatch);
         }
