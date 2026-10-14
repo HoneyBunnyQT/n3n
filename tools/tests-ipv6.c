@@ -21,7 +21,7 @@
 #include "../src/ipv6.h"      // for n3n_ipv6_address, n3n_ipv6_prefix_default
 
 #ifdef _WIN32
-#include "win32/defs.h"
+#include "../src/win32/defs.h"
 #else
 #include <arpa/inet.h>        // for inet_ntop, inet_pton
 #endif

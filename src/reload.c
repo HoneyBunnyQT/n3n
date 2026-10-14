@@ -24,12 +24,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>             // for clock_gettime
 
 #include "connslot/strbuf.h"
 #include "crypto/speck.h"       // for speck_deinit
 #include "edge_utils.h"         // for edge_netwatch_update
-#include "n2n.h"
+#include "n2n.h"              // for n3n_monotonic_us
 #include "notify.h"             // for n3n_notify
 #include "peer_info.h"
 #include "reload.h"
@@ -520,11 +519,9 @@ int n3n_reload (struct strbuf **out) {
     traceEvent(TRACE_NORMAL, "reloading the configuration");
     {
         // systemd waits for READY=1 again; since 253 it wants the time too
-        struct timespec ts;
         char msg[64];
-        clock_gettime(CLOCK_MONOTONIC, &ts);
         snprintf(msg, sizeof(msg), "RELOADING=1\nMONOTONIC_USEC=%llu",
-                 (unsigned long long)ts.tv_sec * 1000000ULL + ts.tv_nsec / 1000);
+                 (unsigned long long)n3n_monotonic_us());
         n3n_notify(msg);
     }
 

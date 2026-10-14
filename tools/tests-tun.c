@@ -34,7 +34,7 @@
 #include "../src/tun.h"         // for tun_from_frame, tun_to_frame
 
 #ifdef _WIN32
-#include "win32/defs.h"
+#include "../src/win32/defs.h"
 #else
 #include <arpa/inet.h>          // for htonl, inet_pton
 #include <sys/socket.h>         // for AF_INET, AF_INET6

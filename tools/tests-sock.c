@@ -29,7 +29,7 @@
 #include "../src/sock.h"       // for sock_batch_begin, sendto_logged, udp_drain
 
 #ifdef _WIN32
-#include "win32/defs.h"
+#include "../src/win32/defs.h"
 #else
 #include <arpa/inet.h>         // for htonl
 #include <netinet/in.h>        // for sockaddr_in, INADDR_LOOPBACK

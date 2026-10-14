@@ -312,8 +312,13 @@ static int reload_load (void *conf) {
             if(!reload_file) {
                 break;
             }
+#ifdef _WIN32
+            traceEvent(TRACE_WARNING, "reload: no config file for '%s' (any more), or it cannot be read",
+                       reload_session);
+#else
             traceEvent(TRACE_WARNING, "reload: no config file for '%s' (any more), or it cannot be read as uid %d",
                        reload_session, (int)getuid());
+#endif
             free(session);
             goto failed;
         default:
