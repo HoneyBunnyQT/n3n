@@ -11,5 +11,6 @@
     <color name="button_rim">#2F3541</color>
     <color name="button_edge">#40FFFFFF</color>
     <color name="button_ripple">#33FFFFFF</color>
+    <color name="warn">#C897D8</color>
     <color name="code_bg">#FFFFFF</color>
 </resources>

@@ -61,12 +61,36 @@
                 android:layout_marginTop="8dp"
                 android:layout_marginBottom="8dp" />
 
-            <View
+            <!-- the line below the button, and over its start, while the
+                 configuration or the route changed since the connection
+                 started, a warning: the same height either way -->
+            <FrameLayout
                 android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginTop="18dp"
-                android:layout_marginBottom="6dp"
-                android:background="@color/line" />
+                android:layout_height="24dp"
+                android:layout_marginTop="10dp">
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_gravity="center_vertical"
+                    android:background="@color/line" />
+
+                <TextView
+                    android:id="@+id/reconnect"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_vertical|start"
+                    android:background="@color/card"
+                    android:drawableStart="@drawable/ic_warning"
+                    android:drawablePadding="6dp"
+                    android:drawableTint="@color/warn"
+                    android:gravity="center_vertical"
+                    android:paddingEnd="8dp"
+                    android:text="@string/changes_reconnect"
+                    android:textColor="@color/warn"
+                    android:textSize="12sp"
+                    android:visibility="invisible" />
+            </FrameLayout>
 
             <TableLayout
                 android:layout_width="match_parent"

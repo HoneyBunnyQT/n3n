@@ -44,7 +44,7 @@ import kotlin.math.min
  *
  * The LED is never colour alone, as night modes and grayscale screens do
  * not keep colours apart: off it is dark, connected it is lit (pink, as
- * the accent), and on the way there yellow stripes run through it, from
+ * the accent), and on the way there purple stripes run through it, from
  * left to right.
  *
  * A raised button: a shadow from its elevation, which goes down while it
@@ -157,7 +157,7 @@ class ConnectButton(context: Context, attrs: AttributeSet?) : LinearLayout(conte
 
     /**
      * The LED, in an oval window let into the face: dark glass when off,
-     * lit pink when connected, and thick yellow diagonals that run to the
+     * lit pink when connected, and thick purple diagonals that run to the
      * right while on the way, each shaded round as it passes.  Lit, it is
      * brighter in its middle and glows around its window.  Its colours are
      * the same by day and by night, as a real LED's.
@@ -168,7 +168,7 @@ class ConnectButton(context: Context, attrs: AttributeSet?) : LinearLayout(conte
         private val bezel = 2 * density
         // around the window, for the glow while lit
         val glow = 7 * density
-        // the stripes: one yellow and one dark per period
+        // the stripes: one purple and one dark per period
         private val period = 12 * density
 
         var look = Look.OFF
@@ -254,20 +254,20 @@ class ConnectButton(context: Context, attrs: AttributeSet?) : LinearLayout(conte
         }
 
         /**
-         * The stripes, a dark and a yellow one per period, leaning right:
+         * The stripes, a dark and a purple one per period, leaning right:
          * one gradient along x + y, repeated, so that they move with its
          * matrix.  Each is shaded across, darker at its edges and lighter
-         * in its middle - the yellow as a lit, round bar, the dark as
+         * in its middle - the purple as a lit, round bar, the dark as
          * glass.
          */
-        private fun stripes(dark: Int, yellow: Int): Shader {
+        private fun stripes(dark: Int, lit: Int): Shader {
             val darkEdge = mix(dark, Color.BLACK, 0.4f)
             val darkMiddle = mix(dark, Color.WHITE, 0.12f)
-            val yellowEdge = mix(yellow, Color.BLACK, 0.18f)
-            val yellowMiddle = mix(yellow, Color.WHITE, 0.45f)
+            val litEdge = mix(lit, Color.BLACK, 0.18f)
+            val litMiddle = mix(lit, Color.WHITE, 0.45f)
             return LinearGradient(
                 0f, 0f, period / 2, period / 2,
-                intArrayOf(darkEdge, darkMiddle, darkEdge, yellowEdge, yellow, yellowMiddle, yellow, yellowEdge, darkEdge),
+                intArrayOf(darkEdge, darkMiddle, darkEdge, litEdge, lit, litMiddle, lit, litEdge, darkEdge),
                 floatArrayOf(0f, 0.24f, 0.47f, 0.51f, 0.62f, 0.74f, 0.86f, 0.96f, 1f),
                 Shader.TileMode.REPEAT)
         }

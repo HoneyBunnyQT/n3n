@@ -37,6 +37,7 @@ class MainActivity : Activity() {
     private lateinit var supernode: TextView
     private lateinit var peers: TextView
     private lateinit var hint: TextView
+    private lateinit var reconnect: View
     private lateinit var routeAll: Switch
     private lateinit var gateway: EditText
     private lateinit var dns: EditText
@@ -51,6 +52,7 @@ class MainActivity : Activity() {
         supernode = findViewById(R.id.supernode)
         peers = findViewById(R.id.peers)
         hint = findViewById(R.id.hint)
+        reconnect = findViewById(R.id.reconnect)
         routeAll = findViewById(R.id.route_all)
         gateway = findViewById(R.id.gateway)
         dns = findViewById(R.id.dns)
@@ -117,9 +119,6 @@ class MainActivity : Activity() {
         routeAll.setOnCheckedChangeListener { _, on ->
             findViewById<View>(R.id.route_row).visibility = if (on) View.VISIBLE else View.GONE
             save()
-            if (N3nVpnService.running) {
-                Toast.makeText(this, R.string.route_reconnect, Toast.LENGTH_SHORT).show()
-            }
         }
         val watcher = object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -202,6 +201,10 @@ class MainActivity : Activity() {
 
     /** What the connection is doing, see Connection.kt */
     private fun show(s: Snapshot) {
+        // in place of the line below the button: no jump when it comes or
+        // goes
+        val changed = N3nVpnService.changedSinceStart(this)
+        reconnect.visibility = if (changed) View.VISIBLE else View.INVISIBLE
         val look = when {
             s.phase == Phase.CONNECTED -> ConnectButton.Look.ON
             s.phase.busy -> ConnectButton.Look.BUSY

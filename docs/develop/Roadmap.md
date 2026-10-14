@@ -224,13 +224,15 @@ tests and `make lint` pass after each.
       the edge; the notification follows it (it said "connected" before
       the edge was registered), with a Disconnect action and a small
       icon of its own; the connect button holds the state and what it is
-      doing, looks raised, and has an LED (dark, running yellow stripes,
+      doing, looks raised, and has an LED (dark, running stripes,
       lit) so that the state does not hang on colour, which a black
       and white night mode does not show; an adaptive launcher icon with
       a monochrome layer; the four tiles below it now raised round keys
       like it, and the accent bunny-pink, the pink of the docs'
       drawings - the LED lit and the power symbol in it too, the symbol
-      grey while a tap cannot connect (asked 2026-10-13).  Open: try it on a phone;
+      grey while a tap cannot connect (asked 2026-10-13); the LED's
+      stripes purple, a warning in the button's card while changes wait
+      for a reconnect (2026-10-14).  Open: try it on a phone;
       the QR code again, with a fuzz target for `qr_seal` and the
       configuration it opens (postponed, 2026-10-11, see Decisions); maybe a
       navigation bar instead of the four keys, should the app get more

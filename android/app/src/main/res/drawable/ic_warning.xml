@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A warning: a triangle with rounded corners, an exclamation mark cut
+     out of it -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="16dp"
+    android:height="16dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd"
+        android:pathData="M10.27,3.5 C11.04,2.17 12.96,2.17 13.73,3.5 L21.73,17.5 C22.5,18.83 21.54,20.5 20,20.5 L4,20.5 C2.46,20.5 1.5,18.83 2.27,17.5 Z M11,9 L13,9 L12.75,14.5 L11.25,14.5 Z M12,15.75 A1.25,1.25 0,1 1,12 18.25 A1.25,1.25 0,1 1,12 15.75 Z" />
+</vector>

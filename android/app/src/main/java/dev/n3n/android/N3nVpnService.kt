@@ -116,15 +116,36 @@ class N3nVpnService : VpnService() {
          * the tile in the quick settings
          */
         fun start(context: Context) {
+            val (config, gateway, dns) = startWith(context)
             val intent = Intent(context, N3nVpnService::class.java)
                 .setAction(ACTION_START)
-                .putExtra(EXTRA_CONFIG, Store.load(context))
-            val route = Store.route(context)
-            if (route.all) {
-                intent.putExtra(EXTRA_GATEWAY, route.gateway)
-                intent.putExtra(EXTRA_DNS, if (Store.isIpv4(route.dns)) route.dns else "1.1.1.1")
+                .putExtra(EXTRA_CONFIG, config)
+            if (gateway != null) {
+                intent.putExtra(EXTRA_GATEWAY, gateway)
+                intent.putExtra(EXTRA_DNS, dns)
             }
             if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent) else context.startService(intent)
+        }
+
+        /** What a start now takes: the configuration, and the exit peer and DNS if routed through one */
+        private fun startWith(context: Context): Triple<String, String?, String?> {
+            val route = Store.route(context)
+            if (!route.all) {
+                return Triple(Store.load(context), null, null)
+            }
+            return Triple(Store.load(context), route.gateway, if (Store.isIpv4(route.dns)) route.dns else "1.1.1.1")
+        }
+
+        // what the edge that runs was started with; main thread
+        private var startedWith: Triple<String, String?, String?>? = null
+
+        /**
+         * An edge runs, and the configuration or the route have changed
+         * since it started: they apply once it connects again
+         */
+        fun changedSinceStart(context: Context): Boolean {
+            val was = startedWith ?: return false
+            return running && was != startWith(context)
         }
 
         fun stop(context: Context) {
@@ -363,6 +384,7 @@ class N3nVpnService : VpnService() {
         startForeground()
         // what onDevice() sets the device up with
         starting = Starting(config, gateway, dns)
+        startedWith = Triple(configText, gateway, dns)
 
         running = true
         stopping = false

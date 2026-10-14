@@ -57,7 +57,7 @@
     <string name="route_dns">DNS server, reached through the exit peer</string>
     <string name="route_note">The exit peer needs filter.allow_routing = true in its configuration, IP forwarding and NAT (masquerade) towards the internet. IPv6 is held back meanwhile, so that nothing goes around the exit peer. Applies on the next connect.</string>
     <string name="route_need_gateway">Enter the exit peer\'s address in the network (e.g. 10.1.2.1)</string>
-    <string name="route_reconnect">Connect again to apply</string>
+    <string name="changes_reconnect">Changes apply after reconnect</string>
 
     <!-- configuration -->
     <string name="config_hint">The configuration, as in a .conf file of n3n:\n\n[community]\nname = mynetwork\nkey = mysecret\nsupernode = sn.example.org:7654\n\n[tuntap]\naddress = 10.1.2.3/24</string>

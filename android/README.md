@@ -54,13 +54,15 @@ what comes next.
   peers.  The notification has a Disconnect action.
 - The connect button holds the state: what it is doing, or what a tap
   does, and an LED let into it that tells the state without depending on
-  colour - dark when off, yellow stripes running while on the way, lit
+  colour - dark when off, purple stripes running while on the way, lit
   pink when connected - as a night mode in black and white keeps
   colours apart no better than some eyes do.  Its power symbol is in the
   accent colour, and grey while a tap cannot connect yet: the line below
   then says what is missing (a configuration, an IPv4 address, the exit
-  peer's address).  Below it, four round keys built the same way: Scan,
-  Configure, Share, Log.  The accent is bunny-pink, the pink of the
+  peer's address).  While a connection runs whose configuration or
+  route has changed since it started, a purple warning takes the place
+  of the line below the button: "Changes apply after reconnect".  Below
+  it, four round keys built the same way: Scan, Configure, Share, Log.  The accent is bunny-pink, the pink of the
   drawings in the docs.
 - A tile in the quick settings connects and disconnects without opening
   the app (add it by editing the quick settings), and shows the state
