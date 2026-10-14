@@ -18,24 +18,29 @@
  */
 
 
-#if defined (__AVX512F__)  // AVX512 support ----------------------------------------------------------------------
-#elif defined (__AVX2__)  // AVX2 support -------------------------------------------------------------------------
-#elif defined (__SSE2__) // SSE support ---------------------------------------------------------------------------
-#elif defined (__ARM_NEON) && defined (SPECK_ARM_NEON)      // NEON support ---------------------------------------
+#include "speck.h"     // for SPECK_X86, SPECK_NEON, speck_context_t
+
+#if defined (SPECK_NEON)   // NEON ----------------------------------------------------------------------------
 
 
 // cipher SPECK -- 128 bit block size -- 128 and 256 bit key size -- CTR mode
 // taken from (and modified: removed pure crypto-stream generation and seperated key expansion)
 // https://github.com/nsacyber/simon-speck-supercop/blob/master/crypto_stream/speck128256ctr/
 
-
-#include "speck.h"
+#include <arm_neon.h>
+#include <stdlib.h>     // for size_t
 #include "portable_endian.h"  // for htole64, le64toh
-#include <stdlib.h>     // for size_t, malloc, free
 
-#if defined (SPECK_ALIGNED_CTX)
-#include <mm_malloc.h>  // for _mm_free, _mm_malloc
-#endif
+#define u128 uint64x2_t
+
+// a context's round keys as this variant has them, in its priv
+typedef struct {
+    u128 rk[34];
+    u64 key[34];
+    u32 keysize;
+} ctx_t;
+
+_Static_assert(sizeof(ctx_t) <= SPECK_PRIV_BYTES, "the round keys fit");
 
 #define LCS(x,r) (((x)<<r)|((x)>>(64-r)))
 #define RCS(x,r) (((x)>>r)|((x)<<(64-r)))
@@ -143,7 +148,7 @@
     return 0
 
 
-static int speck_encrypt_xor (unsigned char *out, const unsigned char *in, u64 nonce[], speck_context_t *ctx, int numbytes) {
+static int speck_encrypt_xor (unsigned char *out, const unsigned char *in, u64 nonce[], ctx_t *ctx, int numbytes) {
 
     if(ctx->keysize == 256) {
         Encrypt_Dispatcher(256);
@@ -154,7 +159,7 @@ static int speck_encrypt_xor (unsigned char *out, const unsigned char *in, u64 n
 
 
 static int internal_speck_ctr (unsigned char *out, const unsigned char *in, unsigned long long inlen,
-                               const unsigned char *n, speck_context_t *ctx) {
+                               const unsigned char *n, ctx_t *ctx) {
 
     int i;
     u64 nonce[2];
@@ -204,7 +209,7 @@ static int internal_speck_ctr (unsigned char *out, const unsigned char *in, unsi
 }
 
 
-static int speck_expand_key (speck_context_t *ctx, const unsigned char *k, int keysize) {
+static int speck_expand_key (ctx_t *ctx, const unsigned char *k, int keysize) {
 
     u64 K[4];
     size_t i;
@@ -225,49 +230,29 @@ static int speck_expand_key (speck_context_t *ctx, const unsigned char *k, int k
 }
 
 
-// this functions wraps the call to internal_speck_ctr functions which have slightly different
-// signature -- ctx by value for SSE with SPECK_CTX_BYVAL defined in speck.h, by name otherwise
-int speck_ctr (unsigned char *out, const unsigned char *in, unsigned long long inlen,
-               const unsigned char *n, speck_context_t *ctx) {
-
-    return internal_speck_ctr(out, in, inlen, n,
-#if defined (SPECK_CTX_BYVAL)
-                              *ctx);
-#else
-                              ctx);
-#endif
+static inline ctx_t *priv (speck_context_t *ctx) {
+    return (ctx_t *)(void *)ctx->priv;
 }
 
 
-// create context loaded with round keys ready for use, key size either 128 or 256 (bits)
-int speck_init (speck_context_t **ctx, const unsigned char *k, int keysize) {
+static void expand_key (speck_context_t *ctx, const unsigned char *k, int keysize) {
 
-#if defined (SPECK_ALIGNED_CTX)
-    *ctx = (speck_context_t*)_mm_malloc(sizeof(speck_context_t), SPECK_ALIGNED_CTX);
-#else
-    *ctx = (speck_context_t*)calloc(1, sizeof(speck_context_t));
-#endif
-    if(!(*ctx)) {
-        return -1;
-    }
-
-    return speck_expand_key(*ctx, k, keysize);
+    speck_expand_key(priv(ctx), k, keysize);
 }
 
 
-int speck_deinit (speck_context_t *ctx) {
+static int ctr (unsigned char *out, const unsigned char *in, unsigned long long inlen,
+                const unsigned char *n, speck_context_t *ctx) {
 
-    if(ctx) {
-#if defined (SPECK_ALIGNED_CTX)
-        _mm_free(ctx);
-#else
-        free(ctx);
-#endif
-    }
-
-    return 0;
+    return internal_speck_ctr(out, in, inlen, n, priv(ctx));
 }
 
 
-#else           // plain C ----------------------------------------------------------------------------------------
-#endif          // AVX, SSE, NEON, plain C ------------------------------------------------------------------------
+const struct speck_impl speck_impl_neon = {
+    .name = "NEON",
+    .expand_key = expand_key,
+    .ctr = ctr,
+};
+
+
+#endif // SPECK_NEON

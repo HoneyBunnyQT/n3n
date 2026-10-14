@@ -342,8 +342,19 @@ tests and `make lint` pass after each.
 - [ ] ARM: benchmark on real boards (Pi 3/4 without AES instructions, Pi 5
       with): `n3n-edge test benchmark`, with and without the flags; decide
       whether Speck NEON can be on by default on newer cores
-- [ ] Runtime selection of the implementations (Hamish is working on it):
-      then distribution builds get the ARMv8 AES too, without the flag
+- [~] Runtime selection of the implementations (Hamish's idea), so that
+      distribution builds get them without flags: Speck done (2026-10-14,
+      on the session branch, not yet on main) - every variant of the
+      architecture built, each with its extension for its own functions
+      only (`SPECK_TARGET_BEGIN`, a target pragma, so no build system
+      needs flags), one context with an aligned area each variant lays out
+      its own way, the fastest the CPU has taken at `speck_init()`
+      (`src/crypto/speck.c`); `tests-speck` holds every variant to plain C
+      (and plain C to the guide's test vectors), and the benchmark and
+      `test check` have an item per variant, slowest first.  A baseline
+      x86-64 build here: 694 MB/s (SSE2) before, 4980 (AVX-512) now.
+      AVX2/AVX-512 not on Windows (GCC bug 54412).  Open: ChaCha20, AES
+      (and the ARMv8 AES, which needs `getauxval()` on ARM)
 - [x] epoll in the mainloop instead of `select()` on Linux (`mainloop.c`),
       which lifts the limit of FD_SETSIZE (1024) on its fds - a
       supernode's TCP connections - to what the process may open; other

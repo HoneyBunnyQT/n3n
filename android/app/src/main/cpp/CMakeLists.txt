@@ -49,7 +49,6 @@ file(GLOB N3N_CORE
     ${TOP}/src/benchmark/*.c)
 list(FILTER N3N_CORE EXCLUDE REGEX "/(role_federate|role_relay|sn_communities|sn_utils)\\.c$")
 list(FILTER N3N_CORE EXCLUDE REGEX "/tuntap_(freebsd|netbsd|osx)\\.c$")
-list(FILTER N3N_CORE EXCLUDE REGEX "/crypto/speck\\.c$")
 list(FILTER N3N_CORE EXCLUDE REGEX "/win32/")
 
 add_library(n3n SHARED

@@ -23,8 +23,6 @@
 #include "portable_endian.h"  // for htole64, le64toh
 #include "speck.h"
 
-// NOTE: these includes are used by code outside of all these ifdefs
-
 
 // The words of a block are little endian in memory, wherever they are: also
 // unaligned, as they are within packets
@@ -39,23 +37,10 @@ static inline void store64_le (unsigned char *p, u64 v) {
     memcpy(p, &v, sizeof(v));
 }
 
-#if defined (__AVX512F__)  // AVX512 support ----------------------------------------------------------------------
-#elif defined (__AVX2__)  // AVX2 support -------------------------------------------------------------------------
-#elif defined (__SSE2__) // SSE support ---------------------------------------------------------------------------
-#elif defined (__ARM_NEON) && defined (SPECK_ARM_NEON)      // NEON support ---------------------------------------
-#else           // plain C ----------------------------------------------------------------------------------------
-
-
 // cipher SPECK -- 128 bit block size -- 128 and 256 bit key size -- CTR mode
 // taken from (and modified: removed pure crypto-stream generation and seperated key expansion)
 // https://github.com/nsacyber/simon-speck-supercop/blob/master/crypto_stream/speck128256ctr/
 
-
-#include <stdlib.h>     // for size_t, malloc, free
-
-#if defined (SPECK_ALIGNED_CTX)
-#include <mm_malloc.h>  // for _mm_free, _mm_malloc
-#endif
 
 #define ROR(x,r) (((x)>>(r))|((x)<<(64-(r))))
 #define ROL(x,r) (((x)<<(r))|((x)>>(64-(r))))
@@ -78,11 +63,10 @@ static int internal_speck_ctr (unsigned char *out, const unsigned char *in, unsi
                                const unsigned char *n, speck_context_t *ctx) {
 
     u64 i, nonce[2], x, y, t;
-    unsigned char *block = malloc(16);
+    unsigned char block[16];
     int numrounds = (ctx->keysize == 256)?34:32;
 
     if(!inlen) {
-        free(block);
         return 0;
     }
     nonce[0] = load64_le(&n[0]);
@@ -107,13 +91,11 @@ static int internal_speck_ctr (unsigned char *out, const unsigned char *in, unsi
             out[i + 8*t] = block[i] ^ in[i + 8*t];
     }
 
-    free(block);
-
     return 0;
 }
 
 
-static int speck_expand_key (speck_context_t *ctx, const unsigned char *k, int keysize) {
+static void speck_expand_key (speck_context_t *ctx, const unsigned char *k, int keysize) {
 
     u64 K[4];
     u64 i;
@@ -139,60 +121,16 @@ static int speck_expand_key (speck_context_t *ctx, const unsigned char *k, int k
     ctx->key[33] = K[0];
 
     ctx->keysize = keysize;
-
-    // 0 for success, as every other backend (NEON, SSE2, AVX2, AVX512)
-    // returns: the only caller that checks, qr_seal(), took the 1 for a
-    // failure, so a sealed QR code never came out where this plain C path
-    // is built (Android, where there is no SPECK_ARM_NEON)
-    return 0;
 }
 
 
-// this functions wraps the call to internal_speck_ctr functions which have slightly different
-// signature -- ctx by value for SSE with SPECK_CTX_BYVAL defined in speck.h, by name otherwise
-int speck_ctr (unsigned char *out, const unsigned char *in, unsigned long long inlen,
-               const unsigned char *n, speck_context_t *ctx) {
-
-    return internal_speck_ctr(out, in, inlen, n,
-#if defined (SPECK_CTX_BYVAL)
-                              *ctx);
-#else
-                              ctx);
-#endif
-}
-
-
-// create context loaded with round keys ready for use, key size either 128 or 256 (bits)
-int speck_init (speck_context_t **ctx, const unsigned char *k, int keysize) {
-
-#if defined (SPECK_ALIGNED_CTX)
-    *ctx = (speck_context_t*)_mm_malloc(sizeof(speck_context_t), SPECK_ALIGNED_CTX);
-#else
-    *ctx = (speck_context_t*)calloc(1, sizeof(speck_context_t));
-#endif
-    if(!(*ctx)) {
-        return -1;
-    }
-
-    return speck_expand_key(*ctx, k, keysize);
-}
-
-
-int speck_deinit (speck_context_t *ctx) {
-
-    if(ctx) {
-#if defined (SPECK_ALIGNED_CTX)
-        _mm_free(ctx);
-#else
-        free(ctx);
-#endif
-    }
-
-    return 0;
-}
-
-
-#endif          // AVX, SSE, NEON, plain C ------------------------------------------------------------------------
+// every context's round keys once each (speck_init()), and the variant of
+// every CPU
+const struct speck_impl speck_impl_plainc = {
+    .name = "plain C",
+    .expand_key = speck_expand_key,
+    .ctr = internal_speck_ctr,
+};
 
 
 // ----------------------------------------------------------------------------------------------------------------

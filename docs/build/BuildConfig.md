@@ -182,13 +182,22 @@ So far, the following portions of n3n's code benefit from hardware features:
 ```
 AES:               AES-NI, ARMv8 Cryptography Extension
 ChaCha20:          SSE2, SSSE3, AVX2, AVX512, NEON
-SPECK:             SSE2, SSSE3, AVX2, AVX512, (NEON)
+SPECK:             SSE2, SSSE3, AVX2, AVX512, (NEON) - chosen at runtime
 Random Numbers:    RDSEED, RDRND (not faster but more random seed)
 ```
 
 The compilations flags could easily be combined:
 
 `./configure CFLAGS="-O3 -march=native"`.
+
+SPECK needs no flags: every variant of the architecture is built, each
+with the extension it needs for its own code only, and the edge takes the
+fastest one the CPU it runs on has - a build for the baseline of x86-64,
+as distributions make them, uses AVX2 or AVX-512 where the CPU has them.
+`n3n-edge help transform` names the one taken, and `n3n-edge test
+benchmark speck_encr speck_decr` measures each of them, slowest first.  On
+Windows, AVX2 and AVX-512 are left out: GCC does not align its stack there
+for their vectors (GCC bug 54412).
 
 ## ARM
 
@@ -216,8 +225,9 @@ correctness (under qemu, see [Testing](../develop/testing.md)).
 
 By default, SPECK does not take advantage of ARM NEON hardware acceleration even if compiled with `-march=native`. The reason is that the NEON implementation proved to be slower than the 64-bit scalar code on Raspberry Pi 3B+, see [here](https://github.com/ntop/n2n/issues/563).
 
-Your specific ARM mileage may vary, so it can be enabled by configuring the definition of the `SPECK_ARM_NEON` macro:
+The NEON version is built wherever the build has NEON (all aarch64; 32 bit
+ARM with `-mfpu=neon`), and `n3n-edge test benchmark speck_encr` measures
+it next to plain C - but the edge takes plain C unless asked for NEON with
+the `SPECK_ARM_NEON` macro:
 
 `./configure CFLAGS="-DSPECK_ARM_NEON"`
-
-Just make sure that the correct architecture is set, too. `-march=native` usually works quite well.
