@@ -20,6 +20,8 @@
     <!-- lit: bunny-pink, the night accent, bright on both -->
     <color name="led_on">#F06BA4</color>
     <color name="led_wait">#A633CC</color>
+    <!-- the bunny in the corner, inside its pink outline -->
+    <color name="bunny">#EBD9F2</color>
     <!-- the warning in the card of the connect button -->
     <color name="warn">#803399</color>
     <color name="code_bg">#FFFFFF</color>

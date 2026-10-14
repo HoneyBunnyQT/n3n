@@ -156,7 +156,12 @@ android/
       Config.kt                           reads address and MTU of a .conf
     res/                                  layouts, strings, icons (the
                                           launcher's adaptive, with a
-                                          monochrome layer)
+                                          monochrome layer: the nodes on
+                                          bunny-pink into dark purple;
+                                          drawable/logo is its middle,
+                                          raised, for the main screen, and
+                                          drawable/bunny sits in its top
+                                          corner)
 ```
 
 - **libn3n.so** is the edge-only build of the core, as

@@ -17,11 +17,14 @@
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
+            <!-- raised: the oval below it casts the shadow -->
             <ImageView
-                android:layout_width="40dp"
-                android:layout_height="40dp"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@drawable/logo_outline"
                 android:contentDescription="@null"
-                android:src="@mipmap/ic_launcher" />
+                android:elevation="3dp"
+                android:src="@drawable/logo" />
 
             <LinearLayout
                 android:layout_width="0dp"
@@ -42,6 +45,14 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content" />
             </LinearLayout>
+
+            <!-- the bunny, in the corner -->
+            <ImageView
+                android:layout_width="28dp"
+                android:layout_height="30dp"
+                android:layout_marginStart="8dp"
+                android:contentDescription="@null"
+                android:src="@drawable/bunny" />
         </LinearLayout>
 
         <!-- the state, and the button -->
