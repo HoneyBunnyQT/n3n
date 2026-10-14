@@ -343,8 +343,8 @@ tests and `make lint` pass after each.
       with): `n3n-edge test benchmark`, with and without the flags; decide
       whether Speck NEON can be on by default on newer cores
 - [~] Runtime selection of the implementations (Hamish's idea), so that
-      distribution builds get them without flags (on the session branch,
-      not yet on main): every variant of the architecture built, each with
+      distribution builds get them without flags (on main 2026-10-14):
+      every variant of the architecture built, each with
       its extension for its own functions only (`CRYPTO_TARGET_BEGIN`, a
       target pragma, so no build system needs flags), one context with an
       aligned area each variant lays out its own way, the fastest the CPU
@@ -358,7 +358,8 @@ tests and `make lint` pass after each.
       C, OpenSSL (with `--with-openssl`), AES-NI, ARMv8 CE (aarch64:
       `getauxval()`); a baseline build here 337 MB/s before, 2120 now, one
       with OpenSSL 735 before (OpenSSL sets the key up for every packet).
-      Open: ChaCha20; whether a short benchmark at the start should settle
+      Open: ChaCha20, Twofish (plain C only so far); whether a short
+      benchmark at the start should settle
       the close calls (Speck NEON or plain C on ARM, SSE2 or plain C), and
       whether SSE2 should stay a choice for Speck - numbers from other
       CPUs first
@@ -586,7 +587,7 @@ while `peer` keeps getting what does not touch the wire, merged into
 
 Current ideas, half-decided things, commands worth keeping.
 
-### Where things stand (2026-10-12)
+### Where things stand (2026-10-14)
 
 Recently on `main` and done: epoll and batched I/O (`recvmmsg()` /
 `sendmmsg()`), with `tests/netns/bench.py` for the whole packet path; the
@@ -601,8 +602,23 @@ compares and applies the filter rules and reaches the edge of a supernode
 (`supernode.tap`).  Android: the revamp - the state in the service, the
 notification following it, the connect button with its LED.  Postponed to
 v4: the path MTU, DNS SRV, fuzzing the QR code (see Decisions).
+Since: addresses from the supernode on Android (tried on a phone), the
+app's look (round keys, bunny-pink, the tile in the quick settings), Speck
+and AES chosen at runtime with `cipher = AES/AES-NI` to ask for a
+variant, and Windows building again (it had not since the network watch:
+the Windows jobs run on pull requests only, so nobody saw).
 
 Open, in rough order:
+
+- CI that runs on pull requests only (`tests.yml`, `quick_windows.yml`):
+  start them by hand (workflow_dispatch) for a branch, or run them on
+  pushes to main too.  What fails there, on main as well (2026-10-14):
+  the Debian/Ubuntu package jobs look for `n3n_*.deb` while the package
+  is `n3n-be`; the OpenWrt package fetches `n3n-.tar.gz` (no version)
+  and gets a 404, for some targets; the macOS unit tests; the ASan
+  analyser's netns run (every scenario, the supernodes exit 1 on
+  SIGTERM - the Sanitizers workflow's ASan netns run passes).
+- Runtime choice for ChaCha20 (and Twofish, which has only plain C).
 
 - IPv6 inside the tunnel: on a phone, then other systems; fewer
   privileges (Landlock, CAP_NET_ADMIN only is there);
