@@ -13,6 +13,7 @@ tests-tun
 tests-peers
 tests-regex
 tests-sock
+tests-speck
 tests-transform
 tests-wire
 tests-wire-fuzz
