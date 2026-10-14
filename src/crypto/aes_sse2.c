@@ -17,18 +17,29 @@
  *
  */
 
-#include "config.h"     // for HAVE_LIBCRYPTO
-
-#include <n3n/logging.h> // for traceEvent
 #include <stdint.h>  // for uint32_t, uint8_t
-#include <stdlib.h>  // for calloc, free
+#include <stdlib.h>  // for size_t
 #include <string.h>  // for memcpy, size_t
-#include "aes.h"     // for AES_BLOCK_SIZE, aes_context_t, AES128_KEY_BYTES
+#include "aes.h"     // for AES_X86, AES_BLOCK_SIZE, aes_context_t, AES128_KEY_BYTES
+#include "crypto_impl.h"  // for CRYPTO_TARGET_BEGIN
 #include "portable_endian.h"  // for be32toh, htobe32
 
+#if defined (AES_X86)   // AES-NI ------------------------------------------------------------------------------------
 
-#ifdef HAVE_LIBCRYPTO // openSSL 1.1 ---------------------------------------------------------------------
-#elif defined (__AES__) && defined (__SSE2__) // Intel's AES-NI ---------------------------------------------------
+#include <immintrin.h>  // for _mm_aesenc_si128, ...
+
+// a key's round keys as this variant has them, in its context's priv
+typedef struct {
+    __m128i rk_enc[15];
+    __m128i rk_dec[15];
+    int Nr;
+} ctx_t;
+
+_Static_assert(sizeof(ctx_t) <= AES_PRIV_BYTES, "the round keys fit");
+
+CRYPTO_TARGET_BEGIN("aes,sse2")
+
+
 
 
 // inspired by https://gist.github.com/acapola/d5b940da024080dfaf5f
@@ -82,7 +93,7 @@ static __m128i aes192_keyexpand_2 (__m128i key, __m128i key2) {
 
 
 // key setup
-static int aes_internal_key_setup (aes_context_t *ctx, const uint8_t *key, int key_bits) {
+static int aes_internal_key_setup (ctx_t *ctx, const uint8_t *key, int key_bits) {
 
     // number of rounds
     ctx->Nr = 6 + (key_bits / 32);
@@ -170,35 +181,9 @@ static int aes_internal_key_setup (aes_context_t *ctx, const uint8_t *key, int k
 }
 
 
-static void aes_internal_encrypt (aes_context_t *ctx, const uint8_t pt[16], uint8_t ct[16]) {
-
-    __m128i tmp = _mm_loadu_si128((__m128i*)pt);
-
-    tmp = _mm_xor_si128(tmp, ctx->rk_enc[ 0]);
-    tmp = _mm_aesenc_si128(tmp, ctx->rk_enc[ 1]);
-    tmp = _mm_aesenc_si128(tmp, ctx->rk_enc[ 2]);
-    tmp = _mm_aesenc_si128(tmp, ctx->rk_enc[ 3]);
-    tmp = _mm_aesenc_si128(tmp, ctx->rk_enc[ 4]);
-    tmp = _mm_aesenc_si128(tmp, ctx->rk_enc[ 5]);
-    tmp = _mm_aesenc_si128(tmp, ctx->rk_enc[ 6]);
-    tmp = _mm_aesenc_si128(tmp, ctx->rk_enc[ 7]);
-    tmp = _mm_aesenc_si128(tmp, ctx->rk_enc[ 8]);
-    tmp = _mm_aesenc_si128(tmp, ctx->rk_enc[ 9]);
-    if(ctx->Nr > 10) {
-        tmp = _mm_aesenc_si128(tmp, ctx->rk_enc[10]);
-        tmp = _mm_aesenc_si128(tmp, ctx->rk_enc[11]);
-        if(ctx->Nr > 12) {
-            tmp = _mm_aesenc_si128(tmp, ctx->rk_enc[12]);
-            tmp = _mm_aesenc_si128(tmp, ctx->rk_enc[13]);
-        }
-    }
-    tmp = _mm_aesenclast_si128(tmp, ctx->rk_enc[ctx->Nr]);
-
-    _mm_storeu_si128((__m128i*) ct, tmp);
-}
 
 
-static void aes_internal_decrypt (aes_context_t *ctx, const uint8_t ct[16], uint8_t pt[16]) {
+static void aes_internal_decrypt (ctx_t *ctx, const uint8_t ct[16], uint8_t pt[16]) {
 
     __m128i tmp = _mm_loadu_si128((__m128i*)ct);
 
@@ -229,7 +214,7 @@ static void aes_internal_decrypt (aes_context_t *ctx, const uint8_t ct[16], uint
 // public API
 
 
-int aes_ecb_decrypt (unsigned char *out, const unsigned char *in, aes_context_t *ctx) {
+static int ecb_decrypt (unsigned char *out, const unsigned char *in, ctx_t *ctx) {
 
     aes_internal_decrypt(ctx, in, out);
 
@@ -237,17 +222,10 @@ int aes_ecb_decrypt (unsigned char *out, const unsigned char *in, aes_context_t 
 }
 
 
-// not used
-int aes_ecb_encrypt (unsigned char *out, const unsigned char *in, aes_context_t *ctx) {
-
-    aes_internal_encrypt(ctx, in, out);
-
-    return AES_BLOCK_SIZE;
-}
 
 
-int aes_cbc_encrypt (unsigned char *out, const unsigned char *in, size_t in_len,
-                     const unsigned char *iv, aes_context_t *ctx) {
+static int cbc_encrypt (unsigned char *out, const unsigned char *in, size_t in_len,
+                        const unsigned char *iv, ctx_t *ctx) {
 
     int n;                       /* number of blocks */
     int ret = (int)in_len & 15;  /* remainder        */
@@ -299,8 +277,8 @@ int aes_cbc_encrypt (unsigned char *out, const unsigned char *in, size_t in_len,
 //
 // All packets use the same iv, as they do in transform_aes.c, where the first
 // block of every packet is a random value.
-int aes_cbc_encrypt_multi (unsigned char *out[], const unsigned char *in[], const size_t in_len[],
-                           const unsigned char *iv, aes_context_t *ctx, int count) {
+static int cbc_encrypt_multi (unsigned char *out[], const unsigned char *in[], const size_t in_len[],
+                              const unsigned char *iv, ctx_t *ctx, int count) {
 
     int i;                       /* first packet of the current group of four */
     uint8_t ivec_bytes[16];      /* chaining value of a rail that has blocks left */
@@ -402,33 +380,33 @@ int aes_cbc_encrypt_multi (unsigned char *out[], const unsigned char *in[], cons
         // whatever is longer than the shortest packet of the four finishes on its own
         if(n1) {
             _mm_storeu_si128((__m128i*)ivec_bytes, ivec1);
-            aes_cbc_encrypt(out1, in1, n1 * 16, ivec_bytes, ctx);
+            cbc_encrypt(out1, in1, n1 * 16, ivec_bytes, ctx);
         }
         if(n2) {
             _mm_storeu_si128((__m128i*)ivec_bytes, ivec2);
-            aes_cbc_encrypt(out2, in2, n2 * 16, ivec_bytes, ctx);
+            cbc_encrypt(out2, in2, n2 * 16, ivec_bytes, ctx);
         }
         if(n3) {
             _mm_storeu_si128((__m128i*)ivec_bytes, ivec3);
-            aes_cbc_encrypt(out3, in3, n3 * 16, ivec_bytes, ctx);
+            cbc_encrypt(out3, in3, n3 * 16, ivec_bytes, ctx);
         }
         if(n4) {
             _mm_storeu_si128((__m128i*)ivec_bytes, ivec4);
-            aes_cbc_encrypt(out4, in4, n4 * 16, ivec_bytes, ctx);
+            cbc_encrypt(out4, in4, n4 * 16, ivec_bytes, ctx);
         }
     }
 
     // fewer than four packets left over
     for(; i < count; i++) {
-        aes_cbc_encrypt(out[i], in[i], in_len[i], iv, ctx);
+        cbc_encrypt(out[i], in[i], in_len[i], iv, ctx);
     }
 
     return 0;
 }
 
 
-int aes_cbc_decrypt (unsigned char *out, const unsigned char *in, size_t in_len,
-                     const unsigned char *iv, aes_context_t *ctx) {
+static int cbc_decrypt (unsigned char *out, const unsigned char *in, size_t in_len,
+                        const unsigned char *iv, ctx_t *ctx) {
 
     int n;                       /* number of blocks */
     int ret = (int)in_len & 15;  /* remainder        */
@@ -578,40 +556,52 @@ int aes_cbc_decrypt (unsigned char *out, const unsigned char *in, size_t in_len,
 }
 
 
-int aes_init (const unsigned char *key, size_t key_size, aes_context_t **ctx) {
+static int setup (ctx_t *ctx, const unsigned char *key, size_t key_size) {
 
-    // allocate context...
-    *ctx = (aes_context_t*) calloc(1, sizeof(aes_context_t));
-    if(!(*ctx))
-        return -1;
-    // ...and fill her up:
-
-    // initialize data structures
-
-    // check key size and make key size (given in bytes) dependant settings
-    switch(key_size) {
-        case AES128_KEY_BYTES:    // 128 bit key size
-            break;
-        case AES192_KEY_BYTES:    // 192 bit key size
-            break;
-        case AES256_KEY_BYTES:    // 256 bit key size
-            break;
-        default:
-            traceEvent(TRACE_ERROR, "aes_init invalid key size %u\n", key_size);
-            return -1;
-    }
-
-    // key materiel handling
-    aes_internal_key_setup( *ctx, key, 8 * key_size);
+    aes_internal_key_setup(ctx, key, 8 * key_size);
 
     return 0;
 }
 
-int aes_deinit (aes_context_t *ctx) {
 
-    if(ctx) free(ctx);
-
-    return 0;
+static inline ctx_t *priv (aes_context_t *ctx) {
+    return (ctx_t *)(void *)ctx->priv;
 }
 
-#endif // openSSL 1.1, AES-NI, plain C ----------------------------------------------------------------------------
+static int w_setup (aes_context_t *ctx, const unsigned char *key, size_t key_size) {
+    return setup(priv(ctx), key, key_size);
+}
+
+static int w_cbc_encrypt (unsigned char *out, const unsigned char *in, size_t in_len,
+                          const unsigned char *iv, aes_context_t *ctx) {
+    return cbc_encrypt(out, in, in_len, iv, priv(ctx));
+}
+
+static int w_cbc_encrypt_multi (unsigned char *out[], const unsigned char *in[], const size_t in_len[],
+                                const unsigned char *iv, aes_context_t *ctx, int count) {
+    return cbc_encrypt_multi(out, in, in_len, iv, priv(ctx), count);
+}
+
+static int w_cbc_decrypt (unsigned char *out, const unsigned char *in, size_t in_len,
+                          const unsigned char *iv, aes_context_t *ctx) {
+    return cbc_decrypt(out, in, in_len, iv, priv(ctx));
+}
+
+static int w_ecb_decrypt (unsigned char *out, const unsigned char *in, aes_context_t *ctx) {
+    return ecb_decrypt(out, in, priv(ctx));
+}
+
+CRYPTO_TARGET_END
+
+
+const struct aes_impl aes_impl_aesni = {
+    .name = "AES-NI",
+    .setup = w_setup,
+    .cbc_encrypt = w_cbc_encrypt,
+    .cbc_encrypt_multi = w_cbc_encrypt_multi,
+    .cbc_decrypt = w_cbc_decrypt,
+    .ecb_decrypt = w_ecb_decrypt,
+};
+
+
+#endif // AES_X86

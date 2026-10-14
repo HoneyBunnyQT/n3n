@@ -3,12 +3,6 @@
  * SPDX-FileCopyrightText: Copyright ntop.org and contributors
  */
 
-#include "config.h"     // for HAVE_LIBCRYPTO
-
-#ifdef HAVE_LIBCRYPTO // openSSL 1.1 ---------------------------------------------------------------------
-#elif defined (__AES__) && defined (__SSE2__) // Intel's AES-NI ---------------------------------------------------
-#elif (defined (__ARM_FEATURE_AES) || defined (__ARM_FEATURE_CRYPTO)) && !defined (__ARM_BIG_ENDIAN) // ARMv8 CE -
-#else
 
 // rijndael-alg-fst.c version 3.0 (December 2000)
 // optimised ANSI C code for the Rijndael cipher (now AES)
@@ -19,11 +13,19 @@
 // was put in the public domain, taken (and modified) from
 // https://fastcrypto.org/front/misc/rijndael-alg-fst.c
 
-#include <n3n/logging.h> // for traceEvent
 #include <stdint.h>  // for uint32_t, uint8_t
-#include <stdlib.h>  // for calloc, free
+#include <stdlib.h>  // for size_t
 #include <string.h>  // for memcpy, size_t
 #include "aes.h"     // for AES_BLOCK_SIZE, aes_context_t, AES128_KEY_BYTES
+
+// a key's round keys as this variant has them, in its context's priv
+typedef struct {
+    uint32_t enc_rk[60];    // round keys for encryption
+    uint32_t dec_rk[60];    // round keys for decryption
+    int Nr;                 // number of rounds
+} ctx_t;
+
+_Static_assert(sizeof(ctx_t) <= AES_PRIV_BYTES, "the round keys fit");
 
 // Te0[x] = S [x].[02, 01, 01, 03];
 static const uint32_t Te0[256] = {
@@ -638,7 +640,7 @@ static void aes_internal_decrypt (const uint32_t rk[] /*4*(Nr + 1)*/, int Nr, co
 // public API
 
 
-int aes_ecb_decrypt (unsigned char *out, const unsigned char *in, aes_context_t *ctx) {
+static int ecb_decrypt (unsigned char *out, const unsigned char *in, ctx_t *ctx) {
 
     aes_internal_decrypt(ctx->dec_rk, ctx->Nr, in, out);
 
@@ -646,21 +648,14 @@ int aes_ecb_decrypt (unsigned char *out, const unsigned char *in, aes_context_t 
 }
 
 
-// not used
-int aes_ecb_encrypt (unsigned char *out, const unsigned char *in, aes_context_t *ctx) {
-
-    aes_internal_encrypt(ctx->enc_rk, ctx->Nr, in, out);
-
-    return AES_BLOCK_SIZE;
-}
 
 
 // XOR a block into another, either of them may be unaligned
 #define fix_xor(target, source) do { for(int fx_ = 0; fx_ < AES_BLOCK_SIZE; fx_++) { (target)[fx_] ^= (source)[fx_]; } } while(0)
 
 
-int aes_cbc_encrypt (unsigned char *out, const unsigned char *in, size_t in_len,
-                     const unsigned char *iv, aes_context_t *ctx) {
+static int cbc_encrypt (unsigned char *out, const unsigned char *in, size_t in_len,
+                        const unsigned char *iv, ctx_t *ctx) {
 
     uint8_t tmp[AES_BLOCK_SIZE];
     size_t i;
@@ -681,21 +676,21 @@ int aes_cbc_encrypt (unsigned char *out, const unsigned char *in, size_t in_len,
 
 // encrypts several packets, each with its own CBC chain (see the AES-NI code for
 // why this exists); without AES-NI there is nothing to interleave, so this is a loop
-int aes_cbc_encrypt_multi (unsigned char *out[], const unsigned char *in[], const size_t in_len[],
-                           const unsigned char *iv, aes_context_t *ctx, int count) {
+static int cbc_encrypt_multi (unsigned char *out[], const unsigned char *in[], const size_t in_len[],
+                              const unsigned char *iv, ctx_t *ctx, int count) {
 
     int i;
 
     for(i = 0; i < count; i++) {
-        aes_cbc_encrypt(out[i], in[i], in_len[i], iv, ctx);
+        cbc_encrypt(out[i], in[i], in_len[i], iv, ctx);
     }
 
     return 0;
 }
 
 
-int aes_cbc_decrypt (unsigned char *out, const unsigned char *in, size_t in_len,
-                     const unsigned char *iv, aes_context_t *ctx) {
+static int cbc_decrypt (unsigned char *out, const unsigned char *in, size_t in_len,
+                        const unsigned char *iv, ctx_t *ctx) {
 
     uint8_t tmp[AES_BLOCK_SIZE];
     uint8_t old[AES_BLOCK_SIZE];
@@ -716,40 +711,49 @@ int aes_cbc_decrypt (unsigned char *out, const unsigned char *in, size_t in_len,
 }
 
 
-int aes_init (const unsigned char *key, size_t key_size, aes_context_t **ctx) {
+static int setup (ctx_t *ctx, const unsigned char *key, size_t key_size) {
 
-    // allocate context...
-    *ctx = (aes_context_t*) calloc(1, sizeof(aes_context_t));
-    if(!(*ctx))
-        return -1;
-    // ...and fill her up:
-
-    // initialize data structures
-
-    // check key size and make key size (given in bytes) dependant settings
-    switch(key_size) {
-        case AES128_KEY_BYTES:    // 128 bit key size
-            break;
-        case AES192_KEY_BYTES:    // 192 bit key size
-            break;
-        case AES256_KEY_BYTES:    // 256 bit key size
-            break;
-        default:
-            traceEvent(TRACE_ERROR, "aes_init invalid key size %u\n", key_size);
-            return -1;
-    }
-
-    // key materiel handling
-    (*ctx)->Nr = aes_internal_key_setup_enc((*ctx)->enc_rk /*[4*(Nr + 1)]*/, key, 8 * key_size);
-    aes_internal_key_setup_dec((*ctx)->dec_rk /*[4*(Nr + 1)]*/, key, 8 * key_size);
-    return 0;
-}
-
-int aes_deinit (aes_context_t *ctx) {
-
-    if(ctx) free(ctx);
+    ctx->Nr = aes_internal_key_setup_enc(ctx->enc_rk /*[4*(Nr + 1)]*/, key, 8 * key_size);
+    aes_internal_key_setup_dec(ctx->dec_rk /*[4*(Nr + 1)]*/, key, 8 * key_size);
 
     return 0;
 }
 
-#endif
+
+static inline ctx_t *priv (aes_context_t *ctx) {
+    return (ctx_t *)(void *)ctx->priv;
+}
+
+static int w_setup (aes_context_t *ctx, const unsigned char *key, size_t key_size) {
+    return setup(priv(ctx), key, key_size);
+}
+
+static int w_cbc_encrypt (unsigned char *out, const unsigned char *in, size_t in_len,
+                          const unsigned char *iv, aes_context_t *ctx) {
+    return cbc_encrypt(out, in, in_len, iv, priv(ctx));
+}
+
+static int w_cbc_encrypt_multi (unsigned char *out[], const unsigned char *in[], const size_t in_len[],
+                                const unsigned char *iv, aes_context_t *ctx, int count) {
+    return cbc_encrypt_multi(out, in, in_len, iv, priv(ctx), count);
+}
+
+static int w_cbc_decrypt (unsigned char *out, const unsigned char *in, size_t in_len,
+                          const unsigned char *iv, aes_context_t *ctx) {
+    return cbc_decrypt(out, in, in_len, iv, priv(ctx));
+}
+
+static int w_ecb_decrypt (unsigned char *out, const unsigned char *in, aes_context_t *ctx) {
+    return ecb_decrypt(out, in, priv(ctx));
+}
+
+
+// the variant of every CPU
+const struct aes_impl aes_impl_plainc = {
+    .name = "plain C",
+    .setup = w_setup,
+    .cbc_encrypt = w_cbc_encrypt,
+    .cbc_encrypt_multi = w_cbc_encrypt_multi,
+    .cbc_decrypt = w_cbc_decrypt,
+    .ecb_decrypt = w_ecb_decrypt,
+};

@@ -2,13 +2,23 @@
  * Copyright (C) Honey Bunny QT
  * SPDX-License-Identifier: GPL-3.0-only
  *
- * Unit tests of AES, whichever implementation is built: plain C, AES-NI,
- * the ARMv8 Cryptography Extension or OpenSSL
+ * Unit tests of AES, of every variant this CPU has (src/crypto/aes.c):
+ * plain C, AES-NI, the ARMv8 Cryptography Extension, OpenSSL - each to the
+ * FIPS-197 vectors and in CBC, and each giving the same bytes as plain C
+ * for every length up to 1600 bytes, off alignment and in place.  A key of
+ * a size AES does not have gets no context.
+ *
+ * The output is the same on every CPU: which variants there are goes to
+ * stderr.
  */
 
 #include <stdio.h>            // for printf
 #include <string.h>           // for memcmp, memset
-#include "../src/crypto/aes.h" // for aes_init, aes_cbc_encrypt, ...
+#include "../src/crypto/aes.h" // for aes_init_impl, aes_cbc_encrypt, aes_impls, ...
+
+// the variants of this CPU, slowest first: plain C, then the others
+static const struct aes_impl *impl[8];
+static int impls;
 
 
 // FIPS-197 appendix C: the key is 00 01 02 ..., the plaintext
@@ -35,7 +45,7 @@ static const uint8_t fips_ct[3][16] = {
 
 
 // a block encrypted with a zero IV is the block cipher itself
-static int test_fips (int k) {
+static int test_fips (int k, const struct aes_impl *variant) {
     uint8_t key[32];
     uint8_t iv[16] = {0};
     uint8_t ct[16];
@@ -47,8 +57,8 @@ static int test_fips (int k) {
     for(int i = 0; i < 32; i++) {
         key[i] = i;
     }
-    if(aes_init(key, key_size, &ctx)) {
-        printf("AES-%d: aes_init failed\n", (int)key_size * 8);
+    if(aes_init_impl(key, key_size, &ctx, variant)) {
+        fprintf(stderr, "AES-%d, %s: aes_init failed\n", (int)key_size * 8, variant->name);
         return 1;
     }
 
@@ -61,7 +71,9 @@ static int test_fips (int k) {
     aes_cbc_decrypt(pt, ct, 16, iv, ctx);
     failed |= memcmp(pt, fips_pt, 16) != 0;
 
-    printf("AES-%d: FIPS-197 vector: %s\n", (int)key_size * 8, failed ? "FAIL" : "ok");
+    if(failed) {
+        fprintf(stderr, "AES-%d, %s: not the FIPS-197 vector\n", (int)key_size * 8, variant->name);
+    }
     aes_deinit(ctx);
     return failed;
 }
@@ -70,7 +82,7 @@ static int test_fips (int k) {
 // CBC of several blocks, also in place, and aes_cbc_encrypt_multi() against
 // encrypting each packet on its own - packets of different lengths, fewer
 // and more than the four that are encrypted in parallel
-static int test_cbc (int k) {
+static int test_cbc (int k, const struct aes_impl *variant) {
     enum { PKTS = 9, MAXLEN = 16 * 13 };
     uint8_t key[32];
     uint8_t iv[16];
@@ -91,7 +103,7 @@ static int test_cbc (int k) {
     for(int i = 0; i < 16; i++) {
         iv[i] = 0x3c + i;
     }
-    if(aes_init(key, key_size, &ctx)) {
+    if(aes_init_impl(key, key_size, &ctx, variant)) {
         return 1;
     }
 
@@ -120,8 +132,68 @@ static int test_cbc (int k) {
         }
     }
 
-    printf("AES-%d: CBC, in place and multi: %s\n", (int)key_size * 8, failed ? "FAIL" : "ok");
+    if(failed) {
+        fprintf(stderr, "AES-%d, %s: CBC, in place or multi wrong\n", (int)key_size * 8, variant->name);
+    }
     aes_deinit(ctx);
+    return failed;
+}
+
+
+// every variant as plain C: CBC both ways, every length of whole blocks up
+// to 1600 bytes, text and output off alignment, and in place
+static int test_as_plainc (int k) {
+    enum { MAXLEN = 1600 };
+    static uint8_t text[MAXLEN + 16], ref[MAXLEN + 16], got[MAXLEN + 32];
+    uint8_t key[32], iv[16];
+    size_t key_size = 16 + 8 * k;
+    aes_context_t *ctx[8];
+    int failed = 0;
+
+    for(int i = 0; i < 32; i++) {
+        key[i] = (uint8_t)(0x5a + i * 11);
+    }
+    for(int i = 0; i < 16; i++) {
+        iv[i] = (uint8_t)(i * 29);
+    }
+    for(int v = 0; v < impls; v++) {
+        if(aes_init_impl(key, key_size, &ctx[v], impl[v])) {
+            return 1;
+        }
+    }
+    for(size_t len = 0; len <= MAXLEN; len += 16) {
+        int off_in = (len / 16) % 5, off_out = (len / 16) % 3;
+        for(size_t i = 0; i < len; i++) {
+            text[off_in + i] = (uint8_t)(i * 7 + len);
+        }
+        aes_cbc_encrypt(ref, text + off_in, len, iv, ctx[0]);
+        for(int v = 1; v < impls; v++) {
+            memset(got, 0xa5, sizeof(got));
+            aes_cbc_encrypt(got + off_out, text + off_in, len, iv, ctx[v]);
+            if(memcmp(got + off_out, ref, len) || got[off_out + len] != 0xa5) {
+                fprintf(stderr, "AES-%d, %s, %d bytes: encrypted not as plain C\n", (int)key_size * 8, impl[v]->name, (int)len);
+                failed = 1;
+            }
+            memcpy(got + off_out, ref, len);
+            aes_cbc_decrypt(got + off_out, got + off_out, len, iv, ctx[v]);
+            if(memcmp(got + off_out, text + off_in, len)) {
+                fprintf(stderr, "AES-%d, %s, %d bytes: decrypted in place not as it was\n", (int)key_size * 8, impl[v]->name, (int)len);
+                failed = 1;
+            }
+            if(len) {
+                uint8_t one[16], want[16];
+                aes_ecb_decrypt(one, ref + len - 16, ctx[v]);
+                aes_ecb_decrypt(want, ref + len - 16, ctx[0]);
+                if(memcmp(one, want, 16)) {
+                    fprintf(stderr, "AES-%d, %s: one block decrypted not as plain C\n", (int)key_size * 8, impl[v]->name);
+                    failed = 1;
+                }
+            }
+        }
+    }
+    for(int v = 0; v < impls; v++) {
+        aes_deinit(ctx[v]);
+    }
     return failed;
 }
 
@@ -129,9 +201,35 @@ static int test_cbc (int k) {
 int main (int argc, char * argv[]) {
     int failed = 0;
 
+    impls = aes_impls(impl, 8);
+    if(impls > 8) {
+        impls = 8;
+    }
+    fprintf(stderr, "variants:");
+    for(int v = 0; v < impls; v++) {
+        fprintf(stderr, " %s%s", impl[v]->name, impl[v] == aes_impl_chosen() ? " (chosen)" : "");
+    }
+    fprintf(stderr, "\n");
+
     for(int k = 0; k < 3; k++) {
-        failed |= test_fips(k);
-        failed |= test_cbc(k);
+        int f = 0, c = 0;
+        for(int v = 0; v < impls; v++) {
+            f |= test_fips(k, impl[v]);
+            c |= test_cbc(k, impl[v]);
+        }
+        printf("AES-%d: FIPS-197 vector: %s\n", 128 + 64 * k, f ? "FAIL" : "ok");
+        printf("AES-%d: CBC, in place and multi: %s\n", 128 + 64 * k, c ? "FAIL" : "ok");
+        int p = test_as_plainc(k);
+        printf("AES-%d: every variant as plain C, 0 to 1600 bytes: %s\n", 128 + 64 * k, p ? "FAIL" : "ok");
+        failed |= f | c | p;
+    }
+
+    {
+        uint8_t key[32] = {0};
+        aes_context_t *ctx = (aes_context_t *)&key;
+        int refused = aes_init(key, 20, &ctx) != 0 && ctx == NULL;
+        printf("a key of 20 bytes: %s\n", refused ? "refused" : "FAIL");
+        failed |= !refused;
     }
 
     return failed;

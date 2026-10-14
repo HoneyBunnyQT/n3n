@@ -48,7 +48,9 @@ Again, and this needs to be reiterated sufficiently often, please do no forget t
 
 ### `--with-openssl`
 
-Use openssl instead of the built-in AES code
+Add OpenSSL's AES as a variant to the built-in ones: the edge takes it
+where the CPU has neither AES-NI nor the ARMv8 AES instructions (OpenSSL
+brings variants of its own for those), see Hardware Features below.
 
 The speed of some ciphers' can take advantage of OpenSSL support This is
 disabled by default as the built-in ciphers already prove reasonably fast
@@ -180,7 +182,7 @@ example through the `-march=sandybridge` (you name it) or just `-march=native` f
 So far, the following portions of n3n's code benefit from hardware features:
 
 ```
-AES:               AES-NI, ARMv8 Cryptography Extension
+AES:               AES-NI, ARMv8 Cryptography Extension - chosen at runtime
 ChaCha20:          SSE2, SSSE3, AVX2, AVX512, NEON
 SPECK:             SSE2, SSSE3, AVX2, AVX512, (NEON) - chosen at runtime
 Random Numbers:    RDSEED, RDRND (not faster but more random seed)
@@ -190,28 +192,31 @@ The compilations flags could easily be combined:
 
 `./configure CFLAGS="-O3 -march=native"`.
 
-SPECK needs no flags: every variant of the architecture is built, each
-with the extension it needs for its own code only, and the edge takes the
-fastest one the CPU it runs on has - a build for the baseline of x86-64,
-as distributions make them, uses AVX2 or AVX-512 where the CPU has them.
-`n3n-edge help transform` names the one taken, and `n3n-edge test
-benchmark speck_encr speck_decr` measures each of them, slowest first.  On
-Windows, AVX2 and AVX-512 are left out: GCC does not align its stack there
-for their vectors (GCC bug 54412).
+SPECK and AES need no flags: every variant of the architecture is built,
+each with the extension it needs for its own code only, and the edge takes
+the fastest one the CPU it runs on has - a build for the baseline of
+x86-64 or aarch64, as distributions make them, uses AVX2 or AVX-512 for
+SPECK and AES-NI or the ARMv8 AES instructions for AES where the CPU has
+them.  `n3n-edge help transform` names the one taken and those there are,
+and `n3n-edge test benchmark speck_encr aes_encr` (and `_decr`) measures
+each of them, slowest first.  On Windows,
+AVX2 and AVX-512 are left out: GCC does not align its stack there for
+their vectors (GCC bug 54412).
 
 ## ARM
 
 On aarch64, NEON is always there, and ChaCha20 uses it without further
 ado.  On 32 bit ARM it needs to be asked for, e.g. with `-mfpu=neon`.
 
-AES uses the AES instructions of ARMv8 (the Cryptography Extension) if the
-compiler may: `-march=native` on a CPU that has them, or explicitly
-`-march=armv8-a+crypto` (on 32 bit ARM `-march=armv8-a
--mfpu=crypto-neon-fp-armv8`).  Most 64 bit ARM CPUs of phones, servers and
+AES uses the AES instructions of ARMv8 (the Cryptography Extension) where
+the CPU has them: on aarch64 they are built in any case and taken when the
+system says the CPU has them (Linux, Android, FreeBSD; every Apple CPU
+does); on 32 bit ARM only if the compiler may, `-march=armv8-a
+-mfpu=crypto-neon-fp-armv8`.  Most 64 bit ARM CPUs of phones, servers and
 newer boards have them - the Raspberry Pi 5 does, the Raspberry Pi 3 and 4 do
-not.  Without the flag, AES is the plain C version, which takes several
-times as long.  `grep -w aes /proc/cpuinfo` (on 32 bit ARM: the `Features`
-line) tells whether a CPU has them.
+not, and take the plain C version, which takes several times as long.
+`grep -w aes /proc/cpuinfo` (on 32 bit ARM: the `Features` line) tells
+whether a CPU has them.
 
 Both are built for little endian ARM only; a big endian ARM host uses the
 plain C versions.

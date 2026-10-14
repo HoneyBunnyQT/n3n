@@ -116,6 +116,7 @@ OBJS=\
 	src/benchmark/nop.o \
 	src/conffile.o \
 	src/conffile_defs.o \
+	src/crypto/aes.o \
 	src/crypto/aes_armce.o \
 	src/crypto/aes_openssl.o \
 	src/crypto/aes_plainc.o \

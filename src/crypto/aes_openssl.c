@@ -28,10 +28,20 @@
 #include "../thread_local.h"  // for N3N_THREAD_LOCAL, n3n_thread_on_cleanup
 
 
-#ifdef HAVE_LIBCRYPTO // openSSL 1.1 ---------------------------------------------------------------------
+#if defined (HAVE_LIBCRYPTO)   // OpenSSL -------------------------------------------------------------------------
 
+#include <openssl/aes.h>    // for AES_KEY, AES_set_decrypt_key, AES_ecb_encrypt
 #include <openssl/err.h>    // for ERR_print_errors
 #include <openssl/evp.h>    // for EVP_EncryptInit_ex, EVP_CIPHER_CTX_set_p...
+
+// a key as this variant has it, in its context's priv
+typedef struct {
+    const EVP_CIPHER    *cipher;                 /* cipher to use: e.g. EVP_aes_128_cbc */
+    uint8_t key[AES256_KEY_BYTES];               /* the pure key data for payload encryption & decryption */
+    AES_KEY ecb_dec_key;                         /* one step ecb decryption key */
+} ctx_t;
+
+_Static_assert(sizeof(ctx_t) <= AES_PRIV_BYTES, "the key fits");
 
 // get any erorr message out of openssl
 // taken from https://en.wikibooks.org/wiki/OpenSSL/Error_handling
@@ -83,8 +93,8 @@ static EVP_CIPHER_CTX *evp_ctx_get (void) {
 }
 
 
-int aes_cbc_encrypt (unsigned char *out, const unsigned char *in, size_t in_len,
-                     const unsigned char *iv, aes_context_t *ctx) {
+static int cbc_encrypt (unsigned char *out, const unsigned char *in, size_t in_len,
+                        const unsigned char *iv, ctx_t *ctx) {
 
     EVP_CIPHER_CTX *evp = evp_ctx_get();
     int evp_len;
@@ -124,21 +134,21 @@ int aes_cbc_encrypt (unsigned char *out, const unsigned char *in, size_t in_len,
 
 // encrypts several packets, each with its own CBC chain (see the AES-NI code for
 // why this exists); without AES-NI there is nothing to interleave, so this is a loop
-int aes_cbc_encrypt_multi (unsigned char *out[], const unsigned char *in[], const size_t in_len[],
-                           const unsigned char *iv, aes_context_t *ctx, int count) {
+static int cbc_encrypt_multi (unsigned char *out[], const unsigned char *in[], const size_t in_len[],
+                              const unsigned char *iv, ctx_t *ctx, int count) {
 
     int i;
 
     for(i = 0; i < count; i++) {
-        aes_cbc_encrypt(out[i], in[i], in_len[i], iv, ctx);
+        cbc_encrypt(out[i], in[i], in_len[i], iv, ctx);
     }
 
     return 0;
 }
 
 
-int aes_cbc_decrypt (unsigned char *out, const unsigned char *in, size_t in_len,
-                     const unsigned char *iv, aes_context_t *ctx) {
+static int cbc_decrypt (unsigned char *out, const unsigned char *in, size_t in_len,
+                        const unsigned char *iv, ctx_t *ctx) {
 
     EVP_CIPHER_CTX *evp = evp_ctx_get();
     int evp_len;
@@ -176,7 +186,7 @@ int aes_cbc_decrypt (unsigned char *out, const unsigned char *in, size_t in_len,
 }
 
 
-int aes_ecb_decrypt (unsigned char *out, const unsigned char *in, aes_context_t *ctx) {
+static int ecb_decrypt (unsigned char *out, const unsigned char *in, ctx_t *ctx) {
 
     AES_ecb_encrypt(in, out, &(ctx->ecb_dec_key), AES_DECRYPT);
 
@@ -184,46 +194,64 @@ int aes_ecb_decrypt (unsigned char *out, const unsigned char *in, aes_context_t 
 }
 
 
-int aes_init (const unsigned char *key, size_t key_size, aes_context_t **ctx) {
+static int setup (ctx_t *ctx, const unsigned char *key, size_t key_size) {
 
-    // allocate context...
-    *ctx = (aes_context_t*) calloc(1, sizeof(aes_context_t));
-    if(!(*ctx))
-        return -1;
-
-    // ...and fill her up:
-
-    // check key size and make key size (given in bytes) dependant settings
     switch(key_size) {
-        case AES128_KEY_BYTES:    // 128 bit key size
-            (*ctx)->cipher = EVP_aes_128_cbc();
+        case AES128_KEY_BYTES:
+            ctx->cipher = EVP_aes_128_cbc();
             break;
-        case AES192_KEY_BYTES:    // 192 bit key size
-            (*ctx)->cipher = EVP_aes_192_cbc();
-            break;
-        case AES256_KEY_BYTES:    // 256 bit key size
-            (*ctx)->cipher = EVP_aes_256_cbc();
+        case AES192_KEY_BYTES:
+            ctx->cipher = EVP_aes_192_cbc();
             break;
         default:
-            traceEvent(TRACE_ERROR, "aes_init invalid key size %u\n", key_size);
-            return -1;
+            ctx->cipher = EVP_aes_256_cbc();
+            break;
     }
 
     // key materiel handling
-    memcpy((*ctx)->key, key, key_size);
-    AES_set_decrypt_key(key, key_size * 8, &((*ctx)->ecb_dec_key));
+    memcpy(ctx->key, key, key_size);
+    AES_set_decrypt_key(key, key_size * 8, &(ctx->ecb_dec_key));
 
     return 0;
 }
 
-int aes_deinit (aes_context_t *ctx) {
 
-    if(ctx) free(ctx);
-
-    return 0;
+static inline ctx_t *priv (aes_context_t *ctx) {
+    return (ctx_t *)(void *)ctx->priv;
 }
 
-#elif defined (__AES__) && defined (__SSE2__) // Intel's AES-NI ---------------------------------------------------
-#elif (defined (__ARM_FEATURE_AES) || defined (__ARM_FEATURE_CRYPTO)) && !defined (__ARM_BIG_ENDIAN) // ARMv8 CE -
-#else
-#endif
+static int w_setup (aes_context_t *ctx, const unsigned char *key, size_t key_size) {
+    return setup(priv(ctx), key, key_size);
+}
+
+static int w_cbc_encrypt (unsigned char *out, const unsigned char *in, size_t in_len,
+                          const unsigned char *iv, aes_context_t *ctx) {
+    return cbc_encrypt(out, in, in_len, iv, priv(ctx));
+}
+
+static int w_cbc_encrypt_multi (unsigned char *out[], const unsigned char *in[], const size_t in_len[],
+                                const unsigned char *iv, aes_context_t *ctx, int count) {
+    return cbc_encrypt_multi(out, in, in_len, iv, priv(ctx), count);
+}
+
+static int w_cbc_decrypt (unsigned char *out, const unsigned char *in, size_t in_len,
+                          const unsigned char *iv, aes_context_t *ctx) {
+    return cbc_decrypt(out, in, in_len, iv, priv(ctx));
+}
+
+static int w_ecb_decrypt (unsigned char *out, const unsigned char *in, aes_context_t *ctx) {
+    return ecb_decrypt(out, in, priv(ctx));
+}
+
+
+const struct aes_impl aes_impl_openssl = {
+    .name = "OpenSSL",
+    .setup = w_setup,
+    .cbc_encrypt = w_cbc_encrypt,
+    .cbc_encrypt_multi = w_cbc_encrypt_multi,
+    .cbc_decrypt = w_cbc_decrypt,
+    .ecb_decrypt = w_ecb_decrypt,
+};
+
+
+#endif // HAVE_LIBCRYPTO

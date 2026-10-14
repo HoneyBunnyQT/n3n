@@ -12,20 +12,39 @@
  */
 
 
-#include "config.h"     // for HAVE_LIBCRYPTO
 
 
-#ifdef HAVE_LIBCRYPTO // openSSL 1.1 ---------------------------------------------------------------------
-#elif defined (__AES__) && defined (__SSE2__) // Intel's AES-NI ---------------------------------------------------
-#elif (defined (__ARM_FEATURE_AES) || defined (__ARM_FEATURE_CRYPTO)) && !defined (__ARM_BIG_ENDIAN) // ARMv8 CE -
 
+
+#include "aes.h"         // for AES_ARMCE, aes_context_t
+#include "crypto_impl.h"  // for CRYPTO_TARGET_BEGIN
+
+#if defined (AES_ARMCE)   // ARMv8 Cryptography Extension ----------------------------------------------------------
 
 #include <arm_neon.h>       // for vaeseq_u8, vaesmcq_u8, vaesdq_u8, vaesimcq_u8, ...
-#include <n3n/logging.h>    // for traceEvent
-#include <stdlib.h>         // for calloc, free
+#include <stdlib.h>  // for size_t
 #include <string.h>         // for memcpy
 
-#include "aes.h"
+
+// a key's round keys as this variant has them, in its context's priv
+typedef struct {
+    uint8x16_t rk_enc[15];
+    uint8x16_t rk_dec[15];
+    int Nr;
+} ctx_t;
+
+_Static_assert(sizeof(ctx_t) <= AES_PRIV_BYTES, "the round keys fit");
+
+// on aarch64 built for every CPU, and taken where it has the instructions
+// (aes.c); on 32 bit ARM only where the build's baseline has them
+#if defined (__aarch64__) && !defined (__ARM_FEATURE_AES) && !defined (__ARM_FEATURE_CRYPTO)
+#define ARMCE_TARGET 1
+#if defined (__clang__)
+CRYPTO_TARGET_BEGIN("aes")
+#else
+CRYPTO_TARGET_BEGIN("+crypto")
+#endif
+#endif
 
 
 // The round keys are worked out as 32 bit words, each holding four bytes of
@@ -50,7 +69,7 @@ static uint32_t rot_word (uint32_t w) {
 }
 
 
-static int aes_internal_key_setup (aes_context_t *ctx, const uint8_t *key, int key_bits) {
+static int aes_internal_key_setup (ctx_t *ctx, const uint8_t *key, int key_bits) {
 
     static const uint8_t rcon[10] = { 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36 };
     uint32_t w[4 * 15];
@@ -87,7 +106,7 @@ static int aes_internal_key_setup (aes_context_t *ctx, const uint8_t *key, int k
 }
 
 
-static inline uint8x16_t encrypt_block (const aes_context_t *ctx, uint8x16_t s) {
+static inline uint8x16_t encrypt_block (const ctx_t *ctx, uint8x16_t s) {
 
     int r;
 
@@ -101,7 +120,7 @@ static inline uint8x16_t encrypt_block (const aes_context_t *ctx, uint8x16_t s) 
 }
 
 
-static inline uint8x16_t decrypt_block (const aes_context_t *ctx, uint8x16_t s) {
+static inline uint8x16_t decrypt_block (const ctx_t *ctx, uint8x16_t s) {
 
     int r;
 
@@ -118,7 +137,7 @@ static inline uint8x16_t decrypt_block (const aes_context_t *ctx, uint8x16_t s) 
 // public API
 
 
-int aes_ecb_decrypt (unsigned char *out, const unsigned char *in, aes_context_t *ctx) {
+static int ecb_decrypt (unsigned char *out, const unsigned char *in, ctx_t *ctx) {
 
     vst1q_u8(out, decrypt_block(ctx, vld1q_u8(in)));
 
@@ -126,8 +145,8 @@ int aes_ecb_decrypt (unsigned char *out, const unsigned char *in, aes_context_t 
 }
 
 
-int aes_cbc_encrypt (unsigned char *out, const unsigned char *in, size_t in_len,
-                     const unsigned char *iv, aes_context_t *ctx) {
+static int cbc_encrypt (unsigned char *out, const unsigned char *in, size_t in_len,
+                        const unsigned char *iv, ctx_t *ctx) {
 
     int ret = (int)in_len & 15;  /* remainder */
     uint8x16_t ivec = vld1q_u8(iv);
@@ -149,8 +168,8 @@ int aes_cbc_encrypt (unsigned char *out, const unsigned char *in, size_t in_len,
 // leaves the pipeline of the AES unit mostly idle while each AESE waits for
 // the one before.  Packets are independent of each other: four of them in
 // lockstep fill the pipeline, as aes_sse2.c does with AES-NI.
-int aes_cbc_encrypt_multi (unsigned char *out[], const unsigned char *in[], const size_t in_len[],
-                           const unsigned char *iv, aes_context_t *ctx, int count) {
+static int cbc_encrypt_multi (unsigned char *out[], const unsigned char *in[], const size_t in_len[],
+                              const unsigned char *iv, ctx_t *ctx, int count) {
 
     int i;
 
@@ -208,22 +227,22 @@ int aes_cbc_encrypt_multi (unsigned char *out[], const unsigned char *in[], cons
             if(n4[k] > n) {
                 uint8_t ivec_bytes[AES_BLOCK_SIZE];
                 vst1q_u8(ivec_bytes, ivec[k]);
-                aes_cbc_encrypt(out4[k], in4[k], (n4[k] - n) * 16, ivec_bytes, ctx);
+                cbc_encrypt(out4[k], in4[k], (n4[k] - n) * 16, ivec_bytes, ctx);
             }
         }
     }
 
     // fewer than four packets left over
     for(; i < count; i++) {
-        aes_cbc_encrypt(out[i], in[i], in_len[i], iv, ctx);
+        cbc_encrypt(out[i], in[i], in_len[i], iv, ctx);
     }
 
     return 0;
 }
 
 
-int aes_cbc_decrypt (unsigned char *out, const unsigned char *in, size_t in_len,
-                     const unsigned char *iv, aes_context_t *ctx) {
+static int cbc_decrypt (unsigned char *out, const unsigned char *in, size_t in_len,
+                        const unsigned char *iv, ctx_t *ctx) {
 
     int ret = (int)in_len & 15;  /* remainder */
     size_t n = in_len / 16;
@@ -272,35 +291,54 @@ int aes_cbc_decrypt (unsigned char *out, const unsigned char *in, size_t in_len,
 }
 
 
-int aes_init (const unsigned char *key, size_t key_size, aes_context_t **ctx) {
+static int setup (ctx_t *ctx, const unsigned char *key, size_t key_size) {
 
-    switch(key_size) {
-        case AES128_KEY_BYTES:
-        case AES192_KEY_BYTES:
-        case AES256_KEY_BYTES:
-            break;
-        default:
-            traceEvent(TRACE_ERROR, "aes_init invalid key size %u\n", key_size);
-            return -1;
-    }
-
-    *ctx = (aes_context_t*)calloc(1, sizeof(aes_context_t));
-    if(!(*ctx)) {
-        return -1;
-    }
-
-    aes_internal_key_setup(*ctx, key, 8 * key_size);
+    aes_internal_key_setup(ctx, key, 8 * key_size);
 
     return 0;
 }
 
 
-int aes_deinit (aes_context_t *ctx) {
-
-    free(ctx);
-
-    return 0;
+static inline ctx_t *priv (aes_context_t *ctx) {
+    return (ctx_t *)(void *)ctx->priv;
 }
 
+static int w_setup (aes_context_t *ctx, const unsigned char *key, size_t key_size) {
+    return setup(priv(ctx), key, key_size);
+}
 
-#endif // openSSL 1.1, AES-NI, ARMv8 CE ---------------------------------------------------------------------------
+static int w_cbc_encrypt (unsigned char *out, const unsigned char *in, size_t in_len,
+                          const unsigned char *iv, aes_context_t *ctx) {
+    return cbc_encrypt(out, in, in_len, iv, priv(ctx));
+}
+
+static int w_cbc_encrypt_multi (unsigned char *out[], const unsigned char *in[], const size_t in_len[],
+                                const unsigned char *iv, aes_context_t *ctx, int count) {
+    return cbc_encrypt_multi(out, in, in_len, iv, priv(ctx), count);
+}
+
+static int w_cbc_decrypt (unsigned char *out, const unsigned char *in, size_t in_len,
+                          const unsigned char *iv, aes_context_t *ctx) {
+    return cbc_decrypt(out, in, in_len, iv, priv(ctx));
+}
+
+static int w_ecb_decrypt (unsigned char *out, const unsigned char *in, aes_context_t *ctx) {
+    return ecb_decrypt(out, in, priv(ctx));
+}
+
+#if defined (ARMCE_TARGET)
+CRYPTO_TARGET_END
+#endif
+
+
+const struct aes_impl aes_impl_armce = {
+    .name = "ARMv8 CE",
+    .setup = w_setup,
+    .cbc_encrypt = w_cbc_encrypt,
+    .cbc_encrypt_multi = w_cbc_encrypt_multi,
+    .cbc_decrypt = w_cbc_decrypt,
+    .ecb_decrypt = w_ecb_decrypt,
+};
+
+
+#endif // AES_ARMCE

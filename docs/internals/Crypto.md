@@ -32,7 +32,8 @@ The two block ciphers Twofish and AES are used in CTS mode.
 n3n has all four ciphers built-in as basic versions. Some of them optionally
 compile to faster versions by the means of available hardware support (AES-NI,
 SSE, AVX – please see the [Building document](../build/index.md) for
-details. Depending on your platform, AES and ChaCha20 might also draw notable
+details; AES and SPECK have all their variants built and take the fastest
+the CPU has when the edge starts). Depending on your platform, ChaCha20 might also draw notable
 acceleration from optionally compiling with openSSL 1.1 support.
 
 The`-k <key>` command line parameter supplies the key. As even non-privileged
@@ -64,11 +65,14 @@ mileage may vary. Cipher speed's can be compared running the
 AES also prepends a random value to the plaintext. Its size is adjustable by changing the `AES_PREAMBLE_SIZE` definition found in `src/transform_aes.c`. It defaults to AES_BLOCK_SIZE (== 16). The AES scheme uses a CBC/CTS scheme which can send out plaintext-length ciphertexts as long as they are one block or more in length.
 
 Apart from n3n's plain C implementation, Intel's AES-NI and the AES
-instructions of ARMv8 (the Cryptography Extension, with `-march=armv8-a+crypto`
-or a `-mcpu` that has it) are supported – again, please have a look at the
-[Build time Configuration](../build/BuildConfig.md). In case
-of openSSL support its `evp_*` interface gets used which also offers hardware
-acceleration where available (SSE, AES-NI, …). It however is slower than the
+instructions of ARMv8 (the Cryptography Extension) are supported, both
+taken where the CPU has them, with no flags on x86 and aarch64 – again,
+please have a look at the [Build time Configuration](../build/BuildConfig.md).
+In case of openSSL support its `evp_*` interface is a variant too, taken
+where the CPU has neither: it brings its own for such CPUs (SSE, NEON, …),
+but sets the key up for every packet, so on this machine it does a third
+of what AES-NI does (`src/crypto/aes.c`, `tests-aes` holds every variant to
+plain C). It however is slower than the
 following stream ciphers because the CBC mode cannot compete with the
 optimized stream ciphers.
 

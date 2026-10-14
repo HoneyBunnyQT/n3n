@@ -343,18 +343,24 @@ tests and `make lint` pass after each.
       with): `n3n-edge test benchmark`, with and without the flags; decide
       whether Speck NEON can be on by default on newer cores
 - [~] Runtime selection of the implementations (Hamish's idea), so that
-      distribution builds get them without flags: Speck done (2026-10-14,
-      on the session branch, not yet on main) - every variant of the
-      architecture built, each with its extension for its own functions
-      only (`CRYPTO_TARGET_BEGIN`, a target pragma, so no build system
-      needs flags), one context with an aligned area each variant lays out
-      its own way, the fastest the CPU has taken at `speck_init()`
-      (`src/crypto/speck.c`); `tests-speck` holds every variant to plain C
-      (and plain C to the guide's test vectors), and the benchmark and
-      `test check` have an item per variant, slowest first.  A baseline
-      x86-64 build here: 694 MB/s (SSE2) before, 4980 (AVX-512) now.
-      AVX2/AVX-512 not on Windows (GCC bug 54412).  Open: ChaCha20, AES
-      (and the ARMv8 AES, which needs `getauxval()` on ARM)
+      distribution builds get them without flags (on the session branch,
+      not yet on main): every variant of the architecture built, each with
+      its extension for its own functions only (`CRYPTO_TARGET_BEGIN`, a
+      target pragma, so no build system needs flags), one context with an
+      aligned area each variant lays out its own way, the fastest the CPU
+      has taken at init; `tests-speck` and `tests-aes` hold every variant
+      to plain C (and plain C to the test vectors), and the benchmark and
+      `test check` have an item per variant, slowest first.  Speck
+      (2026-10-14): a baseline
+      x86-64 build here, 694 MB/s (SSE2) before, 4980 (AVX-512) now;
+      AVX2/AVX-512 not on Windows (GCC bug 54412).  AES (2026-10-14): plain
+      C, OpenSSL (with `--with-openssl`), AES-NI, ARMv8 CE (aarch64:
+      `getauxval()`); a baseline build here 337 MB/s before, 2120 now, one
+      with OpenSSL 735 before (OpenSSL sets the key up for every packet).
+      Open: ChaCha20; whether a short benchmark at the start should settle
+      the close calls (Speck NEON or plain C on ARM, SSE2 or plain C), and
+      whether SSE2 should stay a choice for Speck - numbers from other
+      CPUs first
 - [x] epoll in the mainloop instead of `select()` on Linux (`mainloop.c`),
       which lifts the limit of FD_SETSIZE (1024) on its fds - a
       supernode's TCP connections - to what the process may open; other
@@ -759,8 +765,9 @@ after.
 
 ### ARM
 
-- AES: `aes_armce.c` uses AESE/AESMC/AESD/AESIMC when the compiler may
-  (`-march=armv8-a+crypto`, `-march=native` on a Pi 5); the key schedule
+- AES: `aes_armce.c` uses AESE/AESMC/AESD/AESIMC, on aarch64 where the CPU
+  has them (built in any case, chosen at runtime by `getauxval()`), on 32
+  bit ARM when the compiler may (`-march=armv8-a -mfpu=crypto-neon-fp-armv8`); the key schedule
   uses AESE for SubWord, so there is no table.  CBC decryption and
   `aes_cbc_encrypt_multi()` run four blocks side by side
 - ChaCha20: `cc20_neon.c`, on by default wherever NEON is (all aarch64):

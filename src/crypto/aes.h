@@ -35,55 +35,51 @@
 #define AES128_KEY_BYTES        (128/8)
 
 
-#ifdef HAVE_LIBCRYPTO // openSSL 1.1 ---------------------------------------------------------------------
+// Every variant the build can have is built - plain C; AES-NI on x86, the
+// ARMv8 Cryptography Extension on little endian ARM (on 32 bit ARM only
+// where the build's baseline has it); OpenSSL's, with --with-openssl -
+// each with the extension it needs for its own functions only, and
+// aes_init() takes the fastest one the CPU at hand has (aes.c).  They all
+// give the same bytes.
+#if defined (__x86_64__) || defined (__i386__)
+#define AES_X86         1
+#endif
 
-#define AES_IMPL "OpenSSL"
+#if defined (__aarch64__) && !defined (__ARM_BIG_ENDIAN)
+#define AES_ARMCE       1
+#elif defined (__arm__) && (defined (__ARM_FEATURE_AES) || defined (__ARM_FEATURE_CRYPTO)) && !defined (__ARM_BIG_ENDIAN)
+#define AES_ARMCE       1
+#endif
 
-#include <openssl/aes.h>
-#include <openssl/evp.h>
-#include <openssl/err.h>
 
-typedef struct aes_context_t {
-    const EVP_CIPHER    *cipher;                 /* cipher to use: e.g. EVP_aes_128_cbc */
-    uint8_t key[AES256_KEY_BYTES];               /* the pure key data for payload encryption & decryption */
-    AES_KEY ecb_dec_key;                         /* one step ecb decryption key */
-} aes_context_t;
+// A key, ready for use: the round keys as its variant has them, in priv,
+// aligned for 16 byte vectors
+#define AES_PRIV_BYTES          512
 
-#elif defined (__AES__) && defined (__SSE2__) // Intel's AES-NI ---------------------------------------------------
-
-#define AES_IMPL "AES-NI"
-
-#include <immintrin.h>
-
-typedef struct aes_context_t {
-    __m128i rk_enc[15];
-    __m128i rk_dec[15];
-    int Nr;
-} aes_context_t;
-
-#elif (defined (__ARM_FEATURE_AES) || defined (__ARM_FEATURE_CRYPTO)) && !defined (__ARM_BIG_ENDIAN) // ARMv8 CE -
-
-#define AES_IMPL "ARMv8 Cryptography Extension"
-
-#include <arm_neon.h>
+struct aes_impl;
 
 typedef struct aes_context_t {
-    uint8x16_t rk_enc[15];
-    uint8x16_t rk_dec[15];
-    int Nr;
+#if defined (_MSC_VER)
+    __declspec(align(16)) unsigned char priv[AES_PRIV_BYTES];
+#else
+    unsigned char priv[AES_PRIV_BYTES] __attribute__((aligned(16)));
+#endif
+    const struct aes_impl *impl;
 } aes_context_t;
 
-#else // plain C --------------------------------------------------------------------------------------------------
-
-#define AES_IMPL "plain C"
-
-typedef struct aes_context_t {
-    uint32_t enc_rk[60];    // round keys for encryption
-    uint32_t dec_rk[60];    // round keys for decryption
-    int Nr;                 // number of rounds
-} aes_context_t;
-
-#endif // ---------------------------------------------------------------------------------------------------------
+// A variant: its name, how it sets up priv for a key of 16, 24 or 32 bytes
+// (0, or -1), and what it does with them
+struct aes_impl {
+    const char *name;
+    int (*setup)(aes_context_t *ctx, const unsigned char *key, size_t key_size);
+    int (*cbc_encrypt)(unsigned char *out, const unsigned char *in, size_t in_len,
+                       const unsigned char *iv, aes_context_t *ctx);
+    int (*cbc_encrypt_multi)(unsigned char *out[], const unsigned char *in[], const size_t in_len[],
+                             const unsigned char *iv, aes_context_t *ctx, int count);
+    int (*cbc_decrypt)(unsigned char *out, const unsigned char *in, size_t in_len,
+                       const unsigned char *iv, aes_context_t *ctx);
+    int (*ecb_decrypt)(unsigned char *out, const unsigned char *in, aes_context_t *ctx);
+};
 
 
 int aes_cbc_encrypt (unsigned char *out, const unsigned char *in, size_t in_len,
@@ -99,9 +95,24 @@ int aes_cbc_decrypt (unsigned char *out, const unsigned char *in, size_t in_len,
 
 int aes_ecb_decrypt (unsigned char *out, const unsigned char *in, aes_context_t *ctx);
 
+// a context for the key, of 16, 24 or 32 bytes, for the fastest variant
+// this CPU has; 0, or -1 (a key of another size, or no memory)
 int aes_init (const unsigned char *key, size_t key_size, aes_context_t **ctx);
 
+// the same for the variant given, one of aes_impls()
+int aes_init_impl (const unsigned char *key, size_t key_size, aes_context_t **ctx,
+                   const struct aes_impl *impl);
+
 int aes_deinit (aes_context_t *ctx);
+
+// The variants this CPU can run, slowest first - as many as fit in list,
+// and how many there are - the one aes_init() takes, and the one of a name
+// (see crypto_impl_named()) if this CPU has it, else NULL
+int aes_impls (const struct aes_impl **list, int max);
+
+const struct aes_impl *aes_impl_chosen (void);
+
+const struct aes_impl *aes_impl_find (const char *name);
 
 
 #endif // AES_H

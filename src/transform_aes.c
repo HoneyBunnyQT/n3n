@@ -25,6 +25,7 @@
 #include <n3n/random.h>      // for n3n_rand
 #include <n3n/transform.h>   // for n3n_transform_register
 #include <stdint.h>          // for uint8_t
+#include <stdio.h>           // for snprintf
 #include <stdlib.h>          // for calloc, free
 #include <string.h>          // for memcpy, size_t, memset, memcmp, strlen
 #include <sys/types.h>       // for u_char, ssize_t, time_t
@@ -284,7 +285,9 @@ static int transop_decode_aes (n2n_trans_op_t *arg,
 }
 
 
-static int setup_aes_key (transop_aes_t *priv, const uint8_t *password, ssize_t password_len) {
+// for the variant given, or the fastest of this CPU (NULL)
+static int setup_aes_key (transop_aes_t *priv, const uint8_t *password, ssize_t password_len,
+                          const struct aes_impl *impl) {
 
     unsigned char key_mat[32];       /* maximum aes key length, equals hash length */
     unsigned char   *key;
@@ -312,7 +315,7 @@ static int setup_aes_key (transop_aes_t *priv, const uint8_t *password, ssize_t 
     key = key_mat + sizeof(key_mat) - key_size;
 
     // setup the key and have corresponding context created
-    if(aes_init(key, key_size, &(priv->ctx))) {
+    if(impl ? aes_init_impl(key, key_size, &(priv->ctx), impl) : aes_init(key, key_size, &(priv->ctx))) {
         traceEvent(TRACE_ERROR, "setup_aes_key %u-bit key setup unsuccessful", key_size * 8);
         return -1;
     }
@@ -345,7 +348,7 @@ int n2n_transop_aes_init (const n2n_edge_conf_t *conf, n2n_trans_op_t *ttt) {
     ttt->priv = priv;
 
     // setup the cipher and key
-    return setup_aes_key(priv, encrypt_key, encrypt_key_len);
+    return setup_aes_key(priv, encrypt_key, encrypt_key_len, NULL);
 }
 
 // An edge that finds several frames waiting on its tap device can encrypt
@@ -362,7 +365,12 @@ struct bench_ctx {
     uint8_t burst_outbuf[BENCH_BURST][2048 + AES_PREAMBLE_SIZE];
 };
 
-static void *bench_setup (void *const _ctx) {
+// A benchmark of the variant chosen, and one of each variant this CPU has
+// (bench_impl[]), slowest first: see n3n_initfuncs_transform_aes()
+#define BENCH_VARIANTS 4
+static const struct aes_impl *bench_impl[BENCH_VARIANTS];
+
+static void *bench_setup_impl (void *const _ctx, const struct aes_impl *impl) {
     struct bench_ctx *ctx = (struct bench_ctx *)_ctx;
 
     const char *key = "just_a_test_key_for_benchmarks";
@@ -370,7 +378,7 @@ static void *bench_setup (void *const _ctx) {
     // the expected outputs were made on, and 4 bytes on 32 bit hosts, which
     // then failed the tests
     const ssize_t key_len = 8;
-    setup_aes_key(&ctx->priv, (unsigned char *)key, key_len);
+    setup_aes_key(&ctx->priv, (unsigned char *)key, key_len, impl);
 
     // Set one constant IV to use for all benchmark testing
     // chosen by a fair roll of the dice
@@ -381,6 +389,19 @@ static void *bench_setup (void *const _ctx) {
     memcpy(&ctx->iv, &iv, sizeof(iv));
     return ctx;
 }
+
+static void *bench_setup (void *const ctx) {
+    return bench_setup_impl(ctx, NULL);
+}
+
+#define BENCH_SETUP(i) \
+    static void *bench_setup_ ## i(void *const ctx) { \
+        return bench_setup_impl(ctx, bench_impl[i]); \
+    }
+BENCH_SETUP(0)
+BENCH_SETUP(1)
+BENCH_SETUP(2)
+BENCH_SETUP(3)
 
 static void bench_teardown (void *_ctx) {
     struct bench_ctx *ctx = (struct bench_ctx *)_ctx;
@@ -620,15 +641,71 @@ static struct bench_item bench_encr_burst = {
 };
 
 
+#define BENCH_ITEM(i, item_name, op, item_check, item_output, in, out) { \
+        .name = item_name, \
+        .ctx_size = sizeof(struct bench_ctx), \
+        .setup = bench_setup_ ## i, \
+        .run = op, \
+        .check = item_check, \
+        .get_output = item_output, \
+        .teardown = bench_teardown, \
+        .data_in = in, \
+        .data_out = out, \
+}
+#define BENCH_ITEMS(item_name, op, c, o, in, out) { \
+        BENCH_ITEM(0, item_name, op, c, o, in, out), BENCH_ITEM(1, item_name, op, c, o, in, out), \
+        BENCH_ITEM(2, item_name, op, c, o, in, out), BENCH_ITEM(3, item_name, op, c, o, in, out), \
+}
+static struct bench_item bench_encr_variant[BENCH_VARIANTS] =
+    BENCH_ITEMS("aes_encr", bench_encr_run, NULL, bench_get_output, test_data_32x16, test_data_aes);
+static struct bench_item bench_decr_variant[BENCH_VARIANTS] =
+    BENCH_ITEMS("aes_decr", bench_decr_run, NULL, bench_get_output, test_data_aes, test_data_32x16);
+static struct bench_item bench_encr_burst_variant[BENCH_VARIANTS] =
+    BENCH_ITEMS("aes_encr_x16", bench_encr_burst_run, bench_encr_burst_check, NULL, test_data_32x16, test_data_aes);
+
+// "AES-CBC, AES-NI", and the others this CPU has
+static char desc[80];
+
 static struct n3n_transform transform = {
     .name = "AES",
-    .desc = "AES-CBC, " AES_IMPL,
+    .desc = desc,
     .id = N2N_TRANSFORM_ID_AES,
 };
 
 void n3n_initfuncs_transform_aes () {
+    int n = aes_impls(bench_impl, BENCH_VARIANTS);
+    if(n > BENCH_VARIANTS) {
+        n = BENCH_VARIANTS;
+    }
+
+    int len = snprintf(desc, sizeof(desc), "AES-CBC, %s", aes_impl_chosen()->name);
+    if(n > 1) {
+        for(int i = 0; i < n; i++) {
+            if(len < (int)sizeof(desc)) {
+                len += snprintf(desc + len, sizeof(desc) - len, "%s%s", i ? ", " : " (of ", bench_impl[i]->name);
+            }
+        }
+        if(len < (int)sizeof(desc)) {
+            snprintf(desc + len, sizeof(desc) - len, ")");
+        }
+    }
     n3n_transform_register(&transform);
-    n3n_benchmark_register(&bench_decr);
-    n3n_benchmark_register(&bench_encr);
+
+    // the list shows the last registered first: so the chosen one, then
+    // each variant from the slowest, for each of the three
+    for(int i = n - 1; i >= 0; i--) {
+        bench_encr_burst_variant[i].variant = bench_impl[i]->name;
+        n3n_benchmark_register(&bench_encr_burst_variant[i]);
+    }
     n3n_benchmark_register(&bench_encr_burst);
+    for(int i = n - 1; i >= 0; i--) {
+        bench_decr_variant[i].variant = bench_impl[i]->name;
+        n3n_benchmark_register(&bench_decr_variant[i]);
+    }
+    n3n_benchmark_register(&bench_decr);
+    for(int i = n - 1; i >= 0; i--) {
+        bench_encr_variant[i].variant = bench_impl[i]->name;
+        n3n_benchmark_register(&bench_encr_variant[i]);
+    }
+    n3n_benchmark_register(&bench_encr);
 }
