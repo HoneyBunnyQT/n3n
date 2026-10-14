@@ -18,6 +18,7 @@
  */
 
 
+#include "crypto_impl.h"  // for CRYPTO_TARGET_BEGIN
 #include "speck.h"     // for SPECK_X86, SPECK_NEON, speck_context_t
 
 #if defined (SPECK_X86)   // SSE2, and SSSE3 (speck_ssse3.c) ----------------------------------------------------
@@ -43,9 +44,9 @@ typedef struct {
 _Static_assert(sizeof(ctx_t) <= SPECK_PRIV_BYTES, "the round keys fit");
 
 #if defined (SPECK_SSSE3)
-SPECK_TARGET_BEGIN("ssse3")
+CRYPTO_TARGET_BEGIN("ssse3")
 #else
-SPECK_TARGET_BEGIN("sse2")
+CRYPTO_TARGET_BEGIN("sse2")
 #endif
 
 #define LCS(x,r) (((x)<<r)|((x)>>(64-r)))
@@ -271,7 +272,7 @@ static int ctr (unsigned char *out, const unsigned char *in, unsigned long long 
     return internal_speck_ctr(out, in, inlen, n, *priv(ctx));
 }
 
-SPECK_TARGET_END
+CRYPTO_TARGET_END
 
 
 #if defined (SPECK_SSSE3)

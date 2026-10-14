@@ -70,22 +70,6 @@ static inline void speck_st64 (void *p, u64 v) {
 #define SPECK_NEON      1
 #endif
 
-// A function of a variant gets the extension the variant needs, whatever
-// the rest of the build may use: between SPECK_TARGET_BEGIN("avx2") and
-// SPECK_TARGET_END, after the headers
-#define SPECK_PRAGMA(x) _Pragma(#x)
-#if defined (__clang__)
-#define SPECK_TARGET_BEGIN(t) SPECK_PRAGMA(clang attribute push(__attribute__((target(t))), apply_to = function))
-#define SPECK_TARGET_END      SPECK_PRAGMA(clang attribute pop)
-#elif defined (__GNUC__)
-#define SPECK_TARGET_BEGIN(t) SPECK_PRAGMA(GCC push_options) SPECK_PRAGMA(GCC target(t))
-#define SPECK_TARGET_END      SPECK_PRAGMA(GCC pop_options)
-#else
-#define SPECK_TARGET_BEGIN(t)
-#define SPECK_TARGET_END
-#endif
-
-
 // A key, ready for use: its round keys once each, for plain C and the one
 // block functions below, and as the context's variant has them, in priv -
 // one per lane of its vectors, up to the eight of AVX-512, and aligned for
@@ -134,6 +118,10 @@ int speck_deinit (speck_context_t *ctx);
 int speck_impls (const struct speck_impl **list, int max);
 
 const struct speck_impl *speck_impl_chosen (void);
+
+// The variant of that name (see crypto_impl_named()), if this CPU has it;
+// else NULL
+const struct speck_impl *speck_impl_find (const char *name);
 
 
 // ----------------------------------------------------------------------------------------------------------------

@@ -18,6 +18,7 @@
  */
 
 
+#include "crypto_impl.h"  // for CRYPTO_TARGET_BEGIN
 #include "speck.h"     // for SPECK_X86, SPECK_NEON, speck_context_t
 
 #if defined (SPECK_X86_AVX)   // AVX-512 ----------------------------------------------------------------------------
@@ -42,7 +43,7 @@ typedef struct {
 
 _Static_assert(sizeof(ctx_t) <= SPECK_PRIV_BYTES, "the round keys fit");
 
-SPECK_TARGET_BEGIN("avx512f")
+CRYPTO_TARGET_BEGIN("avx512f")
 
 #define LCS(x,r) (((x)<<r)|((x)>>(64-r)))
 #define RCS(x,r) (((x)>>r)|((x)<<(64-r)))
@@ -281,7 +282,7 @@ static int ctr (unsigned char *out, const unsigned char *in, unsigned long long 
     return internal_speck_ctr(out, in, inlen, n, priv(ctx));
 }
 
-SPECK_TARGET_END
+CRYPTO_TARGET_END
 
 
 const struct speck_impl speck_impl_avx512 = {

@@ -4,7 +4,7 @@
  *
  * Speck's variants, chosen at runtime: every one the architecture has is
  * built (each with the extension it needs, for its own functions only, see
- * SPECK_TARGET_BEGIN in speck.h), and a context gets the fastest one the
+ * CRYPTO_TARGET_BEGIN in crypto_impl.h), and a context gets the fastest one the
  * CPU at hand can run - so that a build for the baseline of x86-64, as
  * distributions make them, still uses AVX2 where there is AVX2.
  *
@@ -17,14 +17,10 @@
 
 
 #include <stdbool.h>    // for bool
-#include <stdlib.h>     // for posix_memalign, free
-#include <string.h>     // for memset
+#include <stddef.h>     // for NULL
 
+#include "crypto_impl.h"  // for crypto_ctx_alloc, crypto_impl_named
 #include "speck.h"
-
-#if defined (_WIN32)
-#include <malloc.h>     // for _aligned_malloc, _aligned_free
-#endif
 
 
 extern const struct speck_impl speck_impl_plainc;
@@ -123,6 +119,18 @@ int speck_impls (const struct speck_impl **list, int max) {
 }
 
 
+const struct speck_impl *speck_impl_find (const char *name) {
+
+    for(int i = 0; i < VARIANTS; i++) {
+        if(crypto_impl_named(variants[i].impl->name, name)) {
+            return usable(i) ? variants[i].impl : NULL;
+        }
+    }
+
+    return NULL;
+}
+
+
 const struct speck_impl *speck_impl_chosen (void) {
 
     for(int i = VARIANTS - 1; i > 0; i--) {
@@ -139,16 +147,10 @@ int speck_init_impl (speck_context_t **ctx, const unsigned char *k, int keysize,
                      const struct speck_impl *impl) {
 
     // aligned for the vectors in priv
-#if defined (_WIN32)
-    *ctx = _aligned_malloc(sizeof(speck_context_t), 64);
-#else
-    void *p = NULL;
-    *ctx = posix_memalign(&p, 64, sizeof(speck_context_t)) ? NULL : p;
-#endif
+    *ctx = crypto_ctx_alloc(sizeof(speck_context_t), 64);
     if(!(*ctx)) {
         return -1;
     }
-    memset(*ctx, 0, sizeof(speck_context_t));
 
     // the round keys once each, for plain C and the one block functions,
     // then as the variant has them
@@ -178,11 +180,7 @@ int speck_ctr (unsigned char *out, const unsigned char *in, unsigned long long i
 int speck_deinit (speck_context_t *ctx) {
 
     if(ctx) {
-#if defined (_WIN32)
-        _aligned_free(ctx);
-#else
-        free(ctx);
-#endif
+        crypto_ctx_free(ctx);
     }
 
     return 0;

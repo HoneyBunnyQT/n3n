@@ -346,7 +346,7 @@ tests and `make lint` pass after each.
       distribution builds get them without flags: Speck done (2026-10-14,
       on the session branch, not yet on main) - every variant of the
       architecture built, each with its extension for its own functions
-      only (`SPECK_TARGET_BEGIN`, a target pragma, so no build system
+      only (`CRYPTO_TARGET_BEGIN`, a target pragma, so no build system
       needs flags), one context with an aligned area each variant lays out
       its own way, the fastest the CPU has taken at `speck_init()`
       (`src/crypto/speck.c`); `tests-speck` holds every variant to plain C
