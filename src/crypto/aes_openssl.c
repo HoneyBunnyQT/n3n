@@ -30,15 +30,14 @@
 
 #if defined (HAVE_LIBCRYPTO)   // OpenSSL -------------------------------------------------------------------------
 
-#include <openssl/aes.h>    // for AES_KEY, AES_set_decrypt_key, AES_ecb_encrypt
 #include <openssl/err.h>    // for ERR_print_errors
 #include <openssl/evp.h>    // for EVP_EncryptInit_ex, EVP_CIPHER_CTX_set_p...
 
 // a key as this variant has it, in its context's priv
 typedef struct {
     const EVP_CIPHER    *cipher;                 /* cipher to use: e.g. EVP_aes_128_cbc */
+    const EVP_CIPHER    *ecb;                    /* the same in ECB, for one block: e.g. EVP_aes_128_ecb */
     uint8_t key[AES256_KEY_BYTES];               /* the pure key data for payload encryption & decryption */
-    AES_KEY ecb_dec_key;                         /* one step ecb decryption key */
 } ctx_t;
 
 _Static_assert(sizeof(ctx_t) <= AES_PRIV_BYTES, "the key fits");
@@ -186,9 +185,25 @@ static int cbc_decrypt (unsigned char *out, const unsigned char *in, size_t in_l
 }
 
 
+// one block, through EVP as the rest: OpenSSL 3 deprecates its AES_*
+// functions
 static int ecb_decrypt (unsigned char *out, const unsigned char *in, ctx_t *ctx) {
 
-    AES_ecb_encrypt(in, out, &(ctx->ecb_dec_key), AES_DECRYPT);
+    EVP_CIPHER_CTX *evp = evp_ctx_get();
+    int evp_len = 0;
+
+    if(!evp) {
+        return -1;
+    }
+
+    if((1 != EVP_DecryptInit_ex(evp, ctx->ecb, NULL, ctx->key, NULL))
+       || (1 != EVP_CIPHER_CTX_set_padding(evp, 0))
+       || (1 != EVP_DecryptUpdate(evp, out, &evp_len, in, AES_BLOCK_SIZE))
+       || (evp_len != AES_BLOCK_SIZE)) {
+        traceEvent(TRACE_ERROR, "aes_ecb_decrypt openssl: %s", openssl_err_as_string());
+    }
+
+    EVP_CIPHER_CTX_reset(evp);
 
     return 0;
 }
@@ -199,18 +214,20 @@ static int setup (ctx_t *ctx, const unsigned char *key, size_t key_size) {
     switch(key_size) {
         case AES128_KEY_BYTES:
             ctx->cipher = EVP_aes_128_cbc();
+            ctx->ecb = EVP_aes_128_ecb();
             break;
         case AES192_KEY_BYTES:
             ctx->cipher = EVP_aes_192_cbc();
+            ctx->ecb = EVP_aes_192_ecb();
             break;
         default:
             ctx->cipher = EVP_aes_256_cbc();
+            ctx->ecb = EVP_aes_256_ecb();
             break;
     }
 
     // key materiel handling
     memcpy(ctx->key, key, key_size);
-    AES_set_decrypt_key(key, key_size * 8, &(ctx->ecb_dec_key));
 
     return 0;
 }
