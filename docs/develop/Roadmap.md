@@ -360,7 +360,9 @@ tests and `make lint` pass after each.
       C, OpenSSL (with `--with-openssl`), AES-NI, ARMv8 CE (aarch64:
       `getauxval()`); a baseline build here 337 MB/s before, 2120 now, one
       with OpenSSL 735 before (OpenSSL sets the key up for every packet).
-      Open: ChaCha20, Twofish (plain C only so far); whether a short
+      Open: ChaCha20, Twofish (its AVX-512 CBC decryption, VBMI and GFNI,
+      16 blocks at a time, is still a choice of the compiler, and the
+      transform says "plain C" even with it); whether a short
       benchmark at the start should settle
       the close calls (Speck NEON or plain C on ARM, SSE2 or plain C), and
       whether SSE2 should stay a choice for Speck - numbers from other
@@ -620,7 +622,7 @@ Open, in rough order:
   and gets a 404, for some targets; the macOS unit tests; the ASan
   analyser's netns run (every scenario, the supernodes exit 1 on
   SIGTERM - the Sanitizers workflow's ASan netns run passes).
-- Runtime choice for ChaCha20 (and Twofish, which has only plain C).
+- Runtime choice for ChaCha20 and Twofish (its AVX-512 decryption).
 
 - IPv6 inside the tunnel: on a phone, then other systems; fewer
   privileges (Landlock, CAP_NET_ADMIN only is there);

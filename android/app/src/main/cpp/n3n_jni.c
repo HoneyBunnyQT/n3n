@@ -277,11 +277,12 @@ Java_dev_n3n_android_Seal_looksSealed (JNIEnv *env, jobject self, jstring code) 
 }
 
 
-// Core.version(): git describe of the tree libn3n was built from (ASCII)
+// Core.version(): what print_n3n_version() says of the core - git describe
+// of the tree libn3n was built from, and the day it was built (ASCII)
 JNIEXPORT jstring JNICALL
 Java_dev_n3n_android_Core_version (JNIEnv *env, jobject self) {
 
-    return (*env)->NewStringUTF(env, VERSION);
+    return (*env)->NewStringUTF(env, VERSION ", " BUILDDATE);
 }
 
 
