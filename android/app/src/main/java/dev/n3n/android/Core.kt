@@ -18,6 +18,6 @@ object Core {
      */
     external fun ipv6Address(address6: String, prefix6: String, community: String, ipv4: String): String?
 
-    /** The core's version, as print_n3n_version() has it: git describe of the tree, and the day it was built */
+    /** The core's n3n_version(), as the help text and the log have it: git describe of the tree, and the day it was configured */
     external fun version(): String
 }

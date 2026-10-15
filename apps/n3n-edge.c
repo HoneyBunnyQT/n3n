@@ -38,6 +38,7 @@
 #include <n3n/tests.h>               // for test_hashing
 #include <n3n/random.h>              // for n3n_rand_seeds, n3n_rand_seeds_s...
 #include <n3n/transform.h>           // for n3n_transform_lookup_id
+#include <n3n/version.h>             // for n3n_version
 #include <signal.h>                  // for signal, SIG_IGN, SIGPIPE, SIGCHLD
 #include <stdbool.h>
 #include <stdint.h>                  // for uint8_t, uint16_t
@@ -1020,7 +1021,7 @@ int n3n_edge_main (int argc, char* argv[]) {
         cmd_help_about(0, NULL, NULL);
     }
 
-    traceEvent(TRACE_NORMAL, "starting n3n edge %s %s", VERSION, BUILDDATE);
+    traceEvent(TRACE_NORMAL, "starting n3n edge %s", n3n_version());
 
 #ifdef HAVE_LIBCRYPTO
     traceEvent(TRACE_NORMAL, "using %s", OpenSSL_version(0));

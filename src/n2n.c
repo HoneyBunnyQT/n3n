@@ -24,6 +24,7 @@
 #include <n3n/logging.h>     // for traceEvent
 #include <n3n/random.h>      // for n3n_rand
 #include <n3n/strings.h>     // for ip_subnet_to_str, sock_to_cstr
+#include <n3n/version.h>     // for n3n_version
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>          // for free, atoi, calloc, strtol
@@ -518,13 +519,18 @@ uint8_t is_null_mac (const n2n_mac_t dest_mac) {
 
 /* *********************************************** */
 
+const char *n3n_version (void) {
+
+    return VERSION ", configured " BUILDDATE;
+}
+
 void print_n3n_version () {
 
-    printf("n3n v%s, configured %s\n"
+    printf("n3n v%s\n"
            "Copyright n2n contributors\n"
            "Copyright Hamish Coleman\n"
            "\n",
-           VERSION, BUILDDATE);
+           n3n_version());
 }
 
 /* *********************************************** */

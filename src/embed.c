@@ -17,6 +17,7 @@
 #include <n3n/initfuncs.h>      // for n3n_initfuncs
 #include <n3n/logging.h>        // for traceEvent, setTraceCallback
 #include <n3n/mainloop.h>       // for mainloop_register_fd
+#include <n3n/version.h>        // for n3n_version
 #include <stdbool.h>
 #include <stdio.h>              // for snprintf
 #include <stdlib.h>             // for free
@@ -136,7 +137,7 @@ int n3n_edge_run (const char *config, int tun_fd, const struct n3n_embed *e) {
         return -3;
     }
 
-    traceEvent(TRACE_NORMAL, "starting n3n edge %s %s, embedded", VERSION, BUILDDATE);
+    traceEvent(TRACE_NORMAL, "starting n3n edge %s, embedded", n3n_version());
 
     eee = edge_init(&conf, &rc);
     if(!eee) {

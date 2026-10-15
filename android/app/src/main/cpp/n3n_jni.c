@@ -22,6 +22,7 @@
 #include <string.h>
 #include <n3n/embed.h>
 #include <n3n/qr_seal.h>
+#include <n3n/version.h>
 #include <arpa/inet.h>
 #include "ipv6.h"
 
@@ -277,12 +278,12 @@ Java_dev_n3n_android_Seal_looksSealed (JNIEnv *env, jobject self, jstring code) 
 }
 
 
-// Core.version(): what print_n3n_version() says of the core - git describe
-// of the tree libn3n was built from, and the day it was built (ASCII)
+// Core.version(): the core's n3n_version(), as the help text and the log
+// have it (ASCII)
 JNIEXPORT jstring JNICALL
 Java_dev_n3n_android_Core_version (JNIEnv *env, jobject self) {
 
-    return (*env)->NewStringUTF(env, VERSION ", " BUILDDATE);
+    return (*env)->NewStringUTF(env, n3n_version());
 }
 
 

@@ -30,6 +30,7 @@
 #include <n3n/logging.h>       // for traceEvent
 #include <n3n/mainloop.h>      // for mainloop_register_fd
 #include <n3n/supernode.h>     // for load_allowed_sn_community, calculate_s...
+#include <n3n/version.h>       // for n3n_version
 #include <signal.h>            // for signal, SIGHUP, SIGINT, SIGPIPE, SIGTERM
 #include <stdbool.h>
 #include <stdint.h>            // for uint8_t, uint32_t
@@ -671,9 +672,8 @@ int n3n_supernode_main (int argc, char * argv[]) {
 
     traceEvent(
         TRACE_NORMAL,
-        "starting n3n supernode %s %s",
-        VERSION,
-        BUILDDATE
+        "starting n3n supernode %s",
+        n3n_version()
     );
 
     sss_node.keep_running = &keep_on_running;
