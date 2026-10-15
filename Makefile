@@ -139,6 +139,7 @@ OBJS=\
 	src/crypto/speck_sse2.o \
 	src/crypto/speck_ssse3.o \
 	src/crypto/tf.o \
+	src/crypto/tf_avx512.o \
 	src/edge_threads.o \
 	src/edge_utils.o \
 	src/embed.o \

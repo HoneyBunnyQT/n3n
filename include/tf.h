@@ -57,14 +57,35 @@
 
 #define TF_BLOCK_SIZE     16
 #define TF_IV_SIZE       (TF_BLOCK_SIZE)
+#define TF_BLOCK_WORDS   (TF_BLOCK_SIZE / 4)
 
+
+// Besides plain C, a CBC decryption of 16 blocks at a time with AVX-512
+// (VBMI and GFNI) on x86 - built with those for its own functions only, and
+// taken where the CPU has them (tf.c).  Not on Windows, as for Speck
+// (speck.h): GCC does not align its stack there for 64 byte vectors.
+#if (defined (__x86_64__) || defined (__i386__)) && !defined (_WIN32)
+#define TF_X86_AVX512   1
+#endif
+
+struct tf_impl;
 
 typedef struct tf_context_t {
     int N;
     uint32_t K[40];
     uint32_t QF[4][256];
     uint8_t SB[4][256];   // keyed byte S-boxes (QF without the MDS part), used by SIMD code
+    const struct tf_impl *impl;
 } tf_context_t;
+
+// A variant: its name, and how it CBC-decrypts n16 times 16 blocks, ivec
+// the chaining value before and after (NULL: plain C does all, three blocks
+// side by side)
+struct tf_impl {
+    const char *name;
+    void (*cbc_decrypt_16way)(unsigned char *out, const unsigned char *in, int n16,
+                              uint32_t ivec[TF_BLOCK_WORDS], tf_context_t *ctx);
+};
 
 
 int tf_ecb_decrypt (unsigned char *out, const unsigned char *in, tf_context_t *ctx);
@@ -82,9 +103,24 @@ int tf_cbc_encrypt_multi (unsigned char *out[], const unsigned char *in[], const
 int tf_cbc_decrypt (unsigned char *out, const unsigned char *in, size_t in_len,
                     const unsigned char *iv, tf_context_t *ctx);
 
+// a context for the key (key_size in bits), for the fastest variant this
+// CPU has; 0, or -1 without memory
 int tf_init (const unsigned char *key, size_t key_size, tf_context_t **ctx);
 
+// the same for the variant given, one of tf_impls()
+int tf_init_impl (const unsigned char *key, size_t key_size, tf_context_t **ctx,
+                  const struct tf_impl *impl);
+
 int tf_deinit (tf_context_t *ctx);
+
+// The variants this CPU can run, slowest first - as many as fit in list,
+// and how many there are - the one tf_init() takes, and the one of a name
+// (see crypto_impl_named()) if this CPU has it, else NULL
+int tf_impls (const struct tf_impl **list, int max);
+
+const struct tf_impl *tf_impl_chosen (void);
+
+const struct tf_impl *tf_impl_find (const char *name);
 
 
 #endif // TF_H

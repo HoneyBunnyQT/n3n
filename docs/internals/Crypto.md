@@ -32,7 +32,7 @@ The two block ciphers Twofish and AES are used in CTS mode.
 n3n has all four ciphers built-in as basic versions. Some of them optionally
 compile to faster versions by the means of available hardware support (AES-NI,
 SSE, AVX – please see the [Building document](../build/index.md) for
-details; AES, SPECK and ChaCha20 have all their variants built and take the
+details; AES, SPECK, ChaCha20 and Twofish have all their variants built and take the
 fastest the CPU has when the edge starts, `community.cipher = AES/plain C`
 asks for one). Depending on your platform, AES and ChaCha20 might also draw
 notable acceleration from optionally compiling with openSSL support.
@@ -55,6 +55,14 @@ cipher option and not providing a key through `-k <key>` has the same effect.
 This implementation prepends a 128 bit random value to the plain text. Its size is adjustable by changing the `TF_PREAMBLE_SIZE` definition found in `src/transform_tf.c`. It defaults to TF_BLOCK_SIZE (== 16). As CTS uses underlying CBC mode, this basically has the same effect as a respectively shorter IV. However, this flexibility does not come for free as an additional block needs to be encrypted.
 
 Twofish requires no padding as it employs a CBC/CTS scheme which can send out plaintext-length ciphertexts. The scheme however has a small flaw in handling messages shorter than one block, only low-level programmer might encounter this.
+
+Where the CPU has AVX-512 with VBMI and GFNI, CBC decryption works on 16
+blocks at a time, with the keyed S-boxes in registers and the MDS
+multiplication by GF2P8AFFINEQB - also without secret-indexed memory
+lookups.  It is built in any case and taken where the CPU has them
+(`src/crypto/tf_avx512.c`; `tests-tf` holds it to plain C, and plain C to
+the known answers of the Twofish paper); encryption, CBC, chains each
+block to the one before and stays plain C.
 
 On Intel CPUs, Twofish usually is the slowest of the ciphers present. However,
 on Raspberry Pi 3B+, Twofish was observed to be faster than AES-CTS. Your

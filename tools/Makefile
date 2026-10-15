@@ -36,6 +36,7 @@ TESTS+=tests-pdu-in
 TESTS+=tests-ipv6
 TESTS+=tests-tun
 TESTS+=tests-speck
+TESTS+=tests-tf
 
 .PHONY: all clean install
 all: $(TOOLS) $(TESTS)

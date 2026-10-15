@@ -177,9 +177,10 @@ in terms of unstable code or so.
 ## Hardware Features
 
 Some parts of the code significantly benefit from compiler optimizations (`-O3`) and platform features
-such as NEON, SSE and AVX. It needs to be decided at compile-time. Hence if compiling for a specific
-platform with known features (maybe the local one), it should be specified to the compiler – for
-example through the `-march=sandybridge` (you name it) or just `-march=native` for local use.
+such as NEON, SSE and AVX. For the ciphers, the edge chooses at runtime, by what the CPU has; the
+rest needs to be decided at compile-time. Hence if compiling for a specific platform with known
+features (maybe the local one), it should be specified to the compiler – for example through the
+`-march=sandybridge` (you name it) or just `-march=native` for local use.
 
 So far, the following portions of n3n's code benefit from hardware features:
 
@@ -187,6 +188,7 @@ So far, the following portions of n3n's code benefit from hardware features:
 AES:               AES-NI, ARMv8 Cryptography Extension - chosen at runtime
 ChaCha20:          SSE2, SSSE3, AVX2, AVX512, NEON - chosen at runtime
 SPECK:             SSE2, SSSE3, AVX2, AVX512, (NEON) - chosen at runtime
+Twofish:           AVX512 (VBMI, GFNI; decryption) - chosen at runtime
 Random Numbers:    RDSEED, RDRND (not faster but more random seed)
 ```
 
@@ -194,14 +196,16 @@ The compilations flags could easily be combined:
 
 `./configure CFLAGS="-O3 -march=native"`.
 
-SPECK, AES and ChaCha20 need no flags: every variant of the architecture
-is built, each with the extension it needs for its own code only, and the
+SPECK, AES, ChaCha20 and Twofish need no flags: every variant of the
+architecture is built, each with the extension it needs for its own code only, and the
 edge takes the fastest one the CPU it runs on has - a build for the
 baseline of x86-64 or aarch64, as distributions make them, uses AVX2 or
 AVX-512 for SPECK and ChaCha20 and AES-NI or the ARMv8 AES instructions
-for AES where the CPU has them.  `n3n-edge help transform` names the one
+for AES where the CPU has them, and Twofish its AVX-512 decryption where
+there are VBMI and GFNI too.  `n3n-edge help transform` names the one
 taken and those there are, and `n3n-edge test benchmark speck_encr
-aes_encr cc20_encr` (and `_decr`) measures each of them, slowest first.  `community.cipher = AES/plain C` asks for
+aes_encr cc20_encr` (and `_decr`, and `tf_decr`) measures each of them,
+slowest first.  `community.cipher = AES/plain C` asks for
 one of them instead (see [Options](../configure/Options.md)).  On Windows,
 AVX2 and AVX-512 are left out: GCC does not align its stack there for
 their vectors (GCC bug 54412).

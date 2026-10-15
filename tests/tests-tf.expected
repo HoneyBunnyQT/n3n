@@ -1,0 +1,4 @@
+Twofish, 128 bit key, the paper's known answer: ok
+Twofish, 256 bit key, the paper's known answer: ok
+the variant chosen is one this CPU has: ok
+every variant decrypts as plain C, 0 to 70 blocks, unaligned, in place: ok

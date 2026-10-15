@@ -31,6 +31,7 @@ tests-pdu-in
 tests-ipv6
 tests-tun
 tests-speck
+tests-tf
 tests-auth.exe
 tests-compress.exe
 tests-elliptic.exe
@@ -48,3 +49,4 @@ tests-pdu-in.exe
 tests-ipv6.exe
 tests-tun.exe
 tests-speck.exe
+tests-tf.exe

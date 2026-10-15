@@ -364,9 +364,11 @@ tests and `make lint` pass after each.
       AVX-512, in that order (OpenSSL's measured between SSE2 and SSSE3
       here); a baseline build here 1020 MB/s (SSE2) before, 5000 (AVX-512)
       now, one with OpenSSL 1090 before (OpenSSL always).
-      Open: Twofish (its AVX-512 CBC decryption, VBMI and GFNI,
-      16 blocks at a time, is still a choice of the compiler, and the
-      transform says "plain C" even with it); whether a short
+      Twofish (2026-10-15): plain C, and its AVX-512 CBC decryption (VBMI,
+      GFNI, 16 blocks at a time), which was a choice of the compiler
+      only (`-march`, and the transform said "plain C" even with it);
+      decryption on a baseline build here 515 MB/s before, 795 now.
+      Open: whether a short
       benchmark at the start should settle
       the close calls (Speck NEON or plain C on ARM, SSE2 or plain C), and
       whether SSE2 should stay a choice for Speck - numbers from other
@@ -612,7 +614,7 @@ notification following it, the connect button with its LED.  Postponed to
 v4: the path MTU, DNS SRV, fuzzing the QR code (see Decisions).
 Since: addresses from the supernode on Android (tried on a phone), the
 app's look (round keys, bunny-pink, the tile in the quick settings), Speck,
-AES and ChaCha20 chosen at runtime with `cipher = AES/AES-NI` to ask for a
+AES, ChaCha20 and Twofish chosen at runtime with `cipher = AES/AES-NI` to ask for a
 variant, and Windows building again (it had not since the network watch:
 the Windows jobs run on pull requests only, so nobody saw).
 
@@ -626,7 +628,6 @@ Open, in rough order:
   and gets a 404, for some targets; the macOS unit tests; the ASan
   analyser's netns run (every scenario, the supernodes exit 1 on
   SIGTERM - the Sanitizers workflow's ASan netns run passes).
-- Runtime choice for Twofish (its AVX-512 decryption).
 
 - IPv6 inside the tunnel: on a phone, then other systems; fewer
   privileges (Landlock, CAP_NET_ADMIN only is there);
