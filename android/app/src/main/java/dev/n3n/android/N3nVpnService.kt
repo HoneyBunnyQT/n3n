@@ -571,6 +571,8 @@ class N3nVpnService : VpnService() {
         builder
             // white on nothing, as the system wants it: it tints the icon
             .setSmallIcon(R.drawable.ic_notification)
+            // the icon in bunny-pink, not in the system's colour
+            .setColor(getColor(R.color.accent))
             .setContentTitle(title)
             .setContentText(text)
             .setContentIntent(open)

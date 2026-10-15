@@ -94,11 +94,11 @@
                     android:background="@color/card"
                     android:drawableStart="@drawable/ic_warning"
                     android:drawablePadding="6dp"
-                    android:drawableTint="@color/warn"
+                    android:drawableTint="@color/accent"
                     android:gravity="center_vertical"
                     android:paddingEnd="8dp"
                     android:text="@string/changes_reconnect"
-                    android:textColor="@color/warn"
+                    android:textColor="@color/accent"
                     android:textSize="12sp"
                     android:visibility="invisible" />
             </FrameLayout>
