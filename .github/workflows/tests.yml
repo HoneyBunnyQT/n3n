@@ -4,6 +4,7 @@ name: Testing
 # (A release is made by release.yml, which builds its packages)
 # yamllint disable-line rule:truthy
 on:
+  push:
   pull_request:
   workflow_dispatch:
 
