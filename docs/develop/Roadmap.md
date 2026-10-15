@@ -616,18 +616,26 @@ Since: addresses from the supernode on Android (tried on a phone), the
 app's look (round keys, bunny-pink, the tile in the quick settings), Speck,
 AES, ChaCha20 and Twofish chosen at runtime with `cipher = AES/AES-NI` to ask for a
 variant, and Windows building again (it had not since the network watch:
-the Windows jobs run on pull requests only, so nobody saw).
+the Windows jobs run on pull requests only, so nobody saw).  `tests.yml`
+and `quick_windows.yml` run on every push now, and what failed in them
+does not any more (2026-10-15): the Debian/Ubuntu packages (the job
+looked for `n3n_*.deb`, the package is `n3n-be`), the OpenWrt packages
+(the source was `n3n-.tar.gz`, `PKG_SOURCE` set before `PKG_VERSION`;
+and configure ran for the build host, so 32 bit MIPS lacked libatomic),
+macOS (`IPV6_DROP_MEMBERSHIP` is Linux's, `IPV6_LEAVE_GROUP` POSIX's),
+the ASan analyser's netns run (LeakSanitizer cannot stop the threads of
+a daemon that dropped root: `--keep-root`, as in `sanitizers.yml`).  The
+per-arch macOS binaries, which run after the macOS tests and so had not
+for long, failed in configure with `-target arm64-apple-macos`: they take
+`-arch` now, as the universal ones, which build.
 
 Open, in rough order:
 
-- CI that runs on pull requests only (`tests.yml`, `quick_windows.yml`):
-  start them by hand (workflow_dispatch) for a branch, or run them on
-  pushes to main too.  What fails there, on main as well (2026-10-14):
-  the Debian/Ubuntu package jobs look for `n3n_*.deb` while the package
-  is `n3n-be`; the OpenWrt package fetches `n3n-.tar.gz` (no version)
-  and gets a 404, for some targets; the macOS unit tests; the ASan
-  analyser's netns run (every scenario, the supernodes exit 1 on
-  SIGTERM - the Sanitizers workflow's ASan netns run passes).
+- `slow_openwrt.yml` (the `openwrt` branch, or by hand): stale - it
+  checks out to `src` and builds `$GITHUB_WORKSPACE/n3n`, sets
+  `PKG_VERSION` where the package takes `BUILD_VERSION`, and compiles
+  without `USE_SOURCE_DIR`; `slow_bsd.yml` (pull requests, releases)
+  has not run on this fork.
 
 - IPv6 inside the tunnel: on a phone, then other systems; fewer
   privileges (Landlock, CAP_NET_ADMIN only is there);
