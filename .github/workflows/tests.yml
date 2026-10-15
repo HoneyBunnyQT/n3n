@@ -525,9 +525,11 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        arch:
-          - x86_64-apple-macos
-          - arm64-apple-macos
+        include:
+          - arch: x86_64-apple-macos
+            cpu: x86_64
+          - arch: arm64-apple-macos
+            cpu: arm64
 
     steps:
       - uses: actions/checkout@v7
@@ -548,8 +550,11 @@ jobs:
           # this is a hack! it assumes the default SDK is the 'right' one
           export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk
           ./autogen.sh
-          export CFLAGS="-target ${{ matrix.arch }}"
-          export LDFLAGS="-target ${{ matrix.arch }}"
+          # -arch, as for the universal binaries below: with -target
+          # and this triple (no macOS version in it), the compiler
+          # test of configure failed on the runners
+          export CFLAGS="-arch ${{ matrix.cpu }}"
+          export LDFLAGS="-arch ${{ matrix.cpu }}"
           ./configure --host=${{ matrix.arch }}
           make
 
