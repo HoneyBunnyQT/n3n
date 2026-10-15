@@ -50,7 +50,11 @@ jobs:
 
       - name: Run the analysis
         run: |
-          make test
+          # the netns daemons keep root: one that dropped its privileges is
+          # not dumpable any more, and LeakSanitizer cannot stop its threads
+          # at the exit ("does not work under ptrace") - it exits 1 then,
+          # as sanitizers.yml has it too
+          make test NETNS_ARGS="--keep-root @quick"
 
       - if: ${{ failure() }}
         name: Upload tests output
