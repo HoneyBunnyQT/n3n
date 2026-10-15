@@ -628,9 +628,11 @@ and configure ran for the build host, so 32 bit MIPS lacked libatomic),
 macOS (`IPV6_DROP_MEMBERSHIP` is Linux's, `IPV6_LEAVE_GROUP` POSIX's),
 the ASan analyser's netns run (LeakSanitizer cannot stop the threads of
 a daemon that dropped root: `--keep-root`, as in `sanitizers.yml`).  The
-per-arch macOS binaries, which run after the macOS tests and so had not
-for long, failed in configure with `-target arm64-apple-macos`: they take
-`-arch` now, as the universal ones, which build.
+macOS binaries, which run after the macOS tests and so had not for long,
+failed now and then in configure: their `SDKROOT` was the Command Line
+Tools' SDK, on some runners macOS 27's, which the Xcode 26 linker cannot
+read ("unknown architecture arm64e.x1-macos" in `libSystem.tbd`); it is
+`xcrun --show-sdk-path` now, and the jobs print configure's failure.
 
 Open, in rough order:
 
