@@ -54,10 +54,15 @@ define Package/n3n-supernode/description
 The supernode for the N3N infrastructure
 endef
 
+# configure for the target, with its compiler (CONFIGURE_VARS) and --host
+# (CONFIGURE_ARGS): what it finds out has to hold there - whether 64 bit
+# atomics need libatomic (32 bit MIPS: yes), musl
+CONFIGURE_ARGS+=--with-rundir=/var/run
+TARGET_LDFLAGS+=--static
+
 define Build/Configure
-	( cd $(PKG_BUILD_DIR); \
-	./autogen.sh; \
-	LDFLAGS=--static ./configure --with-rundir=/var/run )
+	( cd $(PKG_BUILD_DIR); ./autogen.sh )
+	$(call Build/Configure/Default)
 endef
 
 define Package/n3n-edge/conffiles
