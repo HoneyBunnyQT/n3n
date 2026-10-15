@@ -63,8 +63,13 @@
 #define closesocket(a) close(a)
 #endif
 
-#ifndef IPV6_ADD_MEMBERSHIP
-#define IPV6_ADD_MEMBERSHIP 12       // the standard value for this option
+// POSIX's names, which Linux, the BSDs, macOS and Windows all have - not
+// Linux's IPV6_ADD_MEMBERSHIP and IPV6_DROP_MEMBERSHIP, which macOS has not
+#ifndef IPV6_JOIN_GROUP
+#define IPV6_JOIN_GROUP IPV6_ADD_MEMBERSHIP
+#endif
+#ifndef IPV6_LEAVE_GROUP
+#define IPV6_LEAVE_GROUP IPV6_DROP_MEMBERSHIP
 #endif
 
 
@@ -1211,7 +1216,7 @@ static void check_join_multicast_group (struct n3n_runtime_data *eee) {
             struct ipv6_mreq mreq6;
             inet_pton(AF_INET6, N3N_MULTICAST_GROUP_V6, &mreq6.ipv6mr_multiaddr);
             mreq6.ipv6mr_interface = 0; /* 'best' interface */
-            if(setsockopt(eee->client.udp_multicast_sock_v6, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP, (char *)&mreq6, sizeof(mreq6)) < 0) {
+            if(setsockopt(eee->client.udp_multicast_sock_v6, IPPROTO_IPV6, IPV6_JOIN_GROUP, (char *)&mreq6, sizeof(mreq6)) < 0) {
                 traceEvent(TRACE_WARNING, "failed to join IPv6 multicast group %s [errno %u]",
                            N3N_MULTICAST_GROUP_V6, errno);
 #ifdef _WIN32
@@ -1244,7 +1249,7 @@ static void leave_multicast_groups (struct n3n_runtime_data *eee) {
         struct ipv6_mreq mreq6;
         inet_pton(AF_INET6, N3N_MULTICAST_GROUP_V6, &mreq6.ipv6mr_multiaddr);
         mreq6.ipv6mr_interface = 0;
-        setsockopt(eee->client.udp_multicast_sock_v6, IPPROTO_IPV6, IPV6_DROP_MEMBERSHIP, (char *)&mreq6, sizeof(mreq6));
+        setsockopt(eee->client.udp_multicast_sock_v6, IPPROTO_IPV6, IPV6_LEAVE_GROUP, (char *)&mreq6, sizeof(mreq6));
         eee->client.multicast_joined_v6 = false;
     }
 #endif

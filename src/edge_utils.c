@@ -68,7 +68,7 @@
 #else
 #include <arpa/inet.h>               // for inet_ntoa, inet_addr, inet_ntop
 #include <netdb.h>                   // for EAFNOSUPPORT
-#include <netinet/in.h>              // for sockaddr_in, ntohl, IPPROTO_IP, IPV6_ADD_MEMBERSHIP
+#include <netinet/in.h>              // for sockaddr_in, ntohl, IPPROTO_IP
 #include <netinet/tcp.h>             // for TCP_NODELAY
 #include <pwd.h>
 #include <sys/select.h>              // for select, FD_SET, FD_ISSET, FD_ZERO
@@ -78,10 +78,6 @@
 #ifndef _WIN32
 // Another wonderful gift from the world of POSIX compliance is not worth much
 #define closesocket(a) close(a)
-#endif
-
-#ifndef IPV6_ADD_MEMBERSHIP
-#define IPV6_ADD_MEMBERSHIP 12       // the standard value for this option
 #endif
 
 #ifndef MSG_DONTWAIT
