@@ -205,8 +205,8 @@ tests and `make lint` pass after each.
       from sysusers.d, the app's version that of the core and its release
       build signed from the environment; `release.yml`, started by hand,
       builds them all from a tag, with a draft GitHub Release if asked;
-      `tests.yml` no longer reacts to releases.  Not run yet.  Open: the
-      app's ID (`dev.n3n.android` is upstream's domain), the signing key,
+      `tests.yml` no longer reacts to releases.  Not run yet.  The app's ID
+      is `io.github.honeybunnyqt.n3nbe` (2026-10-15).  Open: the signing key,
       the channels (apt repository, AUR, COPR, Obtainium / IzzyOnDroid),
       OpenWrt, Windows and macOS in the release
 - [x] TUN mode (layer 3 device): `tuntap.type = tun`, `src/tun.c`, netns

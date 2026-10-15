@@ -51,14 +51,13 @@ libraries to look at: they do not say which version of libc6 they need.
 
 ## Before the first release
 
-- **The Android application ID.**  The app is `dev.n3n.android` now, which
-  is upstream's domain (n3n.dev, whose `pkg.n3n.dev` is its apt
-  repository).  An application ID does not have to be a domain one owns -
-  nothing checks it - but it has to be unique, and it is the app's
-  identity for good: another ID is another app, which users install anew.
-  A name of one's own without a domain: `io.github.honeybunnyqt.n3nbe`
-  (the GitHub account's own name space; a `-` is not allowed in it).
-  Settle it before the first APK goes out.
+- **The Android application ID** (settled 2026-10-15):
+  `io.github.honeybunnyqt.n3nbe`, the GitHub account's own name space (a
+  `-` is not allowed in it).  It was `dev.n3n.android`, upstream's domain
+  (n3n.dev, whose `pkg.n3n.dev` is its apt repository).  It is the app's
+  identity for good: another ID is another app, which users install anew -
+  a build from before has to be uninstalled.  The code's package stays
+  `dev.n3n.android` (`namespace`), a name in the source only.
 - **The signing key of the app.**  Made once, kept for good: every update
   has to be signed with the same key, or Android will not install it over
   the old one.  Made with the JDK's `keytool`, under any name - a

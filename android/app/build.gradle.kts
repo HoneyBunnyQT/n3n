@@ -18,11 +18,14 @@ val coreVersionCode = Regex("^(\\d+)\\.(\\d+)\\.(\\d+)").find(coreVersion)
 val releaseKeystore: String? = System.getenv("N3N_ANDROID_KEYSTORE")
 
 android {
+    // the code's package: a name in the source only
     namespace = "dev.n3n.android"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "dev.n3n.android"
+        // the app's identity for good: another ID is another app, see
+        // docs/develop/Releasing.md
+        applicationId = "io.github.honeybunnyqt.n3nbe"
         minSdk = 24             // fmemopen() in Bionic, see n3n_config_load_text()
         targetSdk = 35
         versionCode = coreVersionCode
