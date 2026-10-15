@@ -3,9 +3,9 @@ SPDX-License-Identifier: GPL-3.0-only
 SPDX-FileCopyrightText: Copyright Honey Bunny QT
 -->
 
-# Releasing n3n BE
+# Releasing n3n-be
 
-How a release of n3n BE gets its packages, and what has to be settled
+How a release of n3n-be gets its packages, and what has to be settled
 before the first one.  The workflow is there, `.github/workflows/release.yml`,
 but it has not run yet: it starts only by hand, never by a pushed tag.
 
@@ -25,7 +25,7 @@ From the tag, the workflow `Release` builds:
 With "draft" ticked, it then makes a draft GitHub Release of the tag with
 all of them, the tag's message as its notes, and an attestation for each
 file: a statement signed by GitHub of the workflow and the commit it was
-built from (`gh attestation verify FILE --repo HoneyBunnyQT/n3n`).  A
+built from (`gh attestation verify FILE --repo HoneyBunnyQT/n3n-be`).  A
 draft is seen only by those who can write to the repository; it becomes
 public when someone publishes it, by hand, after a look at it.
 

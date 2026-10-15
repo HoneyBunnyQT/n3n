@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 290" width="720" height="290" role="img" aria-labelledby="title desc">
-  <title id="title">How n3n BE connects edges</title>
+  <title id="title">How n3n-be connects edges</title>
   <desc id="desc">Two edges, each behind a NAT, register with a supernode. They reach each other directly through their NATs where they can; otherwise the supernode relays their packets.</desc>
   <!-- SPDX-License-Identifier: GPL-3.0-only -->
   <!-- SPDX-FileCopyrightText: Copyright Honey Bunny QT -->

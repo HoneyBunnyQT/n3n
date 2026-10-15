@@ -1,6 +1,6 @@
 # Maintainer: Honey Bunny QT <honeybunnyqt.official@proton.me>
 #
-# n3n BE from this tree, as release.yml builds it (see
+# n3n-be from this tree, as release.yml builds it (see
 # docs/develop/Releasing.md):
 #
 #   cd packages/arch && makepkg
@@ -12,9 +12,9 @@ _top=$(realpath "$startdir/../..")
 pkgname=n3n-be
 pkgver=$(cat "$_top/VERSION")
 pkgrel=1
-pkgdesc="Peer-to-peer layer 2 VPN: n3n BE (Bunny Edition), a fork of n3n"
+pkgdesc="Peer-to-peer layer 2 VPN: n3n-be (Bunny Edition), a fork of n3n"
 arch=(x86_64 aarch64)
-url="https://github.com/HoneyBunnyQT/n3n"
+url="https://github.com/HoneyBunnyQT/n3n-be"
 license=(GPL-3.0-only)
 depends=(glibc python)
 makedepends=(autoconf automake)

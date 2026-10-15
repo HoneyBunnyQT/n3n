@@ -200,7 +200,7 @@ tests and `make lint` pass after each.
       binary; tools init / tools qr.  (Learned supernodes on disk wait for
       v4, see Decisions 2026-10-04; epoll, batched I/O, no alloc per
       packet and UDP GSO/GRO are done, below)
-- [~] Releases of n3n BE (see [Releasing](Releasing.md)): the packages
+- [~] Releases of n3n-be (see [Releasing](Releasing.md)): the packages
       are `n3n-be` (.deb, .rpm, and a PKGBUILD for Arch), the user `n3n`
       from sysusers.d, the app's version that of the core and its release
       build signed from the environment; `release.yml`, started by hand,
@@ -601,7 +601,7 @@ Current ideas, half-decided things, commands worth keeping.
 
 Recently on `main` and done: epoll and batched I/O (`recvmmsg()` /
 `sendmmsg()`), with `tests/netns/bench.py` for the whole packet path; the
-packages of n3n BE and `release.yml` (not run yet); fuzzing of the receive
+packages of n3n-be and `release.yml` (not run yet); fuzzing of the receive
 path, the TCP framing, the management interface and the TUN edge, plus
 `fuzz-spray` at running daemons, which found and fixed several bugs (see
 Fuzzing above); netns scenarios with builds for other CPUs under
@@ -612,7 +612,10 @@ compares and applies the filter rules and reaches the edge of a supernode
 (`supernode.tap`).  Android: the revamp - the state in the service, the
 notification following it, the connect button with its LED.  Postponed to
 v4: the path MTU, DNS SRV, fuzzing the QR code (see Decisions).
-Since: addresses from the supernode on Android (tried on a phone), the
+Since: the repository is `HoneyBunnyQT/n3n-be` (2026-10-15; the old
+name `HoneyBunnyQT/n3n` redirects there), and n3n-be its name in the docs
+and packages, "n3n-be (Bunny Edition)" in full.  Also since: addresses
+from the supernode on Android (tried on a phone), the
 app's look (round keys, bunny-pink, the tile in the quick settings), Speck,
 AES, ChaCha20 and Twofish chosen at runtime with `cipher = AES/AES-NI` to ask for a
 variant, and Windows building again (it had not since the network watch:

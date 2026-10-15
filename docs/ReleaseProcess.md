@@ -6,8 +6,8 @@ SPDX-FileCopyrightText: Copyright Honey Bunny QT
 
 # Release Process
 
-n3n BE makes its releases with the workflow `Release` now, see
-[Releasing n3n BE](develop/Releasing.md); the CI steps below are those of
+n3n-be makes its releases with the workflow `Release` now, see
+[Releasing n3n-be](develop/Releasing.md); the CI steps below are those of
 upstream n3n.
 
 ## Regular release process

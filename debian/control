@@ -31,4 +31,4 @@ Description: Peer-to-Peer and Layer-2 VPN network daemon
  Edge is the edge node daemon for n3n which creates a TAP interface to expose
  the n3n virtual LAN.
  .
- This is n3n BE (Bunny Edition), a fork of n3n, which it replaces.
+ This is n3n-be (Bunny Edition), a fork of n3n, which it replaces.

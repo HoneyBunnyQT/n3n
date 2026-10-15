@@ -1,16 +1,16 @@
-Summary: n3n BE peer-to-peer VPN
+Summary: n3n-be peer-to-peer VPN
 Name: n3n-be
 Version: %{VERSION}
 Release: 1
 License: GPL-3.0-only
 Group: Networking/Utilities
-URL: https://github.com/HoneyBunnyQT/n3n
+URL: https://github.com/HoneyBunnyQT/n3n-be
 Source: n3n-be-%{version}.tgz
 Packager: Honey Bunny QT <honeybunnyqt.official@proton.me>
 # Temporary location where the RPM will be built
 BuildRoot:  %{_tmppath}/%{name}-%{version}-root
 Requires: libzstd
-# n3n BE, a fork of n3n, installs the same files
+# n3n-be, a fork of n3n, installs the same files
 Provides: n3n
 Conflicts: n3n
 
@@ -18,7 +18,7 @@ Conflicts: n3n
 %define _build_id_links none
 
 %description
-n3n peer-to-peer VPN: n3n BE (Bunny Edition), a fork of n3n
+n3n peer-to-peer VPN: n3n-be (Bunny Edition), a fork of n3n
 
 %prep
 

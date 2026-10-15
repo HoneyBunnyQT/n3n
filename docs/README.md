@@ -5,14 +5,14 @@ SPDX-FileCopyrightText: Copyright Hamish Coleman
 SPDX-FileCopyrightText: Copyright Honey Bunny QT
 -->
 
-# n3n BE (Bunny Edition)
+# n3n-be (Bunny Edition)
 
-[![Quick Tests](https://github.com/HoneyBunnyQT/n3n/actions/workflows/quick.yml/badge.svg)](https://github.com/HoneyBunnyQT/n3n/actions/workflows/quick.yml)
-[![netns](https://github.com/HoneyBunnyQT/n3n/actions/workflows/netns.yml/badge.svg)](https://github.com/HoneyBunnyQT/n3n/actions/workflows/netns.yml)
-[![Sanitizers](https://github.com/HoneyBunnyQT/n3n/actions/workflows/sanitizers.yml/badge.svg)](https://github.com/HoneyBunnyQT/n3n/actions/workflows/sanitizers.yml)
-[![Interop](https://github.com/HoneyBunnyQT/n3n/actions/workflows/interop.yml/badge.svg)](https://github.com/HoneyBunnyQT/n3n/actions/workflows/interop.yml)
-[![Fuzz](https://github.com/HoneyBunnyQT/n3n/actions/workflows/fuzz.yml/badge.svg)](https://github.com/HoneyBunnyQT/n3n/actions/workflows/fuzz.yml)
-[![Version](https://img.shields.io/github/v/tag/HoneyBunnyQT/n3n?label=version&color=c2185b)](https://github.com/HoneyBunnyQT/n3n/tags)
+[![Quick Tests](https://github.com/HoneyBunnyQT/n3n-be/actions/workflows/quick.yml/badge.svg)](https://github.com/HoneyBunnyQT/n3n-be/actions/workflows/quick.yml)
+[![netns](https://github.com/HoneyBunnyQT/n3n-be/actions/workflows/netns.yml/badge.svg)](https://github.com/HoneyBunnyQT/n3n-be/actions/workflows/netns.yml)
+[![Sanitizers](https://github.com/HoneyBunnyQT/n3n-be/actions/workflows/sanitizers.yml/badge.svg)](https://github.com/HoneyBunnyQT/n3n-be/actions/workflows/sanitizers.yml)
+[![Interop](https://github.com/HoneyBunnyQT/n3n-be/actions/workflows/interop.yml/badge.svg)](https://github.com/HoneyBunnyQT/n3n-be/actions/workflows/interop.yml)
+[![Fuzz](https://github.com/HoneyBunnyQT/n3n-be/actions/workflows/fuzz.yml/badge.svg)](https://github.com/HoneyBunnyQT/n3n-be/actions/workflows/fuzz.yml)
+[![Version](https://img.shields.io/github/v/tag/HoneyBunnyQT/n3n-be?label=version&color=c2185b)](https://github.com/HoneyBunnyQT/n3n-be/tags)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE.md)
 
 A lightweight peer-to-peer VPN: computers anywhere become one virtual
@@ -33,7 +33,7 @@ Both are one program, `n3n`, installed also as `n3n-edge` and
 
 ## The Bunny Edition
 
-n3n BE is a special edition of [n3n](https://github.com/n42n/n3n), which
+n3n-be is a special edition of [n3n](https://github.com/n42n/n3n), which
 grew out of [n2n](https://github.com/ntop/n2n).  It speaks their protocol -
 its edges and supernodes work together with those of n3n and of n2n 3.x -
 and adds a good deal on top:
@@ -47,7 +47,7 @@ and adds a good deal on top:
   time - up to a third more throughput for small packets
 - **Easier to run:** reload on SIGHUP, systemd notify and watchdog, a
   management page, communities in the configuration file
-- **More places:** TUN mode, and an [Android app](https://github.com/HoneyBunnyQT/n3n/tree/main/android)
+- **More places:** TUN mode, and an [Android app](https://github.com/HoneyBunnyQT/n3n-be/tree/main/android)
 
 Experimental in what it tries, not in how it is tested: every push runs
 dozens of NAT scenarios in network namespaces, the same under the

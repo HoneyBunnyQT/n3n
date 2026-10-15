@@ -267,4 +267,4 @@ jobs:
           TAG: ${{ inputs.tag }}
         run: |
           gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" \
-            --draft --verify-tag --title "n3n BE $TAG" --notes-from-tag
+            --draft --verify-tag --title "n3n-be $TAG" --notes-from-tag
