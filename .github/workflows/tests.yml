@@ -555,7 +555,9 @@ jobs:
           # test of configure failed on the runners
           export CFLAGS="-arch ${{ matrix.cpu }}"
           export LDFLAGS="-arch ${{ matrix.cpu }}"
-          ./configure --host=${{ matrix.arch }}
+          # what failed, in the log itself: the artifact below is not
+          # at hand everywhere
+          ./configure --host=${{ matrix.arch }} || { tail -n 60 config.log; exit 1; }
           make
 
       - if: ${{ failure() }}
