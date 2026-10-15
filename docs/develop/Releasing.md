@@ -75,9 +75,10 @@ libraries to look at: they do not say which version of libc6 they need.
   in it the secrets `ANDROID_KEYSTORE` (the file in base64:
   `base64 -w0 n3n-be-release.jks`), `ANDROID_KEYSTORE_PASSWORD`,
   `ANDROID_KEY_ALIAS` (`n3n-be`) and `ANDROID_KEY_PASSWORD`.
-- **The versions of the actions** release.yml uses
-  (`actions/download-artifact`, `actions/attest-build-provenance`): newer
-  ones may be out by the first run.
+- **The versions of the actions** release.yml uses: brought up to date
+  on 2026-10-15 (`download-artifact@v8`, Node 24 as the others;
+  `attest-build-provenance@v4`, now a wrapper of `actions/attest`, with
+  the same inputs and permissions).
 - `tests.yml` no longer reacts to releases: it used to build its own
   packages for a published release and put them on it as a prerelease,
   which would now come on top of release.yml's.

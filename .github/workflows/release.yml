@@ -244,7 +244,7 @@ jobs:
       attestations: write
 
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
@@ -257,7 +257,7 @@ jobs:
 
       # signed statements, by GitHub, of the workflow and commit each file
       # was built from: "gh attestation verify FILE --repo ..." checks one
-      - uses: actions/attest-build-provenance@v2
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/*
 
