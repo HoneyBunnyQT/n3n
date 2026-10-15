@@ -46,13 +46,11 @@
                     android:layout_height="wrap_content" />
             </LinearLayout>
 
-            <!-- the bunny, in the corner -->
-            <ImageView
-                android:layout_width="28dp"
-                android:layout_height="30dp"
-                android:layout_marginStart="8dp"
-                android:contentDescription="@null"
-                android:src="@drawable/bunny" />
+            <!-- the bunny, in the corner: a tap says which build this is -->
+            <dev.n3n.android.BunnyBadge
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp" />
         </LinearLayout>
 
         <!-- the state, and the button -->

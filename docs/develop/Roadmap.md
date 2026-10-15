@@ -231,10 +231,12 @@ tests and `make lint` pass after each.
       like it, and the accent bunny-pink, the pink of the docs'
       drawings - the LED lit and the power symbol in it too, the symbol
       grey while a tap cannot connect (asked 2026-10-13); the LED's
-      stripes purple, a warning in the button's card while changes wait
-      for a reconnect, the launcher icon bunny-pink into dark purple, and
-      raised on the main screen, with a bunny in its top corner
-      (2026-10-14).  Open: try it on a phone;
+      stripes pink as well, a pink warning in the button's card while
+      changes wait for a reconnect, the launcher icon bunny-pink into dark
+      purple, and raised on the main screen, with a bunny in its top
+      corner over "BUNNY EDITION", which shows the version on a tap; the
+      notification in bunny-pink (setColor) instead of the system's blue
+      (2026-10-14/15).  Open: try it on a phone;
       the QR code again, with a fuzz target for `qr_seal` and the
       configuration it opens (postponed, 2026-10-11, see Decisions); maybe a
       navigation bar instead of the four keys, should the app get more

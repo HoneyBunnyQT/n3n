@@ -142,6 +142,7 @@ android/
       Key.kt, RaisedFace.kt               the keys below it, the raised look
                                           the two share
       ConnectTile.kt                      the tile in the quick settings
+      BunnyBadge.kt                       the bunny, and the version on a tap
       Connection.kt                       what the connection is doing
       EditActivity.kt                     the configuration: edit, import, scan
       ShareActivity.kt                    the configuration as a QR code
@@ -160,8 +161,8 @@ android/
                                           bunny-pink into dark purple;
                                           drawable/logo is its middle,
                                           raised, for the main screen, and
-                                          drawable/bunny sits in its top
-                                          corner)
+                                          drawable/bunny the bunny of
+                                          BunnyBadge.kt)
 ```
 
 - **libn3n.so** is the edge-only build of the core, as

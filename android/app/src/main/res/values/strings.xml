@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">n3n</string>
+    <!-- below the bunny in the corner, and what a tap on it says -->
+    <string name="bunny_edition">BUNNY EDITION</string>
+    <string name="bunny_version">n3n-be %1$s\nbuild %2$s</string>
     <string name="back">Back</string>
 
     <!-- main screen -->

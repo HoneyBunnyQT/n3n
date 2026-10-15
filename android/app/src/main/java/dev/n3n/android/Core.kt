@@ -17,4 +17,7 @@ object Core {
      * cannot be used
      */
     external fun ipv6Address(address6: String, prefix6: String, community: String, ipv4: String): String?
+
+    /** The core's version: git describe of the tree it was built from */
+    external fun version(): String
 }

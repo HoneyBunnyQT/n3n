@@ -277,6 +277,14 @@ Java_dev_n3n_android_Seal_looksSealed (JNIEnv *env, jobject self, jstring code) 
 }
 
 
+// Core.version(): git describe of the tree libn3n was built from (ASCII)
+JNIEXPORT jstring JNICALL
+Java_dev_n3n_android_Core_version (JNIEnv *env, jobject self) {
+
+    return (*env)->NewStringUTF(env, VERSION);
+}
+
+
 // Core.ipv6Address(): the edge's IPv6 address, as the edge itself works it
 // out (src/ipv6.c), for the VpnService.Builder.  The MAC is no part of it:
 // the device is set up once the edge has an IPv4 address (static or from the
