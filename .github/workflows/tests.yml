@@ -444,8 +444,12 @@ jobs:
           echo "Build for $BUILD_VERSION"
           export
           make package/n3n/clean V=s
+          # packages of earlier runs, from the cache of the openwrt dir
+          rm -f bin/packages/*/base/n3n-*.ipk
+          # the checkout, for compile too: else compile wants the source
+          # downloaded, which only works for the default branch
           make package/n3n/prepare USE_SOURCE_DIR=$GITHUB_WORKSPACE/n3n V=s
-          make package/n3n/compile V=s
+          make package/n3n/compile USE_SOURCE_DIR=$GITHUB_WORKSPACE/n3n V=s
 
 # FIXME: add a way to run the test suite!
 #      - name: Run embedded tests

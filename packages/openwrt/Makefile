@@ -7,16 +7,17 @@ include $(TOPDIR)/rules.mk
 PKG_NAME:=n3n
 PKG_RELEASE:=1
 
-PKG_SOURCE_PROTO:=git
-PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
-
-
 # These are defaults for compiling without any environmental overrides
 # (eg, the github action calculates the correct overrides for each build)
 PKG_VERSION:=$(BUILD_VERSION)
 PKG_SOURCE_URL?=$(BUILD_SOURCE_URL)
 PKG_SOURCE_VERSION?=$(BUILD_SOURCE_REF)
 PKG_MIRROR_HASH:=skip
+
+# after PKG_VERSION: := takes it as it is at this point, and before, the
+# source was n3n-.tar.gz
+PKG_SOURCE_PROTO:=git
+PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 
 PKG_MAINTAINER:=Hamish Coleman <hamish@zot.org>
 PKG_LICENSE:=GPL-3.0-only
