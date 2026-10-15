@@ -360,7 +360,11 @@ tests and `make lint` pass after each.
       C, OpenSSL (with `--with-openssl`), AES-NI, ARMv8 CE (aarch64:
       `getauxval()`); a baseline build here 337 MB/s before, 2120 now, one
       with OpenSSL 735 before (OpenSSL sets the key up for every packet).
-      Open: ChaCha20, Twofish (its AVX-512 CBC decryption, VBMI and GFNI,
+      ChaCha20 (2026-10-15): plain C, SSE2, NEON, OpenSSL, SSSE3, AVX2,
+      AVX-512, in that order (OpenSSL's measured between SSE2 and SSSE3
+      here); a baseline build here 1020 MB/s (SSE2) before, 5000 (AVX-512)
+      now, one with OpenSSL 1090 before (OpenSSL always).
+      Open: Twofish (its AVX-512 CBC decryption, VBMI and GFNI,
       16 blocks at a time, is still a choice of the compiler, and the
       transform says "plain C" even with it); whether a short
       benchmark at the start should settle
@@ -607,8 +611,8 @@ compares and applies the filter rules and reaches the edge of a supernode
 notification following it, the connect button with its LED.  Postponed to
 v4: the path MTU, DNS SRV, fuzzing the QR code (see Decisions).
 Since: addresses from the supernode on Android (tried on a phone), the
-app's look (round keys, bunny-pink, the tile in the quick settings), Speck
-and AES chosen at runtime with `cipher = AES/AES-NI` to ask for a
+app's look (round keys, bunny-pink, the tile in the quick settings), Speck,
+AES and ChaCha20 chosen at runtime with `cipher = AES/AES-NI` to ask for a
 variant, and Windows building again (it had not since the network watch:
 the Windows jobs run on pull requests only, so nobody saw).
 
@@ -622,7 +626,7 @@ Open, in rough order:
   and gets a 404, for some targets; the macOS unit tests; the ASan
   analyser's netns run (every scenario, the supernodes exit 1 on
   SIGTERM - the Sanitizers workflow's ASan netns run passes).
-- Runtime choice for ChaCha20 and Twofish (its AVX-512 decryption).
+- Runtime choice for Twofish (its AVX-512 decryption).
 
 - IPv6 inside the tunnel: on a phone, then other systems; fewer
   privileges (Landlock, CAP_NET_ADMIN only is there);

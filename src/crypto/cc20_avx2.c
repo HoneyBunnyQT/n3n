@@ -19,17 +19,16 @@
  */
 
 
-#ifdef HAVE_LIBCRYPTO // openSSL 1.1 ---------------------------------------------------------------------
-#elif defined (__AVX512F__)  // AVX512 ------------------------------------------------------------------------------
-#elif defined (__AVX2__)  // AVX2 -----------------------------------------------------------------------------------
+#include "crypto_impl.h"  // for CRYPTO_TARGET_BEGIN
+#include "cc20.h"
+
+#if defined (CC20_X86_AVX)
 
 
 #include <n3n/logging.h> // for traceEvent
 #include <stdlib.h>     // for calloc, free, size_t
 #include <string.h>     // for memcpy
 
-#include "cc20.h"
-#include "config.h"  // HAVE_LIBCRYPTO
 #include "portable_endian.h"  // for htole32
 
 
@@ -40,6 +39,8 @@
 
 #include <immintrin.h>  // for _mm256_xor_si256, _mm256_add_epi32, _mm256_shuffle_epi8
 #include <xmmintrin.h>  // for _MM_SHUFFLE
+
+CRYPTO_TARGET_BEGIN("avx2")
 
 
 #define SL  _mm256_slli_epi32
@@ -106,8 +107,8 @@
     O += 32                                 \
 
 
-int cc20_crypt (unsigned char *out, const unsigned char *in, size_t in_len,
-                const unsigned char *iv, cc20_context_t *ctx) {
+static int cc20_avx2_crypt (unsigned char *out, const unsigned char *in, size_t in_len,
+                            const unsigned char *iv, cc20_context_t *ctx) {
 
     __m256i a, b, c, d, k0, k1, k2, k3, k4, k5, k6, k7, t0, t1, t2, t3;
 
@@ -211,27 +212,13 @@ int cc20_crypt (unsigned char *out, const unsigned char *in, size_t in_len,
     return(0);
 }
 
-
-int cc20_init (const unsigned char *key, cc20_context_t **ctx) {
-
-    // allocate context...
-    *ctx = (cc20_context_t*)calloc(1, sizeof(cc20_context_t));
-    if(!(*ctx))
-        return -1;
-    memcpy((*ctx)->key, key, CC20_KEY_BYTES);
-
-    return 0;
-}
+CRYPTO_TARGET_END
 
 
-int cc20_deinit (cc20_context_t *ctx) {
+const struct cc20_impl cc20_impl_avx2 = {
+    .name = "AVX2",
+    .crypt = cc20_avx2_crypt,
+};
 
-    free(ctx);
-    return 0;
-}
 
-
-#elif defined (__SSE2__)  // SSE2 ---------------------------------------------------------------------------------
-#elif defined (__ARM_NEON) && !defined (__ARM_BIG_ENDIAN) // NEON ---------------------------------------------------
-#else // plain C --------------------------------------------------------------------------------------------------
-#endif // openSSL 1.1, plain C ------------------------------------------------------------------------------------
+#endif // CC20_X86_AVX

@@ -32,10 +32,10 @@ The two block ciphers Twofish and AES are used in CTS mode.
 n3n has all four ciphers built-in as basic versions. Some of them optionally
 compile to faster versions by the means of available hardware support (AES-NI,
 SSE, AVX – please see the [Building document](../build/index.md) for
-details; AES and SPECK have all their variants built and take the fastest
-the CPU has when the edge starts, `community.cipher = AES/plain C` asks for
-one). Depending on your platform, ChaCha20 might also draw notable
-acceleration from optionally compiling with openSSL 1.1 support.
+details; AES, SPECK and ChaCha20 have all their variants built and take the
+fastest the CPU has when the edge starts, `community.cipher = AES/plain C`
+asks for one). Depending on your platform, AES and ChaCha20 might also draw
+notable acceleration from optionally compiling with openSSL support.
 
 The`-k <key>` command line parameter supplies the key. As even non-privileged
 users might get to see the command line parameters (try `ps -Af | grep edge`),
@@ -83,9 +83,15 @@ This cipher's different key-sizes are triggered by the length of the user-provid
 
 ChaCha20 was the first stream cipher supported by n3n.
 
-In addition to the basic C implementation, SSE2, AVX2, AVX512 and ARM NEON
-versions are offered (NEON on aarch64 always, on 32 bit ARM with
-`-mfpu=neon`). If compiled with openSSL support, ChaCha20 is provided via the `evp_*` interface. It is not used together with the Poly1305 message tag from the same author though. Whole packet's checksum will be handled in the header (see below).
+In addition to the basic C implementation, SSE2, SSSE3, AVX2, AVX512 and
+ARM NEON versions are offered (NEON on aarch64 always, on 32 bit ARM with
+`-mfpu=neon`). If compiled with openSSL support, its `evp_*` interface is
+one more variant.  All of them are built, and the edge takes the fastest
+the CPU has (`src/crypto/cc20.c`; `tests-cc20` holds every variant to the
+RFC 8439 vector and to plain C): on x86, OpenSSL's - with the overhead of
+its interface on every packet - comes after SSSE3, AVX2 and AVX-512, which
+are 1.1, 2 and 4.5 times as fast for packets of 512 bytes; on ARM it comes
+before NEON. It is not used together with the Poly1305 message tag from the same author though. Whole packet's checksum will be handled in the header (see below).
 
 The random full 128-bit IV is transmitted in plain.
 

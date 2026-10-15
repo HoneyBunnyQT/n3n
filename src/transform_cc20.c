@@ -26,6 +26,7 @@
 #include <n3n/transform.h>   // for n3n_transform_register
 #include <stdint.h>          // for uint8_t
 #include <stdlib.h>          // for size_t, calloc, free
+#include <stdio.h>           // for snprintf
 #include <string.h>          // for memset, strlen
 #include <sys/types.h>       // for u_char, ssize_t, time_t
 
@@ -133,14 +134,16 @@ static int transop_decode_cc20 (n2n_trans_op_t *arg,
 }
 
 
-static int setup_cc20_key (transop_cc20_t *priv, const uint8_t *password, ssize_t password_len) {
+// for the variant given, or the fastest of this CPU (NULL)
+static int setup_cc20_key (transop_cc20_t *priv, const uint8_t *password, ssize_t password_len,
+                           const struct cc20_impl *impl) {
 
     uint8_t key_mat[CC20_KEY_BYTES];
 
     // the input key always gets hashed to make a more unpredictable and more complete use of the key space
     pearson_hash_256(key_mat, password, password_len);
 
-    if(cc20_init(key_mat, &(priv->ctx))) {
+    if(impl ? cc20_init_impl(key_mat, &(priv->ctx), impl) : cc20_init(key_mat, &(priv->ctx))) {
         traceEvent(TRACE_ERROR, "setup_cc20_key setup unsuccessful");
         return -1;
     }
@@ -172,8 +175,23 @@ int n2n_transop_cc20_init (const n2n_edge_conf_t *conf, n2n_trans_op_t *ttt) {
     }
     ttt->priv = priv;
 
+    // the variant asked for, if any: one this CPU does not have is no
+    // reason not to start - the configuration may come from another
+    const struct cc20_impl *impl = NULL;
+    const char *asked = conf->community.cipher.impl;
+    if(asked[0]) {
+        impl = cc20_impl_find(asked);
+        if(!impl) {
+            traceEvent(TRACE_WARNING, "cipher ChaCha20/%s: no such variant on this CPU, using %s "
+                       "(n3n-edge help transform lists them)", asked, cc20_impl_chosen()->name);
+        }
+    }
+    if(impl) {
+        traceEvent(TRACE_NORMAL, "ChaCha20: the %s variant, as asked", impl->name);
+    }
+
     // setup the cipher and key
-    return setup_cc20_key(priv, encrypt_key, encrypt_key_len);
+    return setup_cc20_key(priv, encrypt_key, encrypt_key_len, impl);
 }
 
 struct bench_ctx {
@@ -185,7 +203,12 @@ struct bench_ctx {
     ssize_t outbuf_size;
 };
 
-static void *bench_setup (void *const _ctx) {
+// A benchmark of the variant chosen, and one of each variant this CPU has
+// (bench_variant[]), slowest first: see n3n_initfuncs_transform_cc20()
+#define BENCH_VARIANTS 6
+static const struct cc20_impl *bench_impl[BENCH_VARIANTS];
+
+static void *bench_setup_impl (void *const _ctx, const struct cc20_impl *impl) {
     struct bench_ctx *ctx = (struct bench_ctx *)_ctx;
 
     const char *key = "just_a_test_key_for_benchmarks";
@@ -193,7 +216,7 @@ static void *bench_setup (void *const _ctx) {
     // the expected outputs were made on, and 4 bytes on 32 bit hosts, which
     // then failed the tests
     const ssize_t key_len = 8;
-    setup_cc20_key(&ctx->priv, (unsigned char *)key, key_len);
+    setup_cc20_key(&ctx->priv, (unsigned char *)key, key_len, impl);
 
     // Set one constant IV to use for all benchmark testing
     // chosen by a fair roll of the dice
@@ -204,6 +227,21 @@ static void *bench_setup (void *const _ctx) {
     memcpy(&ctx->iv, &iv, sizeof(iv));
     return ctx;
 }
+
+static void *bench_setup (void *const ctx) {
+    return bench_setup_impl(ctx, NULL);
+}
+
+#define BENCH_SETUP(i) \
+    static void *bench_setup_ ## i(void *const ctx) { \
+        return bench_setup_impl(ctx, bench_impl[i]); \
+    }
+BENCH_SETUP(0)
+BENCH_SETUP(1)
+BENCH_SETUP(2)
+BENCH_SETUP(3)
+BENCH_SETUP(4)
+BENCH_SETUP(5)
 
 static void bench_teardown (void *_ctx) {
     struct bench_ctx *ctx = (struct bench_ctx *)_ctx;
@@ -291,14 +329,61 @@ static struct bench_item bench_decr = {
     .data_out = test_data_32x16,
 };
 
+#define BENCH_ITEM(i, op, in, out) { \
+        .name = "cc20_" #op, \
+        .ctx_size = sizeof(struct bench_ctx), \
+        .setup = bench_setup_ ## i, \
+        .run = bench_ ## op ## _run, \
+        .get_output = bench_get_output, \
+        .teardown = bench_teardown, \
+        .data_in = in, \
+        .data_out = out, \
+}
+#define BENCH_ITEMS(op, in, out) { \
+        BENCH_ITEM(0, op, in, out), BENCH_ITEM(1, op, in, out), BENCH_ITEM(2, op, in, out), \
+        BENCH_ITEM(3, op, in, out), BENCH_ITEM(4, op, in, out), BENCH_ITEM(5, op, in, out), \
+}
+static struct bench_item bench_encr_variant[BENCH_VARIANTS] = BENCH_ITEMS(encr, test_data_32x16, test_data_cc20);
+static struct bench_item bench_decr_variant[BENCH_VARIANTS] = BENCH_ITEMS(decr, test_data_cc20, test_data_32x16);
+
+// "ChaCha20, AVX2", and the others this CPU has
+static char desc[80];
+
 static struct n3n_transform transform = {
     .name = "ChaCha20",
-    .desc = "ChaCha20, " CC20_IMPL,
+    .desc = desc,
     .id = N2N_TRANSFORM_ID_CHACHA20,
 };
 
 void n3n_initfuncs_transform_cc20 () {
+    int n = cc20_impls(bench_impl, BENCH_VARIANTS);
+    if(n > BENCH_VARIANTS) {
+        n = BENCH_VARIANTS;
+    }
+
+    int len = snprintf(desc, sizeof(desc), "ChaCha20, %s", cc20_impl_chosen()->name);
+    if(n > 1) {
+        for(int i = 0; i < n; i++) {
+            if(len < (int)sizeof(desc)) {
+                len += snprintf(desc + len, sizeof(desc) - len, "%s%s", i ? ", " : " (of ", bench_impl[i]->name);
+            }
+        }
+        if(len < (int)sizeof(desc)) {
+            snprintf(desc + len, sizeof(desc) - len, ")");
+        }
+    }
     n3n_transform_register(&transform);
+
+    // the list shows the last registered first: so the chosen one, then
+    // each variant from the slowest, decryption after encryption
+    for(int i = n - 1; i >= 0; i--) {
+        bench_decr_variant[i].variant = bench_impl[i]->name;
+        n3n_benchmark_register(&bench_decr_variant[i]);
+    }
     n3n_benchmark_register(&bench_decr);
+    for(int i = n - 1; i >= 0; i--) {
+        bench_encr_variant[i].variant = bench_impl[i]->name;
+        n3n_benchmark_register(&bench_encr_variant[i]);
+    }
     n3n_benchmark_register(&bench_encr);
 }

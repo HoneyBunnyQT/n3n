@@ -117,7 +117,8 @@ Example:
 
 The unit tests are listed in `tests/tests_units.list` and run with
 `make test.units`; among them `tests-aes` and `tests-cc20` (the published test
-vectors of AES and ChaCha20, for whichever implementation is built),
+vectors of AES and ChaCha20, and every variant of them, Speck too, against
+plain C),
 `tests-wire-fuzz` (the decoders against every truncation of every PDU) and
 `tests-regex` (the regular expressions of the community rules).  See
 [Testing](develop/testing.md).

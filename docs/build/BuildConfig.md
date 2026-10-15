@@ -48,9 +48,11 @@ Again, and this needs to be reiterated sufficiently often, please do no forget t
 
 ### `--with-openssl`
 
-Add OpenSSL's AES as a variant to the built-in ones: the edge takes it
-where the CPU has neither AES-NI nor the ARMv8 AES instructions (OpenSSL
-brings variants of its own for those), see Hardware Features below.
+Add OpenSSL's AES and ChaCha20 as variants to the built-in ones: the edge
+takes OpenSSL's AES where the CPU has neither AES-NI nor the ARMv8 AES
+instructions (OpenSSL brings variants of its own for those), and its
+ChaCha20 where the CPU has no SSSE3 (on ARM: over the built-in NEON), see
+Hardware Features below.
 
 The speed of some ciphers' can take advantage of OpenSSL support This is
 disabled by default as the built-in ciphers already prove reasonably fast
@@ -183,7 +185,7 @@ So far, the following portions of n3n's code benefit from hardware features:
 
 ```
 AES:               AES-NI, ARMv8 Cryptography Extension - chosen at runtime
-ChaCha20:          SSE2, SSSE3, AVX2, AVX512, NEON
+ChaCha20:          SSE2, SSSE3, AVX2, AVX512, NEON - chosen at runtime
 SPECK:             SSE2, SSSE3, AVX2, AVX512, (NEON) - chosen at runtime
 Random Numbers:    RDSEED, RDRND (not faster but more random seed)
 ```
@@ -192,14 +194,14 @@ The compilations flags could easily be combined:
 
 `./configure CFLAGS="-O3 -march=native"`.
 
-SPECK and AES need no flags: every variant of the architecture is built,
-each with the extension it needs for its own code only, and the edge takes
-the fastest one the CPU it runs on has - a build for the baseline of
-x86-64 or aarch64, as distributions make them, uses AVX2 or AVX-512 for
-SPECK and AES-NI or the ARMv8 AES instructions for AES where the CPU has
-them.  `n3n-edge help transform` names the one taken and those there are,
-and `n3n-edge test benchmark speck_encr aes_encr` (and `_decr`) measures
-each of them, slowest first.  `community.cipher = AES/plain C` asks for
+SPECK, AES and ChaCha20 need no flags: every variant of the architecture
+is built, each with the extension it needs for its own code only, and the
+edge takes the fastest one the CPU it runs on has - a build for the
+baseline of x86-64 or aarch64, as distributions make them, uses AVX2 or
+AVX-512 for SPECK and ChaCha20 and AES-NI or the ARMv8 AES instructions
+for AES where the CPU has them.  `n3n-edge help transform` names the one
+taken and those there are, and `n3n-edge test benchmark speck_encr
+aes_encr cc20_encr` (and `_decr`) measures each of them, slowest first.  `community.cipher = AES/plain C` asks for
 one of them instead (see [Options](../configure/Options.md)).  On Windows,
 AVX2 and AVX-512 are left out: GCC does not align its stack there for
 their vectors (GCC bug 54412).
@@ -207,7 +209,8 @@ their vectors (GCC bug 54412).
 ## ARM
 
 On aarch64, NEON is always there, and ChaCha20 uses it without further
-ado.  On 32 bit ARM it needs to be asked for, e.g. with `-mfpu=neon`.
+ado (OpenSSL's, where built with it).  On 32 bit ARM it needs to be asked
+for, e.g. with `-mfpu=neon`.
 
 AES uses the AES instructions of ARMv8 (the Cryptography Extension) where
 the CPU has them: on aarch64 they are built in any case and taken when the

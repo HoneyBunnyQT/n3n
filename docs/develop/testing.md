@@ -209,8 +209,8 @@ byte patterns, which naturally come out differently on a big endian host.
 
 CI runs this for s390x (big endian, 64 bit), mips (big endian, 32 bit),
 aarch64 (also with the ARMv8 AES instructions and Speck with NEON) and 32
-bit ARM with NEON.  `tests-aes` and `tests-cc20` check known answers of
-whichever implementation of AES and ChaCha20 a build has.
+bit ARM with NEON.  `tests-aes`, `tests-cc20` and `tests-speck` check
+known answers, and every variant the CPU has against plain C.
 
 The unit tests check each side alone.  That two hosts of different byte
 order understand each other is what the netns scenarios tagged `cross`

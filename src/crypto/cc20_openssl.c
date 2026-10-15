@@ -18,15 +18,18 @@
  */
 
 
-#ifdef HAVE_LIBCRYPTO // openSSL 1.1 ---------------------------------------------------------------------
+#include "config.h"     // for HAVE_LIBCRYPTO
+#include "cc20.h"
+
+#if defined (HAVE_LIBCRYPTO)
 
 
 #include <n3n/logging.h> // for traceEvent
+#include <openssl/err.h>  // for ERR_print_errors
+#include <openssl/evp.h>  // for EVP_chacha20, EVP_EncryptInit_ex, ...
 #include <stdlib.h>     // for calloc, free, size_t
 #include <string.h>     // for memcpy
 
-#include "cc20.h"
-#include "config.h"  // HAVE_LIBCRYPTO
 #include "portable_endian.h"  // for htole32
 #include "../thread_local.h"  // for N3N_THREAD_LOCAL, n3n_thread_on_cleanup
 
@@ -82,8 +85,8 @@ static EVP_CIPHER_CTX *evp_ctx_get (void) {
 
 
 // encryption == decryption
-int cc20_crypt (unsigned char *out, const unsigned char *in, size_t in_len,
-                const unsigned char *iv, cc20_context_t *ctx) {
+static int cc20_openssl_crypt (unsigned char *out, const unsigned char *in, size_t in_len,
+                               const unsigned char *iv, cc20_context_t *ctx) {
 
     EVP_CIPHER_CTX *evp = evp_ctx_get();
     int evp_len;
@@ -93,7 +96,7 @@ int cc20_crypt (unsigned char *out, const unsigned char *in, size_t in_len,
         return -1;
     }
 
-    if(1 == EVP_EncryptInit_ex(evp, ctx->cipher, NULL, ctx->key, iv)) {
+    if(1 == EVP_EncryptInit_ex(evp, EVP_chacha20(), NULL, ctx->key, iv)) {
         if(1 == EVP_CIPHER_CTX_set_padding(evp, 0)) {
             if(1 == EVP_EncryptUpdate(evp, out, &evp_len, in, in_len)) {
                 evp_ciphertext_len = evp_len;
@@ -121,29 +124,10 @@ int cc20_crypt (unsigned char *out, const unsigned char *in, size_t in_len,
 }
 
 
-int cc20_init (const unsigned char *key, cc20_context_t **ctx) {
-
-    // allocate context...
-    *ctx = (cc20_context_t*)calloc(1, sizeof(cc20_context_t));
-    if(!(*ctx))
-        return -1;
-    (*ctx)->cipher = EVP_chacha20();
-    memcpy((*ctx)->key, key, CC20_KEY_BYTES);
-
-    return 0;
-}
+const struct cc20_impl cc20_impl_openssl = {
+    .name = "OpenSSL",
+    .crypt = cc20_openssl_crypt,
+};
 
 
-int cc20_deinit (cc20_context_t *ctx) {
-
-    free(ctx);
-    return 0;
-}
-
-
-#elif defined (__AVX512F__)  // AVX512 ------------------------------------------------------------------------------
-#elif defined (__AVX2__)  // AVX2 -----------------------------------------------------------------------------------
-#elif defined (__SSE2__)  // SSE2 ---------------------------------------------------------------------------------
-#elif defined (__ARM_NEON) && !defined (__ARM_BIG_ENDIAN) // NEON ---------------------------------------------------
-#else // plain C --------------------------------------------------------------------------------------------------
-#endif // openSSL 1.1, plain C ------------------------------------------------------------------------------------
+#endif // HAVE_LIBCRYPTO

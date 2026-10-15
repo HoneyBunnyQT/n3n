@@ -18,18 +18,16 @@
  */
 
 
-#ifdef HAVE_LIBCRYPTO // openSSL 1.1 ---------------------------------------------------------------------
-#elif defined (__AVX512F__)  // AVX512 ------------------------------------------------------------------------------
-#elif defined (__AVX2__)  // AVX2 -----------------------------------------------------------------------------------
-#elif defined (__SSE2__)  // SSE2 ---------------------------------------------------------------------------------
+#include "crypto_impl.h"  // for CRYPTO_TARGET_BEGIN
+#include "cc20.h"
+
+#if defined (CC20_X86)   // SSE2, and SSSE3 (cc20_ssse3.c) ------------------------------------------------------
 
 
 #include <n3n/logging.h> // for traceEvent
 #include <stdlib.h>     // for calloc, free, size_t
 #include <string.h>     // for memcpy
 
-#include "cc20.h"
-#include "config.h"  // HAVE_LIBCRYPTO
 #include "portable_endian.h"  // for htole32
 
 
@@ -39,6 +37,12 @@
 
 #include <immintrin.h>  // for _mm_xor_si128, _mm_add_epi32, _mm_slli_epi32
 #include <xmmintrin.h>  // for _MM_SHUFFLE
+
+#if defined (CC20_SSSE3)
+CRYPTO_TARGET_BEGIN("ssse3")
+#else
+CRYPTO_TARGET_BEGIN("sse2")
+#endif
 
 
 #define SL  _mm_slli_epi32
@@ -51,7 +55,7 @@
 #define ONE   _mm_setr_epi32(1, 0, 0, 0)
 #define TWO   _mm_setr_epi32(2, 0, 0, 0)
 
-#if defined (__SSSE3__) // --- SSSE3
+#if defined (CC20_SSSE3) // --- SSSE3
 
 #define L8  _mm_set_epi32(0x0e0d0c0fL, 0x0a09080bL, 0x06050407L, 0x02010003L)
 #define L16 _mm_set_epi32(0x0d0c0f0eL, 0x09080b0aL, 0x05040706L, 0x01000302L)
@@ -98,8 +102,8 @@
     I += 16; O += 16                                                   \
 
 
-int cc20_crypt (unsigned char *out, const unsigned char *in, size_t in_len,
-                const unsigned char *iv, cc20_context_t *ctx) {
+static int cc20_sse2_crypt (unsigned char *out, const unsigned char *in, size_t in_len,
+                            const unsigned char *iv, cc20_context_t *ctx) {
 
     __m128i a, b, c, d, k0, k1, k2, k3, k4, k5, k6, k7;
 
@@ -199,26 +203,18 @@ int cc20_crypt (unsigned char *out, const unsigned char *in, size_t in_len,
     return(0);
 }
 
-
-int cc20_init (const unsigned char *key, cc20_context_t **ctx) {
-
-    // allocate context...
-    *ctx = (cc20_context_t*)calloc(1, sizeof(cc20_context_t));
-    if(!(*ctx))
-        return -1;
-    memcpy((*ctx)->key, key, CC20_KEY_BYTES);
-
-    return 0;
-}
+CRYPTO_TARGET_END
 
 
-int cc20_deinit (cc20_context_t *ctx) {
+#if defined (CC20_SSSE3)
+const struct cc20_impl cc20_impl_ssse3 = {
+    .name = "SSSE3",
+#else
+const struct cc20_impl cc20_impl_sse2 = {
+    .name = "SSE2",
+#endif
+    .crypt = cc20_sse2_crypt,
+};
 
-    free(ctx);
-    return 0;
-}
 
-
-#elif defined (__ARM_NEON) && !defined (__ARM_BIG_ENDIAN) // NEON ---------------------------------------------------
-#else // plain C --------------------------------------------------------------------------------------------------
-#endif // openSSL 1.1, plain C ------------------------------------------------------------------------------------
+#endif // CC20_X86

@@ -2,13 +2,17 @@
  * Copyright (C) Honey Bunny QT
  * SPDX-License-Identifier: GPL-3.0-only
  *
- * Unit tests of ChaCha20, whichever implementation is built: plain C,
- * SSE2, AVX2, AVX512, NEON or OpenSSL
+ * Unit tests of ChaCha20's variants (src/crypto/cc20.c): every one this
+ * CPU has gives the RFC 8439 vector, the same keystream for every length,
+ * unaligned and in place - and the same bytes as plain C.
+ *
+ * The output is the same on every CPU: which variants there are goes to
+ * stderr.
  */
 
 #include <stdio.h>             // for printf
 #include <string.h>            // for memcmp, memset
-#include "../src/crypto/cc20.h" // for cc20_init, cc20_crypt, cc20_deinit
+#include "../src/crypto/cc20.h" // for cc20_init_impl, cc20_crypt, cc20_impls
 
 
 // RFC 8439 2.4.2: key 00 01 02 ... 1f, nonce 00 00 00 00 00 00 00 4a 00 00
@@ -46,7 +50,9 @@ static int test_rfc (cc20_context_t *ctx) {
     cc20_crypt(back, out, sizeof(rfc_ct), rfc_iv, ctx);
     failed |= memcmp(back, rfc_pt, sizeof(rfc_ct)) != 0;
 
-    printf("ChaCha20: RFC 8439 vector: %s\n", failed ? "FAIL" : "ok");
+    if(failed) {
+        fprintf(stderr, "%s: not the RFC 8439 vector\n", ctx->impl->name);
+    }
     return failed;
 }
 
@@ -85,27 +91,83 @@ static int test_lengths (cc20_context_t *ctx) {
         failed |= memcmp(out + 1, ref, len) != 0;
     }
 
-    printf("ChaCha20: lengths 0 to %d, unaligned, in place: %s\n", LONG, failed ? "FAIL" : "ok");
+    if(failed) {
+        fprintf(stderr, "%s: not the same keystream for every length\n", ctx->impl->name);
+    }
+    return failed;
+}
+
+
+// The same bytes as plain C, for every length up to 1100 and a few keys
+static int test_as_plainc (const struct cc20_impl *plain, const struct cc20_impl *impl) {
+    enum { LONG = 1100 };
+    uint8_t key[CC20_KEY_BYTES], iv[16], in[LONG], ref[LONG], out[LONG];
+    cc20_context_t *a, *b;
+    int failed = 0;
+
+    for(int k = 0; k < 4; k++) {
+        for(int i = 0; i < CC20_KEY_BYTES; i++) {
+            key[i] = (uint8_t)(i * 13 + k * 101);
+        }
+        for(int i = 0; i < 16; i++) {
+            iv[i] = (uint8_t)(i * 29 + k);
+        }
+        for(int i = 0; i < LONG; i++) {
+            in[i] = (uint8_t)(i * 5 + k);
+        }
+        if(cc20_init_impl(key, &a, plain) || cc20_init_impl(key, &b, impl)) {
+            return 1;
+        }
+        for(size_t len = 0; len <= LONG; len += 1 + (len % 3)) {
+            cc20_crypt(ref, in, len, iv, a);
+            cc20_crypt(out, in, len, iv, b);
+            failed |= memcmp(out, ref, len) != 0;
+        }
+        cc20_deinit(a);
+        cc20_deinit(b);
+    }
+    if(failed) {
+        fprintf(stderr, "%s: not as plain C\n", impl->name);
+    }
     return failed;
 }
 
 
 int main (int argc, char * argv[]) {
+    // slowest first: plain C, then those of this CPU
+    const struct cc20_impl *impl[8];
+    int n = cc20_impls(impl, 8);
     uint8_t key[CC20_KEY_BYTES];
-    cc20_context_t *ctx;
-    int failed = 0;
+    int rfc = 0, lengths = 0, same = 0, chosen_listed = 0;
+
+    fprintf(stderr, "variants:");
+    for(int v = 0; v < n && v < 8; v++) {
+        fprintf(stderr, " %s%s", impl[v]->name, impl[v] == cc20_impl_chosen() ? " (chosen)" : "");
+        chosen_listed |= impl[v] == cc20_impl_chosen();
+    }
+    fprintf(stderr, "\n");
 
     for(int i = 0; i < CC20_KEY_BYTES; i++) {
         key[i] = i;
     }
-    if(cc20_init(key, &ctx)) {
-        printf("ChaCha20: cc20_init failed\n");
-        return 1;
+    for(int v = 0; v < n && v < 8; v++) {
+        cc20_context_t *ctx;
+        if(cc20_init_impl(key, &ctx, impl[v])) {
+            printf("ChaCha20: cc20_init_impl failed\n");
+            return 1;
+        }
+        rfc |= test_rfc(ctx);
+        lengths |= test_lengths(ctx);
+        cc20_deinit(ctx);
+        if(v > 0) {
+            same |= test_as_plainc(impl[0], impl[v]);
+        }
     }
 
-    failed |= test_rfc(ctx);
-    failed |= test_lengths(ctx);
+    printf("ChaCha20: the variant chosen is one this CPU has: %s\n", chosen_listed && n >= 1 ? "ok" : "FAIL");
+    printf("ChaCha20: RFC 8439 vector, every variant: %s\n", rfc ? "FAIL" : "ok");
+    printf("ChaCha20: lengths 0 to 1100, unaligned, in place, every variant: %s\n", lengths ? "FAIL" : "ok");
+    printf("ChaCha20: every variant as plain C: %s\n", same ? "FAIL" : "ok");
 
-    cc20_deinit(ctx);
-    return failed;
+    return rfc | lengths | same | !chosen_listed;
 }
