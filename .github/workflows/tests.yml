@@ -547,20 +547,18 @@ jobs:
       - name: Configure and Build
         shell: bash
         run: |
-          # this is a hack! it assumes the default SDK is the 'right' one
-          export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk
+          # the SDK of the toolchain that builds (xcode-select's): the
+          # Command Line Tools' may be newer than its linker can read
+          # (macOS 27's libSystem.tbd, "unknown architecture" for the
+          # Xcode 26 ld), and only some runners have such a one
+          export SDKROOT="$(xcrun --show-sdk-path)"
           ./autogen.sh
-          # -arch, as for the universal binaries below: with -target
-          # and this triple (no macOS version in it), the compiler
-          # test of configure failed on the runners
+          # -arch, as for the universal binaries below
           export CFLAGS="-arch ${{ matrix.cpu }}"
           export LDFLAGS="-arch ${{ matrix.cpu }}"
-          # --build too: a cross build for configure, which then runs
-          # none of its test programs - x86_64 ones on an arm64 runner
-          # need Rosetta, which not every runner has.  What failed goes
-          # into the log itself (from the compiler's first test): the
-          # artifact below is not at hand everywhere
-          ./configure --build="$(scripts/config.guess)" --host=${{ matrix.arch }} || {
+          # what failed goes into the log itself (from the compiler's
+          # first test): the artifact below is not at hand everywhere
+          ./configure --host=${{ matrix.arch }} || {
             awk '/whether the C compiler works/ { f = 1 } f && n++ < 40' config.log
             exit 1; }
           make
@@ -605,8 +603,11 @@ jobs:
       - name: Configure and Build
         shell: bash
         run: |
-          # this is a hack! it assumes the default SDK is the 'right' one
-          export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk
+          # the SDK of the toolchain that builds (xcode-select's): the
+          # Command Line Tools' may be newer than its linker can read
+          # (macOS 27's libSystem.tbd, "unknown architecture" for the
+          # Xcode 26 ld), and only some runners have such a one
+          export SDKROOT="$(xcrun --show-sdk-path)"
           ./autogen.sh
           export CFLAGS="-arch x86_64 -arch arm64"
           export LDFLAGS="-arch x86_64 -arch arm64"
