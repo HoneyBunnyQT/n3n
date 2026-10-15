@@ -266,5 +266,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
         run: |
+          # the notes are the tag's message, from the API: gh's
+          # --notes-from-tag reads a checkout, and this job has none.
+          # Its first line ("n3n-be 3.4.8") is the title already
+          notes="$RUNNER_TEMP/notes.md"
+          tag_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" \
+            --jq 'select(.object.type == "tag") | .object.sha')
+          if [ -z "$tag_sha" ]; then
+            echo "::error::$TAG is no annotated tag: its message is the notes"
+            exit 1
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_sha" --jq .message |
+            awk -v title="n3n-be $TAG" \
+              'NR == 1 && $0 == title { skip = 1; next }
+               NR == 2 && skip && $0 == "" { next }
+               { print }' > "$notes"
           gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" \
-            --draft --verify-tag --title "n3n-be $TAG" --notes-from-tag
+            --draft --verify-tag --title "n3n-be $TAG" --notes-file "$notes"
