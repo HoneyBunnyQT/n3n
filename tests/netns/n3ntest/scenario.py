@@ -1890,11 +1890,11 @@ class Run:
         SSDP's group (and IPv6, with inner6) only where both edges allow
         multicast (filter.allow_multicast) - else the one that does not
         counts the drop - broadcast always; and between TAP edges, frames
-        to the multicast MACs of IPv4 and IPv6 as their packets, to the
-        broadcast MAC, and to a multicast MAC of neither (01:80:c2:00:00:0e,
-        LLDP's): never, whatever the option - the edge takes it for the
-        MAC of a peer it does not know and hands it to the supernode, which
-        does not know it either and does not flood it"""
+        to multicast MACs as the multicast packets: those of IPv4 and IPv6,
+        and of protocols without IP (NetBEUI's NetBIOS, PROFINET's DCP);
+        frames to the broadcast MAC always; and to an IEEE link-local one
+        (LLDP's 01:80:c2:00:00:0e) never, the sending edge dropping and
+        counting them, whatever the option"""
         for src, dst in (("a", "b"), ("b", "a")):
             allow = {s: self._site_option(s, "filter", "allow_multicast",
                                           False) for s in (src, dst)}
@@ -1927,6 +1927,7 @@ class Run:
 
             if tap:
                 macs = (("01:00:5e:7f:ff:fa", ok), ("33:33:00:00:00:0c", ok),
+                        ("03:00:00:00:00:01", ok), ("01:0e:cf:00:00:00", ok),
                         ("ff:ff:ff:ff:ff:ff", True),
                         ("01:80:c2:00:00:0e", False))
                 for mac, expect in macs:
@@ -1938,6 +1939,15 @@ class Run:
                     self.check("mcast:{}:l2 {}".format(way, mac),
                                (got >= 8) if expect else (got == 0),
                                "{} of 10 frames to {}".format(got, mac))
+
+            if tap:
+                # the link-local frames: dropped by the sender itself, not
+                # left to the supernodes
+                after = self.edges[src]["daemon"].stats()
+                n = stats_delta(before[src], after).get(
+                    "multicast_drop", {}).get("tx_pkt", 0)
+                self.check("mcast:{}:link-local".format(way), n >= 10,
+                           "{} multicast_drop tx_pkt on {}".format(n, src))
 
             if not ok:
                 # the edge that does not allow it counts what it dropped:

@@ -622,8 +622,9 @@ SCENARIOS = [
     Scenario(
         "multicast",
         "both edges allow multicast (filter.allow_multicast): SSDP's group "
-        "over IPv4 and IPv6, broadcast, and frames to multicast MACs, each "
-        "way",
+        "over IPv4 and IPv6, broadcast, and frames to multicast MACs - of "
+        "IPv4, IPv6, NetBEUI and PROFINET's DCP - each way, but those to "
+        "LLDP's, which the sender drops",
         Site(["easy-kept"]), Site(["easy-changed"]),
         "direct", conf={"filter": {"allow_multicast": True}}, inner6=True,
         multicast=True, tags=["ipv6"]),
