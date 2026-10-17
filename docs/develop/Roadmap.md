@@ -205,13 +205,16 @@ tests and `make lint` pass after each.
       from sysusers.d, the app's version that of the core and its release
       build signed from the environment; `release.yml`, started by hand,
       builds them all from a tag, with a draft GitHub Release if asked;
-      `tests.yml` no longer reacts to releases.  Not run yet.  The app's ID
-      is `io.github.honeybunnyqt.n3nbe` (2026-10-15).  Open: the signing key,
-      the channels (apt repository, AUR, COPR, Obtainium / IzzyOnDroid),
-      OpenWrt, Windows and macOS in the release
+      `tests.yml` no longer reacts to releases.  The app's ID is
+      `io.github.honeybunnyqt.n3nbe` (2026-10-15).  First release: 3.4.8
+      (2026-10-15), Linux packages and the signed app.  Since: a zip of the
+      Windows programs and a tarball of the macOS ones (from the tag after
+      3.4.8, the first with utun).  Open: the channels (apt repository,
+      AUR, COPR, Obtainium / IzzyOnDroid), OpenWrt
 - [x] TUN mode (layer 3 device): `tuntap.type = tun`, `src/tun.c`, netns
-      scenarios `tun-tap` and `tun-tun`.  Open: IPv6 unicast out (neighbour
-      discovery), other systems than Linux; see [Mobile and TUN](MobileAndTun.md)
+      scenarios `tun-tap` and `tun-tun`; IPv6 (neighbour discovery); macOS
+      on its own `utun` device (2026-10-17, `tests/macos/utun.py` in CI).
+      Open: Windows (Wintun), the BSDs; see [Mobile and TUN](MobileAndTun.md)
 - [ ] Android app (`VpnService`, configuration by QR code), see
       [Mobile and TUN](MobileAndTun.md).  Done: `android/` next to the
       core, built from `src/` by the NDK, CI artifact; import a file or a
@@ -516,14 +519,19 @@ while `peer` keeps getting what does not touch the wire, merged into
 
 ### Far future
 
-- [ ] TUN / L3 mode, `utun` on macOS (the tap kext is gone there)
+- [x] TUN / L3 mode, `utun` on macOS (the tap kext is gone there): done
+      2026-10-17, see TUN mode above
 - [ ] Kademlia directory for large networks, preferring low-RTT nodes in the
       buckets; NATed peers only as clients of the directory
 - [ ] Android (VpnService) and iOS (NetworkExtension) on a stable libn3n API
 - [ ] Peer names in DNS (`laptop.mycommunity`), answered by the peer itself
 - [ ] Prometheus endpoint for the metrics
 - [ ] Relay quotas, rate limits against floods of registrations
-- [ ] Windows on par with Linux
+- [ ] Windows on par with Linux.  One step: TUN on Wintun (the signed
+      driver of WireGuard, a DLL that installs it on the fly), with
+      `tun.c` as on Android and macOS, instead of OpenVPN's TAP driver;
+      its licence for shipping the DLL with a GPL-3.0 program to check
+      first.  What needs layer 2 (bridging, non-IP protocols) stays TAP
 
 ## Decisions
 
@@ -597,7 +605,7 @@ while `peer` keeps getting what does not touch the wire, merged into
 
 Current ideas, half-decided things, commands worth keeping.
 
-### Where things stand (2026-10-14)
+### Where things stand (2026-10-17)
 
 Recently on `main` and done: epoll and batched I/O (`recvmmsg()` /
 `sendmmsg()`), with `tests/netns/bench.py` for the whole packet path; the
@@ -633,6 +641,11 @@ failed now and then in configure: their `SDKROOT` was the Command Line
 Tools' SDK, on some runners macOS 27's, which the Xcode 26 linker cannot
 read ("unknown architecture arm64e.x1-macos" in `libSystem.tbd`); it is
 `xcrun --show-sdk-path` now, and the jobs print configure's failure.
+Since (2026-10-17): the edge on macOS's own utun device
+(`tuntap.type = tun`, no kernel extension), tested end to end in CI by
+`tests/macos/utun.py`; `/var/run` as the rundir off Linux (macOS had no
+management socket); `release.yml` makes a zip of the Windows programs and
+a tarball of the macOS ones.
 
 Open, in rough order:
 
@@ -645,10 +658,16 @@ Open, in rough order:
 - IPv6 inside the tunnel: on a phone, then other systems; fewer
   privileges (Landlock, CAP_NET_ADMIN only is there);
   the supernode's forwards with GSO.
-- Releases: the app's ID, the signing key, the channels - decisions to
-  take, then the first run of `release.yml`.
-- On real hardware: the Android app on a phone, the ARM benchmarks, the
-  benchmarks for the parked upstream PRs.
+- Releases: the channels - decisions to take.  The Windows zip for
+  3.4.8: `release.yml` without "draft", then the zip from the run's
+  artifacts onto the release (and into its SHA256SUMS) by hand.
+- To try, then document: DLNA/SSDP between edges (VLC on Windows, minidlna
+  on Linux) - SSDP is IPv4 multicast, which `filter.allow_multicast`
+  (default false) drops on both edges; on Windows also the interface
+  metric and the firewall profile of the TAP adapter.
+- On real hardware: the Android app on a phone, the edge on a Mac (only
+  CI's macOS runners so far) with a Linux edge across the internet, the
+  ARM benchmarks, the benchmarks for the parked upstream PRs.
 - Keep in mind a real finding: the direct path between two edges can be
   the lossy one (an ISP spreading traffic over two peering legs, one
   dropping) while the relay is clean - see the v4 path-manager note above.
