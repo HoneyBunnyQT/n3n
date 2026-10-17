@@ -53,6 +53,8 @@ The build gives `n3n.exe` and copies of it as `n3n-edge.exe` and
 `n3n-supernode.exe`, see [n3n(8)](../n3n.8).  `n3n-edge.exe` reads the
 `%USERPROFILE%\n3n\edge.conf` file if no session name is given, and
 `n3n-supernode.exe` the `%USERPROFILE%\n3n\supernode.conf` file.
+`n3n.exe edge` and `n3n.exe supernode` are the same; the zip of a release
+has `n3n.exe` only, and so these.
  
 Example [edge.conf](../edge.conf.sample)
 and [supernode.conf](../supernode.conf.sample) are available.

@@ -2,7 +2,8 @@
 name: Release
 
 # The packages of a release, built from its tag - .deb for four
-# architectures, .rpm, the Arch package and the signed Android app - and,
+# architectures, .rpm, the Arch package, the signed Android app and a zip
+# of the Windows programs - and,
 # if asked, a draft GitHub Release of the tag with them, their SHA256SUMS
 # and attestations of where they were built.  See
 # docs/develop/Releasing.md.
@@ -229,6 +230,75 @@ jobs:
           name: apk
           path: dist/*.apk
 
+  windows:
+    name: Windows x86_64
+    # built as in tests.yml, whose Windows jobs test this build
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+
+      - name: Fix Checkout
+        shell: bash
+        run: |
+          git fetch --force --tags
+
+      - name: Build
+        shell: bash
+        run: |
+          # static: the toolchain's libwinpthread-1.dll goes into n3n.exe,
+          # which then needs Windows' own DLLs only
+          export LDFLAGS=-static
+          ./scripts/hack_fakeautoconf.sh
+          make
+          make install.bin DESTDIR=install
+
+      - name: Zip
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          name="n3n-be-$TAG-windows-x86_64"
+          mkdir -p "$name" dist
+          cp install/usr/local/sbin/n3n.exe install/usr/local/bin/n3nctl \
+            docs/edge.conf.sample docs/supernode.conf.sample "$name/"
+          # n3n.exe only, no copies n3n-edge.exe and n3n-supernode.exe:
+          # "n3n.exe edge" and "n3n.exe supernode", see the README
+          # the README of the workflow's commit, so that a tag from before
+          # it gets one too
+          git show "$GITHUB_SHA:packages/windows/README.txt" \
+            > "$name/README.txt"
+          cp -r LICENSES "$name/"
+          # winpthreads (MIT), linked in, wants its notice along
+          gcc_prefix=$(dirname "$(command -v gcc)")/..
+          find "$gcc_prefix" -ipath '*winpthread*' -iname 'COPYING*' \
+            2>/dev/null | head -5
+          notice=$(find "$gcc_prefix" -ipath '*winpthread*' \
+            -iname 'COPYING*' 2>/dev/null | head -1)
+          if [ -z "$notice" ]; then
+            echo "::error::no licence notice of winpthreads found"
+            exit 1
+          fi
+          cp "$notice" "$name/LICENSES/winpthreads.txt"
+          # the DLLs it needs: Windows' own only, or the zip is not enough
+          objdump -p "$name/n3n.exe" | grep "DLL Name"
+          if objdump -p "$name/n3n.exe" | grep "DLL Name" |
+              grep -iv -e kernel32 -e msvcrt -e ws2_32 -e iphlpapi \
+                -e netapi32 -e advapi32 -e user32 -e api-ms-win; then
+            echo "::error::n3n.exe needs a DLL that is not in the zip"
+            exit 1
+          fi
+          7z a -tzip "dist/$name.zip" "$name"
+          7z l "dist/$name.zip"
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: windows
+          path: dist/*.zip
+
   release:
     name: Draft GitHub Release
     if: ${{ inputs.draft }}
@@ -237,6 +307,7 @@ jobs:
       - rpm
       - arch
       - apk
+      - windows
     runs-on: ubuntu-latest
     permissions:
       contents: write

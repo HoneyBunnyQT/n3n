@@ -20,6 +20,7 @@ From the tag, the workflow `Release` builds:
 | `n3n-be-3.4.8-1.x86_64.rpm` | Fedora | in a `fedora:latest` container |
 | `n3n-be-3.4.8-1-x86_64.pkg.tar.zst` | Arch Linux | in an `archlinux:base-devel` container, from `packages/arch/PKGBUILD` |
 | `n3n-be-android-3.4.8.apk` | Android 7.0 and newer | signed with the release key, see below |
+| `n3n-be-3.4.8-windows-x86_64.zip` | Windows 10 and newer, 64 bit | on `windows-latest` as tests.yml builds and tests it, but linked statically (no `libwinpthread-1.dll` of the toolchain to bring along); `n3n.exe` alone, without the copies `n3n-edge.exe` and `n3n-supernode.exe` (`n3n.exe edge`, `n3n.exe supernode`), the sample configurations, `n3nctl`, the licences and a README (`packages/windows/README.txt`, from the workflow's commit, so that older tags get it too) |
 | `SHA256SUMS` | checking the downloads | |
 
 With "draft" ticked, it then makes a draft GitHub Release of the tag with
@@ -38,6 +39,11 @@ runs as and the edge drops its privileges to, comes from a sysusers.d file
 
 The .deb of armhf and i386 are cross built, where dpkg-shlibdeps finds no
 libraries to look at: they do not say which version of libc6 they need.
+
+The Windows programs need the TAP driver of OpenVPN (tap-windows6), which
+the zip does not bring, as before; the job fails if `n3n.exe` needs a DLL
+that is not Windows' own.  They are not signed: SmartScreen warns on the
+first start.
 
 ## Steps
 
@@ -99,6 +105,5 @@ none is set up yet:
 - **Android**: Obtainium follows the GitHub Releases as they are; the
   IzzyOnDroid repository takes the APKs from them for the F-Droid app;
   F-Droid itself builds from the source, a merge request to fdroiddata.
-- Not built yet: the OpenWrt packages and the Windows and macOS programs
-  (tests.yml builds them for pull requests), and aarch64 for the .rpm and
-  the Arch package.
+- Not built yet: the OpenWrt packages and the macOS programs (tests.yml
+  builds them), and aarch64 for the .rpm and the Arch package.

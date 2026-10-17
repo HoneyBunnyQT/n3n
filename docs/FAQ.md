@@ -12,15 +12,16 @@ SPDX-FileCopyrightText: Copyright Honey Bunny QT
 
 ### Where can I find binaries for Windows?
 
-We do not have a Windows package, but EXE files for modern Windows can be
-found as part of the latest release.
+The releases have a zip of the Windows programs,
+`n3n-be-VERSION-windows-x86_64.zip`, for 64 bit Windows 10 and newer.  Its
+README says what else is needed: the TAP driver of OpenVPN (tap-windows6).
 
 If you want to use with Windows XP - eg, for retro gaming - those binaries
 are not part of the standard release package.  The automated test workflow
 does create them and they can be downloaded from the _Actions_ tab, at the
 _Testing_ workflow, select the newest run, scroll down to the _Artifacts_
-sections where the _binaries_ file contains the Windows binaries in its
-`i686-w64-mingw32/usr/local/sbin/` folder.
+sections where the _binaries-i686-w64-mingw32_ file contains the Windows
+binaries in its `i686-w64-mingw32/usr/local/sbin/` folder.
 
 ## Supernode
 
