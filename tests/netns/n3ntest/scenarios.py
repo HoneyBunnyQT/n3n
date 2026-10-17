@@ -620,6 +620,30 @@ SCENARIOS = [
             "address6": "fd00:77::b0b/64"}}),
         "direct", inner6=True, tags=["quick", "ipv6"]),
     Scenario(
+        "multicast",
+        "both edges allow multicast (filter.allow_multicast): SSDP's group "
+        "over IPv4 and IPv6, broadcast, and frames to multicast MACs, each "
+        "way",
+        Site(["easy-kept"]), Site(["easy-changed"]),
+        "direct", conf={"filter": {"allow_multicast": True}}, inner6=True,
+        multicast=True, tags=["ipv6"]),
+    Scenario(
+        "multicast-half",
+        "only a allows multicast: b drops a's on the way in and its own on "
+        "the way out, and counts them; broadcast passes, each way",
+        Site(["easy-kept"], conf={"filter": {"allow_multicast": True}}),
+        Site(["easy-changed"]),
+        "direct", multicast=True, tags=["quick"]),
+    Scenario(
+        "multicast-tun",
+        "a TUN edge and a TAP edge, both allowing multicast: the TUN edge "
+        "builds the frames to SSDP's group and to the subnet's broadcast "
+        "address, and takes them in, each way",
+        Site(["easy-kept"], conf={"tuntap": {"type": "tun"}}),
+        Site(["easy-changed"]),
+        "direct", conf={"filter": {"allow_multicast": True}},
+        multicast=True),
+    Scenario(
         "ipv6-tun-tun",
         "IPv6 inside the tunnel, two TUN edges, relayed: each finds the "
         "other's MAC from the IPv4 address in its IPv6 one, a ping each "

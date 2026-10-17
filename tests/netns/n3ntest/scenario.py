@@ -94,6 +94,13 @@ NOFRAG = """table ip nofrag {
 
 TRAFFIC_PY = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                           "traffic.py")
+MCAST_PY = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "mcast.py")
+# SSDP's (DLNA, UPnP) group and port, for IPv4 and site-local IPv6
+MCAST_GROUP4 = "239.255.255.250"
+MCAST_GROUP6 = "ff05::c"
+MCAST_PORT = 1900
+BCAST_PORT = 1901
 
 
 # A supernode's firewall that lets nothing in over IPv6 but neighbour
@@ -173,7 +180,8 @@ class Scenario:
                  outage_max_gap=None, reload=None, sn_versions=None,
                  direct_ok=None, sn_peer_family=4, sn_start_gap=0,
                  tcp_burst=0, spray=0, sn_nofile=None, sn_udp_only=(),
-                 udp_lost=None, sn_count=2, marked=(), inner6=False):
+                 udp_lost=None, sn_count=2, marked=(), inner6=False,
+                 multicast=False):
         self.name = name
         self.desc = desc
         self.sites = {"a": a, "b": b}
@@ -213,6 +221,9 @@ class Scenario:
         # IPv6 inside the tunnel: tuntap.address6 = auto on the edges (a
         # site's conf may give another), a ping each way, see check_inner6()
         self.inner6 = inner6
+        # Multicast and broadcast each way, against each edge's
+        # filter.allow_multicast, see check_multicast()
+        self.multicast = multicast
         # At most this many times an edge may move its peer to another
         # address ("peer ... changed" in its log) once they are direct
         self.max_moves = max_moves
@@ -1852,6 +1863,94 @@ class Run:
             self.check("ipv6:{}->{}".format(src, dst), got >= 3,
                        "{} of 5 pings to {} answered".format(got, addr))
 
+    def _site_option(self, sname, section, option, default=None):
+        """An option of an edge's configuration, as the scenario gives it"""
+        value = default
+        for conf in (self.sc.conf, self.sc.sites[sname].conf):
+            value = (conf or {}).get(section, {}).get(option, value)
+        return value
+
+    def _mcast_case(self, src, dst, kind, send, listen):
+        """What of 10 marked datagrams or frames from src got to dst"""
+        s_ns, d_ns = self.edges[src]["ns"], self.edges[dst]["ns"]
+        name = "mcast-{}{}-{}".format(src, dst, kind)
+        recv = self.lab.spawn(
+            name, d_ns, [sys.executable, MCAST_PY, "listen"] + listen,
+            stdout_path=os.path.join(self.workdir, name + ".json"))
+        time.sleep(0.5)
+        subprocess.run(["ip", "netns", "exec", s_ns, sys.executable,
+                        MCAST_PY, "send"] + send,
+                       capture_output=True, timeout=30)
+        time.sleep(0.5)
+        recv.stop()
+        return self._read_json(recv.out.name)
+
+    def check_multicast(self):
+        """Multicast and broadcast inside the tunnel, each way: IPv4 to
+        SSDP's group (and IPv6, with inner6) only where both edges allow
+        multicast (filter.allow_multicast) - else the one that does not
+        counts the drop - broadcast always; and between TAP edges, frames
+        to the multicast MACs of IPv4 and IPv6 as their packets, to the
+        broadcast MAC, and to a multicast MAC of neither (01:80:c2:00:00:0e,
+        LLDP's): never, whatever the option - the edge takes it for the
+        MAC of a peer it does not know and hands it to the supernode, which
+        does not know it either and does not flood it"""
+        for src, dst in (("a", "b"), ("b", "a")):
+            allow = {s: self._site_option(s, "filter", "allow_multicast",
+                                          False) for s in (src, dst)}
+            tap = all(self._site_option(s, "tuntap", "type", "tap") == "tap"
+                      for s in (src, dst))
+            ok = allow[src] and allow[dst]
+            way = "{}->{}".format(src, dst)
+            before = {s: self.edges[s]["daemon"].stats() for s in (src, dst)}
+
+            cases = [("ip4", ["ip4", "--to", MCAST_GROUP4,
+                              "--port", str(MCAST_PORT)],
+                      ["ip4", "--group", MCAST_GROUP4,
+                       "--port", str(MCAST_PORT)], ok),
+                     ("bcast", ["ip4", "--port", str(BCAST_PORT)],
+                      ["ip4", "--port", str(BCAST_PORT)], True)]
+            if self.sc.inner6:
+                cases.append(("ip6", ["ip6", "--to", MCAST_GROUP6,
+                                      "--port", str(MCAST_PORT)],
+                              ["ip6", "--group", MCAST_GROUP6,
+                               "--port", str(MCAST_PORT)], ok))
+            for kind, send, listen, expect in cases:
+                got = self._mcast_case(src, dst, kind, send,
+                                       listen).get("rx", 0)
+                self.check("mcast:{}:{}".format(way, kind),
+                           (got >= 8) if expect else (got == 0),
+                           "{} of 10 {} ({})".format(
+                               got, kind, "expected" if expect
+                               else "dropped as expected" if got == 0
+                               else "should have been dropped"))
+
+            if tap:
+                macs = (("01:00:5e:7f:ff:fa", ok), ("33:33:00:00:00:0c", ok),
+                        ("ff:ff:ff:ff:ff:ff", True),
+                        ("01:80:c2:00:00:0e", False))
+                for mac, expect in macs:
+                    got = self._mcast_case(src, dst, "l2-" + mac[:8],
+                                           ["l2", "--to", mac],
+                                           ["l2"]).get(mac, 0)
+                    self.check("mcast:{}:l2 {}".format(way, mac),
+                               (got >= 8) if expect else (got == 0),
+                               "{} of 10 frames to {}".format(got, mac))
+
+            if not ok:
+                # the edge that does not allow it counts what it dropped:
+                # the sender on the way out, else the receiver on the way in
+                after = {s: self.edges[s]["daemon"].stats()
+                         for s in (src, dst)}
+                if not allow[src]:
+                    who, field = src, "tx_pkt"
+                else:
+                    who, field = dst, "rx_pkt"
+                n = stats_delta(before[who], after[who]).get(
+                    "multicast_drop", {}).get(field, 0)
+                self.check("mcast:{}:counted".format(way), n > 0,
+                           "{} multicast_drop {} on {}".format(n, field, who))
+
     # 6. All of it
 
     def execute(self):
@@ -1897,6 +1996,8 @@ class Run:
                 self.check_gateway()
             if self.sc.inner6 and self.check_alive("measurement"):
                 self.check_inner6()
+            if self.sc.multicast and self.check_alive("measurement"):
+                self.check_multicast()
             if self.sc.max_moves is not None:
                 self.check_moves()
             self._dump_state()
