@@ -572,10 +572,16 @@ static void jsonrpc_get_mac (char *id, struct n3n_runtime_data *eee, conn_t *con
     int index = 0;  // Track the current item number
 
     HASH_ITER(hh, eee->relay.communities, community, tmp_community) {
+        if(count >= limit) {
+            break;
+        }
         HASH_ITER(hh, community->assoc, assoc, tmp_assoc) {
             if(index < offset) {
                 index++;
                 continue;
+            }
+            if(count >= limit) {
+                break;
             }
             index++;
 
@@ -599,9 +605,6 @@ static void jsonrpc_get_mac (char *id, struct n3n_runtime_data *eee, conn_t *con
                 return;
             }
             count++;
-            if(count >= limit) {
-                break;
-            }
         }
     }
 
@@ -751,6 +754,9 @@ static void jsonrpc_get_edges (char *id, struct n3n_runtime_data *eee, conn_t *c
             index++;
             continue;
         }
+        if(count >= limit) {
+            break;
+        }
         index++;
 
         jsonrpc_get_edges_row(
@@ -766,9 +772,6 @@ static void jsonrpc_get_edges (char *id, struct n3n_runtime_data *eee, conn_t *c
             return;
         }
         count++;
-        if(count >= limit) {
-            break;
-        }
     }
 
     // dump peer-to-peer nodes
@@ -776,6 +779,9 @@ static void jsonrpc_get_edges (char *id, struct n3n_runtime_data *eee, conn_t *c
         if(index < offset) {
             index++;
             continue;
+        }
+        if(count >= limit) {
+            break;
         }
         index++;
 
@@ -792,17 +798,20 @@ static void jsonrpc_get_edges (char *id, struct n3n_runtime_data *eee, conn_t *c
             return;
         }
         count++;
-        if(count >= limit) {
-            break;
-        }
     }
 
     struct sn_community *community, *tmp;
     HASH_ITER(hh, eee->relay.communities, community, tmp) {
+        if(count >= limit) {
+            break;
+        }
         HASH_ITER(hh, community->edges, peer, tmpPeer) {
             if(index < offset) {
                 index++;
                 continue;
+            }
+            if(count >= limit) {
+                break;
             }
             index++;
 
@@ -819,9 +828,6 @@ static void jsonrpc_get_edges (char *id, struct n3n_runtime_data *eee, conn_t *c
                 return;
             }
             count++;
-            if(count >= limit) {
-                break;
-            }
         }
     }
 
