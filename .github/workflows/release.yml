@@ -2,8 +2,8 @@
 name: Release
 
 # The packages of a release, built from its tag - .deb for four
-# architectures, .rpm, the Arch package, the signed Android app and a zip
-# of the Windows programs - and,
+# architectures, .rpm, the Arch package, the signed Android app, a zip of
+# the Windows programs and a tarball of the macOS ones - and,
 # if asked, a draft GitHub Release of the tag with them, their SHA256SUMS
 # and attestations of where they were built.  See
 # docs/develop/Releasing.md.
@@ -299,6 +299,69 @@ jobs:
           name: windows
           path: dist/*.zip
 
+  macos:
+    name: macOS universal
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+
+      - name: Fix Checkout
+        run: |
+          git fetch --force --tags
+
+      - name: Install what the build needs
+        run: |
+          brew install automake
+
+      - name: Build
+        run: |
+          # as in tests.yml: the SDK of the toolchain that builds, and
+          # both CPUs in one binary; for macOS 11 and newer, not only the
+          # runner's version (11 is the first for Apple Silicon)
+          export SDKROOT="$(xcrun --show-sdk-path)"
+          export MACOSX_DEPLOYMENT_TARGET=11.0
+          ./autogen.sh
+          export CFLAGS="-arch x86_64 -arch arm64"
+          export LDFLAGS="-arch x86_64 -arch arm64"
+          ./configure
+          make
+          make install.bin DESTDIR=install
+
+      - name: Tarball
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          # before utun (3.4.8 and older) the edge needs a kernel extension
+          # on macOS: no tarball for those
+          if ! grep -q UTUN_CONTROL_NAME src/tuntap_osx.c; then
+            echo "::notice::$TAG has no utun support, no macOS tarball"
+            exit 0
+          fi
+          name="n3n-be-$TAG-macos-universal"
+          mkdir -p "$name" dist
+          cp -P install/usr/local/sbin/* install/usr/local/bin/n3nctl \
+            docs/edge.conf.sample docs/supernode.conf.sample "$name/"
+          git show "$GITHUB_SHA:packages/macos/README.txt" \
+            > "$name/README.txt"
+          cp -R LICENSES "$name/"
+          lipo -info "$name/n3n"
+          otool -l "$name/n3n" | grep -A3 LC_BUILD_VERSION | head -4
+          # signed ad hoc, which Apple Silicon wants of every program
+          codesign --force --sign - "$name/n3n"
+          codesign --verify --verbose "$name/n3n"
+          tar -czf "dist/$name.tar.gz" "$name"
+          tar -tzvf "dist/$name.tar.gz"
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: macos
+          path: dist/*.tar.gz
+          if-no-files-found: ignore
+
   release:
     name: Draft GitHub Release
     if: ${{ inputs.draft }}
@@ -308,6 +371,7 @@ jobs:
       - arch
       - apk
       - windows
+      - macos
     runs-on: ubuntu-latest
     permissions:
       contents: write

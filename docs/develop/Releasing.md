@@ -5,9 +5,9 @@ SPDX-FileCopyrightText: Copyright Honey Bunny QT
 
 # Releasing n3n-be
 
-How a release of n3n-be gets its packages, and what has to be settled
-before the first one.  The workflow is there, `.github/workflows/release.yml`,
-but it has not run yet: it starts only by hand, never by a pushed tag.
+How a release of n3n-be gets its packages.  The workflow,
+`.github/workflows/release.yml`, starts only by hand, never by a pushed
+tag; 3.4.8 (2026-10-15) was its first release.
 
 ## What a release is
 
@@ -20,6 +20,7 @@ From the tag, the workflow `Release` builds:
 | `n3n-be-3.4.8-1.x86_64.rpm` | Fedora | in a `fedora:latest` container |
 | `n3n-be-3.4.8-1-x86_64.pkg.tar.zst` | Arch Linux | in an `archlinux:base-devel` container, from `packages/arch/PKGBUILD` |
 | `n3n-be-android-3.4.8.apk` | Android 7.0 and newer | signed with the release key, see below |
+| `n3n-be-3.4.9-macos-universal.tar.gz` | macOS 11 and newer, Apple Silicon and Intel | on `macos-latest`, one binary for both, signed ad hoc; with the README of `packages/macos/`.  Only for tags with the edge on utun (after 3.4.8): before, the edge needed a kernel extension, and the job leaves the tarball out |
 | `n3n-be-3.4.8-windows-x86_64.zip` | Windows 10 and newer, 64 bit | on `windows-latest` as tests.yml builds and tests it, but linked statically (no `libwinpthread-1.dll` of the toolchain to bring along); `n3n.exe` alone, without the copies `n3n-edge.exe` and `n3n-supernode.exe` (`n3n.exe edge`, `n3n.exe supernode`), the sample configurations, `n3nctl`, the licences and a README (`packages/windows/README.txt`, from the workflow's commit, so that older tags get it too) |
 | `SHA256SUMS` | checking the downloads | |
 
@@ -40,6 +41,11 @@ runs as and the edge drops its privileges to, comes from a sysusers.d file
 The .deb of armhf and i386 are cross built, where dpkg-shlibdeps finds no
 libraries to look at: they do not say which version of libc6 they need.
 
+The macOS programs are not notarized (that needs a paid Apple developer
+account): downloaded with a browser they carry the quarantine attribute,
+which the README says how to take off.  The edge runs on macOS's own utun
+device (`tuntap.type = tun`), which needs no driver.
+
 The Windows programs need the TAP driver of OpenVPN (tap-windows6), which
 the zip does not bring, as before; the job fails if `n3n.exe` needs a DLL
 that is not Windows' own.  They are not signed: SmartScreen warns on the
@@ -55,7 +61,7 @@ first start.
 4. Look at the draft: the files, the notes; install a package or two.
 5. Publish it.
 
-## Before the first release
+## Settled for the first release
 
 - **The Android application ID** (settled 2026-10-15):
   `io.github.honeybunnyqt.n3nbe`, the GitHub account's own name space (a
@@ -105,5 +111,5 @@ none is set up yet:
 - **Android**: Obtainium follows the GitHub Releases as they are; the
   IzzyOnDroid repository takes the APKs from them for the F-Droid app;
   F-Droid itself builds from the source, a merge request to fdroiddata.
-- Not built yet: the OpenWrt packages and the macOS programs (tests.yml
-  builds them), and aarch64 for the .rpm and the Arch package.
+- Not built yet: the OpenWrt packages, and aarch64 for the .rpm and the
+  Arch package.
