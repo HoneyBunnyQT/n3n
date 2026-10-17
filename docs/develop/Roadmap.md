@@ -645,7 +645,9 @@ Since (2026-10-17): the edge on macOS's own utun device
 (`tuntap.type = tun`, no kernel extension), tested end to end in CI by
 `tests/macos/utun.py`; `/var/run` as the rundir off Linux (macOS had no
 management socket); `release.yml` makes a zip of the Windows programs and
-a tarball of the macOS ones.
+a tarball of the macOS ones.  Options may follow the subcommand on every
+system (`getopt_long` permutes on macOS and the BSDs too, a builtin test
+says so).
 
 Open, in rough order:
 
@@ -664,7 +666,12 @@ Open, in rough order:
 - To try, then document: DLNA/SSDP between edges (VLC on Windows, minidlna
   on Linux) - SSDP is IPv4 multicast, which `filter.allow_multicast`
   (default false) drops on both edges; on Windows also the interface
-  metric and the firewall profile of the TAP adapter.
+  metric and the firewall profile of the TAP adapter.  The option itself
+  is tested now (netns `multicast`, `multicast-half`, `multicast-tun`):
+  SSDP's group passes where both edges allow it, broadcast always; frames
+  to multicast MACs other than IPv4's and IPv6's never pass (the
+  supernodes do not flood unknown MACs) - a decision to take if something
+  needs them.
 - On real hardware: the Android app on a phone, the edge on a Mac (only
   CI's macOS runners so far) with a Linux edge across the internet, the
   ARM benchmarks, the benchmarks for the parked upstream PRs.
