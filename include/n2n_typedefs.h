@@ -136,6 +136,9 @@ typedef struct tuntap_dev {
     int fd;
     devstr_t dev_name;
 #endif
+#ifdef __APPLE__
+    bool utun;                              /* a utun device: the protocol family in 4 bytes before each packet */
+#endif
 #ifdef __linux__
     int queues;                             /* how many are open */
     int queue_fd[N2N_TUNTAP_QUEUES_MAX];    /* [0] is fd, -1 if not open */

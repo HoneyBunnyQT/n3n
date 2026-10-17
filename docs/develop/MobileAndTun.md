@@ -78,6 +78,10 @@ This is what hin2n, the Android app of n2n, does as well.
 3. Done: `tuntap.fd`, for Android and for tests.
 4. Done: IPv6 (neighbour discovery, `tuntap.address6`), netns scenarios
    `ipv6-tun-tap` and `ipv6-tun-tun`; the Android app next.
+5. Done: macOS, on its own `utun` device (`src/tuntap_osx.c`): the 4 bytes
+   of protocol family utun puts before each packet come off and on there,
+   `tun.c` stays as it is; the address and the routes by `ifconfig` and
+   `route`, as wg-quick does it.  Tested in CI by `tests/macos/utun.py`.
 
 ## Android app
 

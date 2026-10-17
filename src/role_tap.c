@@ -782,8 +782,8 @@ void edge_send_packet2net (struct n3n_runtime_data * eee,
 
 
 // The edge's IPv6 address (tuntap.address6), once the device is there and
-// with it the MAC and the IPv4 address: worked out, and on Linux put on
-// the device - not on one given as tuntap.fd, which its opener sets up,
+// with it the MAC and the IPv4 address: worked out, and on Linux and macOS
+// put on the device - not on one given as tuntap.fd, which its opener sets up,
 // as the Android app does with the same address.  -1 for an option that
 // cannot be used.
 static int edge_ipv6_setup (struct n3n_runtime_data *eee) {
@@ -800,13 +800,13 @@ static int edge_ipv6_setup (struct n3n_runtime_data *eee) {
     }
     traceEvent(TRACE_NORMAL, "IPv6 address of the device: %s/%u",
                inet_ntop(AF_INET6, eee->tap.ip6, buf, sizeof(buf)), eee->tap.ip6_len);
-#ifdef __linux__
+#if defined(__linux__) || defined(__APPLE__)
     if(!eee->conf.tap.fd && (tuntap_set_ipv6(&eee->tap.device, eee->tap.ip6, eee->tap.ip6_len) != 0)) {
         // the edge goes on without, as without the option
         return 0;
     }
 #else
-    traceEvent(TRACE_WARNING, "IPv6 address: put on the device on Linux only for now, see docs/develop/IPv6.md");
+    traceEvent(TRACE_WARNING, "IPv6 address: put on the device on Linux and macOS only for now, see docs/develop/IPv6.md");
 #endif
     eee->tap.has_ip6 = true;
     return 0;
@@ -821,10 +821,15 @@ int edge_tap_open (struct n3n_runtime_data *eee) {
     int fd;
 
     eee->tap.device.tun = eee->conf.tap.type == N3N_TUNTAP_TUN;
-#ifdef __linux__
     if(eee->conf.tap.fd) {
+#if defined(__linux__) || defined(__APPLE__)
         fd = tuntap_take_fd(&eee->tap.device, eee->conf.tap.fd, eee->conf.tap.tuntap_v4, eee->conf.tap.device_mac);
+#else
+        traceEvent(TRACE_ERROR, "tuntap.fd works on Linux and macOS only");
+        fd = -1;
+#endif
     } else {
+#ifdef __linux__
         fd = tuntap_open_queues(&eee->tap.device, edge_threads_possible(&eee->conf),
                                 eee->conf.tap.tuntap_dev_name,
                                 eee->conf.tap.tuntap_ip_mode,
@@ -832,16 +837,16 @@ int edge_tap_open (struct n3n_runtime_data *eee) {
                                 eee->conf.tap.device_mac,
                                 eee->conf.tap.mtu,
                                 eee->conf.tap.metric);
-    }
 #else
-    fd = tuntap_open(&eee->tap.device,
-                     eee->conf.tap.tuntap_dev_name,
-                     eee->conf.tap.tuntap_ip_mode,
-                     eee->conf.tap.tuntap_v4,
-                     eee->conf.tap.device_mac,
-                     eee->conf.tap.mtu,
-                     eee->conf.tap.metric);
+        fd = tuntap_open(&eee->tap.device,
+                         eee->conf.tap.tuntap_dev_name,
+                         eee->conf.tap.tuntap_ip_mode,
+                         eee->conf.tap.tuntap_v4,
+                         eee->conf.tap.device_mac,
+                         eee->conf.tap.mtu,
+                         eee->conf.tap.metric);
 #endif
+    }
     if((fd >= 0) && (edge_ipv6_setup(eee) < 0)) {
         return -1;
     }

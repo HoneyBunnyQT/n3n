@@ -21,12 +21,13 @@ ARP for its own address, and finds the MAC address of the other edges from
 what they announce of themselves, or by asking with ARP.  On the wire nothing
 changes, so edges with TUN and with TAP devices are in the same community.
 
-This is for systems that offer only TUN devices (Android, later others); on
-Linux it works too, and is what the tests use.  IPv4, and IPv6 with
+This is for systems that offer only TUN devices: Android, and macOS, whose
+own `utun` device it uses (see [Build on macOS](../build/macos.md#run-on-macos));
+on Linux it works too, and is what the tests use.  IPv4, and IPv6 with
 `tuntap.address6` (below), the edge doing neighbour discovery as it does
 ARP.  For now: no bridging
 (`filter.allow_routing` with a bridge), no `dhcp` address mode, one thread,
-Linux only.  Routes and address work as with a TAP device; there are no
+Linux and macOS.  Routes and address work as with a TAP device; there are no
 neighbour entries on a TUN device (`ip neigh`): the edge keeps its own.
 
 ## Device Name

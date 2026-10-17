@@ -54,7 +54,7 @@ with nothing to set, and two communities clash only if their hashes do
 
 - **TAP device** (Linux first): the address goes on the device; the kernel
   does neighbour discovery itself, over the community like ARP.
-- **TUN device** (Android, `tuntap.type = tun`): there is no Ethernet on the
+- **TUN device** (Android, macOS, `tuntap.type = tun`): there is no Ethernet on the
   device, so the edge does what the kernel does for a TAP device, as it
   does ARP already (`src/tun.c`):
   - an IPv6 packet from the device to a unicast address needs the MAC of

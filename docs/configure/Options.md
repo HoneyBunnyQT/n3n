@@ -473,7 +473,7 @@ By default fd, then 40 bits of a hash of the community's name, and subnet 0, as 
 
 The kind of device: tap or tun.
 
-Defaulting to tap, a TAP device that carries Ethernet frames. A TUN device carries IP packets: the edge then adds and removes the Ethernet header itself, answers ARP for its address and finds the MAC address of the others from what they announce or by ARP, so on the wire nothing changes and TUN and TAP edges share a community. For systems that offer only TUN devices (Android). IPv6 with tuntap.address6, the edge then doing neighbour discovery as it does ARP. No bridging, no dhcp address_mode, one thread. Linux only.
+Defaulting to tap, a TAP device that carries Ethernet frames. A TUN device carries IP packets: the edge then adds and removes the Ethernet header itself, answers ARP for its address and finds the MAC address of the others from what they announce or by ARP, so on the wire nothing changes and TUN and TAP edges share a community. For systems that offer only TUN devices: Android, and macOS, where it is the system's own utun device (a TAP device needs a third-party driver there). IPv6 with tuntap.address6, the edge then doing neighbour discovery as it does ARP. No bridging, no dhcp address_mode, one thread. Linux and macOS.
 
 Default: `tap`
 
@@ -509,7 +509,7 @@ Default: `0`
 
 Use a device opened already.
 
-The file descriptor of a TUN or TAP device that the program starting the edge has opened and set up - address, MTU, routes - such as the one Android's VpnService gives an app. The edge then neither opens nor configures a device, and takes tuntap.type, tuntap.address and tuntap.macaddr only for itself. Linux and Android only.
+The file descriptor of a TUN or TAP device that the program starting the edge has opened and set up - address, MTU, routes - such as the one Android's VpnService gives an app. The edge then neither opens nor configures a device, and takes tuntap.type, tuntap.address and tuntap.macaddr only for itself. Linux, Android and macOS.
 
 Default: `0`
 
@@ -525,5 +525,5 @@ Default: `1290`
 
 TAP device name.
 
-On Linux, this creates a new TAP device with this name. And defaults to the sessionname. On Windows, this selects an already installed TAP adaptor that matches this name. On other operating systems, it is ignored.
+On Linux, this creates a new TAP device with this name. And defaults to the sessionname. On Windows, this selects an already installed TAP adaptor that matches this name. On macOS with tuntap.type = tun, utunN asks for that utun device, any other name for the next free one. On other operating systems, it is ignored.
 

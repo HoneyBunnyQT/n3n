@@ -308,8 +308,8 @@ int edge_verify_conf (const n2n_edge_conf_t *conf) {
         return -4;
 
     if(conf->tap.type == N3N_TUNTAP_TUN) {
-#ifndef __linux__
-        traceEvent(TRACE_ERROR, "tuntap.type = tun works on Linux only so far");
+#if !defined(__linux__) && !defined(__APPLE__)
+        traceEvent(TRACE_ERROR, "tuntap.type = tun works on Linux and macOS only so far");
         return -6;
 #endif
         if(conf->tap.tuntap_ip_mode == TUNTAP_IP_MODE_DHCP) {

@@ -701,10 +701,12 @@ static struct n3n_conf_option section_tuntap[] = {
                 "for its address and finds the MAC address of the others "
                 "from what they announce or by ARP, so on the wire nothing "
                 "changes and TUN and TAP edges share a community.  For "
-                "systems that offer only TUN devices (Android).  IPv6 with "
+                "systems that offer only TUN devices: Android, and macOS, "
+                "where it is the system's own utun device (a TAP device "
+                "needs a third-party driver there).  IPv6 with "
                 "tuntap.address6, the edge then doing neighbour discovery "
                 "as it does ARP.  No bridging, no dhcp address_mode, one "
-                "thread.  Linux only.",
+                "thread.  Linux and macOS.",
     },
     {
         .name = "gateway",
@@ -757,7 +759,7 @@ static struct n3n_conf_option section_tuntap[] = {
                 "routes - such as the one Android's VpnService gives an "
                 "app.  The edge then neither opens nor configures a device, "
                 "and takes tuntap.type, tuntap.address and tuntap.macaddr "
-                "only for itself.  Linux and Android only.",
+                "only for itself.  Linux, Android and macOS.",
     },
     {
         .name = "mtu",
@@ -775,7 +777,9 @@ static struct n3n_conf_option section_tuntap[] = {
         .help = "On Linux, this creates a new TAP device with this name. And "
                 "defaults to the sessionname. "
                 "On Windows, this selects an already installed TAP adaptor "
-                "that matches this name.  On other operating systems, it is "
+                "that matches this name.  On macOS with tuntap.type = tun, "
+                "utunN asks for that utun device, any other name for the "
+                "next free one.  On other operating systems, it is "
                 "ignored.",
     },
     {.name = NULL},
