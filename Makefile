@@ -408,6 +408,7 @@ lint.python:
 		scripts/n3nctl \
 		tests/netns/run.py \
 		tests/netns/n3ntest/ \
+		tests/macos/utun.py \
 		scripts/gen_options_md.py \
 		scripts/gen_doc_images.py \
 

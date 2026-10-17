@@ -203,6 +203,10 @@ jobs:
           # make cover COVERAGEDIR=coverage/${{ matrix.os }}
         shell: bash
 
+      # after the coverage: its files would belong to root
+      - name: The edge on a utun device, end to end
+        run: sudo python3 tests/macos/utun.py
+
   test_windows:
     name: Test Windows
     runs-on: ${{ matrix.os }}
