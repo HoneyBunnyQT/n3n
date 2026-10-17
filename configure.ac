@@ -43,10 +43,21 @@ case "$host_os" in
         ;;
 esac
 
+# macOS and the BSDs have no /run (and on macOS it cannot be made): their
+# /var/run, where n3nctl looks too
+case "$host_os" in
+    linux*)
+        default_rundir="/run"
+        ;;
+    *)
+        default_rundir="/var/run"
+        ;;
+esac
+
 AC_ARG_WITH([rundir],
-    AS_HELP_STRING([--with-rundir=DIR], [location of the system /run dir]),
+    AS_HELP_STRING([--with-rundir=DIR], [location of the system /run dir (/run on Linux, else /var/run)]),
     [rundir=$withval],
-    [rundir="/run"]
+    [rundir="$default_rundir"]
 )
 
 AC_ARG_WITH([systemddir],
