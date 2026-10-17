@@ -47,6 +47,37 @@ class Mgmt:
         return os.path.exists(self.path)
 
     def call(self, method, params=None, timeout=3.0):
+        """The result of a method; a list too long for one reply (error
+        507, overflow, with the number of rows that fit) fetched page by
+        page, as n3nctl does"""
+        reply = self._call(method, params, timeout)
+        error = reply.get("error")
+        if not error or error.get("code") != 507 or params is not None:
+            return self._result(method, reply)
+        result = []
+        limit = max(1, error.get("data", {}).get("count", 1) - 1)
+        while True:
+            reply = self._call(method, {"offset": len(result),
+                                        "limit": limit}, timeout)
+            error = reply.get("error")
+            if error and error.get("code") == 507:
+                count = error.get("data", {}).get("count", 0)
+                if count < 1 or count >= limit:
+                    raise MgmtError("{}: {}".format(method, error))
+                limit = count
+                continue
+            page = self._result(method, reply)
+            result.extend(page)
+            if len(page) < limit:
+                return result
+
+    def _result(self, method, reply):
+        if "error" in reply:
+            raise MgmtError("{}: {}".format(method, reply["error"]))
+        return reply["result"]
+
+    def _call(self, method, params, timeout):
+        """One request, its reply as it is"""
         self.id += 1
         body = json.dumps({
             "jsonrpc": "2.0",
@@ -65,12 +96,9 @@ class Mgmt:
         finally:
             conn.close()
         try:
-            reply = json.loads(data.decode("utf8", errors="replace"))
+            return json.loads(data.decode("utf8", errors="replace"))
         except ValueError:
             raise MgmtError("{}: bad json: {!r}".format(method, data[:200]))
-        if "error" in reply:
-            raise MgmtError("{}: {}".format(method, reply["error"]))
-        return reply["result"]
 
     def try_call(self, method, params=None):
         try:
