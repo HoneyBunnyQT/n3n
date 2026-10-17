@@ -28,6 +28,7 @@ cat >config.mak <<EOF
 CONFIG_HOST=x86_64-w64-mingw32
 CONFIG_HOST_OS=mingw32
 CONFIG_PREFIX=/usr/local
+EXE=.exe
 
 CC=gcc
 AR=ar
