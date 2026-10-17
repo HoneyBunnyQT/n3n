@@ -668,10 +668,12 @@ Open, in rough order:
   (default false) drops on both edges; on Windows also the interface
   metric and the firewall profile of the TAP adapter.  The option itself
   is tested now (netns `multicast`, `multicast-half`, `multicast-tun`):
-  SSDP's group passes where both edges allow it, broadcast always; frames
-  to multicast MACs other than IPv4's and IPv6's never pass (the
-  supernodes do not flood unknown MACs) - a decision to take if something
-  needs them.
+  SSDP's group passes where both edges allow it, broadcast always.  Since
+  (2026-10-17, decided: as a switch does) the option covers every
+  multicast MAC, also those of protocols without IP (NetBEUI, AppleTalk,
+  PROFINET's DCP - n42n/n3n#119), on edge and supernode; the IEEE 802.1
+  link-local ones (spanning tree, LACP, 802.1X, LLDP, pause) never pass,
+  dropped and counted by the edge.
 - On real hardware: the Android app on a phone, the edge on a Mac (only
   CI's macOS runners so far) with a Linux edge across the internet, the
   ARM benchmarks, the benchmarks for the parked upstream PRs.
