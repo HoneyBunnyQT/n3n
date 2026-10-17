@@ -1930,7 +1930,9 @@ class Run:
                         ("ff:ff:ff:ff:ff:ff", True),
                         ("01:80:c2:00:00:0e", False))
                 for mac, expect in macs:
-                    got = self._mcast_case(src, dst, "l2-" + mac[:8],
+                    # no colons in file names: the logs are uploaded
+                    got = self._mcast_case(src, dst,
+                                           "l2-" + mac.replace(":", ""),
                                            ["l2", "--to", mac],
                                            ["l2"]).get(mac, 0)
                     self.check("mcast:{}:l2 {}".format(way, mac),
