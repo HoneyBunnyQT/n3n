@@ -141,6 +141,10 @@ supernode=tcp://sn.example.org:443
 supernode=sn.example.org:7654
 bind=udp://[::]:7654 tcp://[::]:443 tcp://0.0.0.0:443 [::]:7655
 
+### test: load_dump tests/conf/communities.conf -O ... -c ... (options after)
+key=after
+name=after
+
 ### test: ./apps/n3n-edge tools keygen logan 007
 * logan nHWum+r42k1qDXdIeH-WFKeylK5UyLStRzxofRNAgpG
 

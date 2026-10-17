@@ -46,5 +46,14 @@ echo "### test: load_dump tests/conf/transports.conf (bind, supernode)"
     | grep -E '^(bind|supernode)='
 echo
 
+# Options after the subcommand count as those before it: getopt_long
+# permutes on every system n3n builds for (glibc, macOS and the BSDs, musl,
+# bionic, and the GNU getopt the Windows build brings along)
+echo "### test: load_dump tests/conf/communities.conf -O ... -c ... (options after)"
+"$BINDIR"/apps/n3n-edge debug config load_dump "$TOPDIR"/tests/conf/communities.conf \
+    -O community.key=after -c after \
+    | sed -n -e '/^\[community\]/,/^$/p' | grep -E '^(name|key)='
+echo
+
 docmd "$BINDIR"/apps/n3n-edge tools keygen logan 007
 docmd "$BINDIR"/apps/n3n-edge tools keygen secretFed

@@ -24,7 +24,7 @@ settings.  It needs root, as any tunnel does:
     sudo ./n3n-edge -O tuntap.type=tun -c mynet -k secret \
         -l sn.example.org:7654 -a 10.0.0.5/24 start
 
-(the options before "start"), or with a config file (from edge.conf.sample, "type = tun" in its
+or with a config file (from edge.conf.sample, "type = tun" in its
 [tuntap] section): sudo ./n3n-edge start edge.conf.  The edge takes the
 next free utun device, puts the address on it and routes the community's
 subnet into it.  The default, tuntap.type = tap, needs a third-party

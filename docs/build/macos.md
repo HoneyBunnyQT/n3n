@@ -27,8 +27,7 @@ sudo apps/n3n-edge -O tuntap.type=tun -c mynet -k secret \
     -l sn.example.org:7654 -a 10.0.0.5/24 start
 ```
 
-(the options before `start`: macOS's getopt stops at the first word that
-is not one), or `type = tun` in the `[tuntap]` section of the config file.  The edge
+or `type = tun` in the `[tuntap]` section of the config file.  The edge
 takes the next free `utunN` (or the one `tuntap.name = utunN` names), puts
 the address on it, adds the route of the community's subnet into it, and
 the IPv6 address and prefix with `tuntap.address6`; all of it goes away
