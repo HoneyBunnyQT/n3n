@@ -14,3 +14,15 @@ multicast: 33:33 and the last 32 bits: ok
 outside the prefix, no gateway: nothing out: ok
 a solicitation for the edge: not for the device: ok
 an IPv6 packet for the edge: to the device: ok
+destination MAC: broadcast, to all: ok
+destination MAC: IPv4 multicast (SSDP), to all: ok
+destination MAC: IPv6 multicast, to all: ok
+destination MAC: NetBEUI's NetBIOS, to all: ok
+destination MAC: PROFINET DCP, to all: ok
+destination MAC: AppleTalk, to all: ok
+destination MAC: spanning tree, never: ok
+destination MAC: pause frames, never: ok
+destination MAC: LLDP, never: ok
+destination MAC: the last link-local one, never: ok
+destination MAC: the first after them, to all: ok
+destination MAC: a peer's, unicast: ok

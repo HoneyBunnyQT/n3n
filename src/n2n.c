@@ -497,14 +497,24 @@ char * macaddr_str (macstr_t buf,
 /* ************************************************ */
 
 
-/* http://www.faqs.org/rfcs/rfc908.html */
+// The IEEE 802.1 link-local addresses, 01:80:c2:00:00:00 to 0f: spanning
+// tree, LACP, 802.1X, LLDP, pause frames - for the link they are sent on
+// only, which no bridge forwards (802.1D, 802.1Q), and neither does n3n
+uint8_t is_link_local_mac (const n2n_mac_t mac) {
+
+    static const uint8_t prefix[5] = { 0x01, 0x80, 0xc2, 0x00, 0x00 };
+
+    return (memcmp(mac, prefix, sizeof(prefix)) == 0) && (mac[5] <= 0x0f);
+}
+
+
+// Broadcast, or multicast of any kind - the group bit of the address (RFC
+// 7042): IPv4's 01:00:5e:..., IPv6's 33:33:..., and those of protocols
+// without IP, as NetBEUI's or PROFINET's discovery - but the link-local
+// ones.  To every edge of the community, through the supernode.
 uint8_t is_multi_broadcast (const n2n_mac_t dest_mac) {
 
-    int is_broadcast = (memcmp(broadcast_mac, dest_mac, N2N_MAC_SIZE) == 0);
-    int is_multicast = (memcmp(multicast_mac, dest_mac, 3) == 0) && !(dest_mac[3] >> 7);
-    int is_ipv6_multicast = (memcmp(ipv6_multicast_mac, dest_mac, 2) == 0);
-
-    return is_broadcast || is_multicast || is_ipv6_multicast;
+    return (dest_mac[0] & 0x01) && !is_link_local_mac(dest_mac);
 }
 
 

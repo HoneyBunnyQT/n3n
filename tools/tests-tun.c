@@ -231,5 +231,38 @@ int main (int argc, char *argv[]) {
     tun_from_frame(&eee, buf, n, write_sink);
     check("an IPv6 packet for the edge: to the device", written == 1);
 
+    // the kinds of destination MAC (n2n.c), for the frames a TUN edge
+    // builds and those of TAP edges alike: to every edge of the community
+    // (broadcast and multicast), or to none (IEEE 802.1 link-local)
+    {
+        static const struct {
+            const char *what;
+            uint8_t mac[6];
+            int to_all;
+            int link_local;
+        } kinds[] = {
+            {"broadcast", {0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, 1, 0},
+            {"IPv4 multicast (SSDP)", {0x01, 0x00, 0x5e, 0x7f, 0xff, 0xfa}, 1, 0},
+            {"IPv6 multicast", {0x33, 0x33, 0x00, 0x00, 0x00, 0x0c}, 1, 0},
+            {"NetBEUI's NetBIOS", {0x03, 0x00, 0x00, 0x00, 0x00, 0x01}, 1, 0},
+            {"PROFINET DCP", {0x01, 0x0e, 0xcf, 0x00, 0x00, 0x00}, 1, 0},
+            {"AppleTalk", {0x09, 0x00, 0x07, 0xff, 0xff, 0xff}, 1, 0},
+            {"spanning tree", {0x01, 0x80, 0xc2, 0x00, 0x00, 0x00}, 0, 1},
+            {"pause frames", {0x01, 0x80, 0xc2, 0x00, 0x00, 0x01}, 0, 1},
+            {"LLDP", {0x01, 0x80, 0xc2, 0x00, 0x00, 0x0e}, 0, 1},
+            {"the last link-local one", {0x01, 0x80, 0xc2, 0x00, 0x00, 0x0f}, 0, 1},
+            {"the first after them", {0x01, 0x80, 0xc2, 0x00, 0x00, 0x10}, 1, 0},
+            {"a peer's", {0x02, 0x00, 0x00, 0x99, 0x00, 0x02}, 0, 0},
+        };
+        char what[80];
+
+        for(size_t i = 0; i < sizeof(kinds) / sizeof(kinds[0]); i++) {
+            snprintf(what, sizeof(what), "destination MAC: %s, %s", kinds[i].what,
+                     kinds[i].to_all ? "to all" : kinds[i].link_local ? "never" : "unicast");
+            check(what, (!!is_multi_broadcast(kinds[i].mac) == kinds[i].to_all)
+                  && (!!is_link_local_mac(kinds[i].mac) == kinds[i].link_local));
+        }
+    }
+
     return failed;
 }

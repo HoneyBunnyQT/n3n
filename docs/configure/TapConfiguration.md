@@ -195,12 +195,36 @@ using the `filter.allow_multicast=true` config option, on each edge that is
 to send or to receive them: each drops them both ways otherwise, and counts
 them (`multicast_drop` in `n3nctl get_packetstats`).
 
-The option covers IPv4 and IPv6 multicast, that is frames to their
-multicast MACs (`01:00:5e:...` and `33:33:...`).  Broadcast always passes.
-Frames to other multicast MACs (such as `01:80:c2:...` of LLDP and the
-spanning tree protocol) never get through, whatever the option: the edge
-takes them for the MAC of a peer it does not know, and the supernodes do
-not pass those on.
+With the option, n3n carries multicast as a switch does: a frame to any
+multicast MAC goes to every edge of the community.  Without it, all of
+them stay where they are.  Broadcast (`ff:ff:ff:ff:ff:ff`) always passes.
+
+| destination MAC | for | `allow_multicast` |
+|-----------------|-----|-------------------|
+| `ff:ff:ff:ff:ff:ff` | broadcast: ARP, DHCP, IPX, NetBIOS over IP, Wake-on-LAN, games looking for each other | always passes |
+| `01:00:5e:...` | IPv4 multicast: SSDP (DLNA, UPnP), mDNS, IGMP | passes if allowed |
+| `33:33:...` | IPv6 multicast: neighbour discovery (its solicitations pass anyway once the edge has an IPv6 address, see above), mDNS, SSDP | passes if allowed |
+| other multicast MACs | protocols without IP: NetBEUI's NetBIOS (`03:00:00:00:00:01`) of old Windows and DOS programs, AppleTalk (`09:00:07:...`), PROFINET's discovery DCP (`01:0e:cf:...`), Cisco's CDP and others | passes if allowed |
+| `01:80:c2:00:00:00` to `0f` | IEEE 802.1 link-local: spanning tree, LACP, 802.1X, LLDP, pause frames | never passes |
+
+The last row never passes, whatever the option: these frames are about
+the link they are sent on, and no bridge forwards them (IEEE 802.1D and
+802.1Q).  Over a VPN they would do harm: pause frames from one site would
+throttle a link at another, spanning tree would see the far end of the
+tunnel as part of its own segment, 802.1X would try to authenticate across
+it, and LLDP would show devices a neighbour at the far end of the tunnel
+(and tools such as TIA Portal a topology that is not there).  The edge
+drops them both ways and counts them in `multicast_drop`.
+
+Multicast goes through the supernode to every edge of the community, as
+broadcast does, and each edge's option decides about it on the way out
+and on the way in.  A supernode of n3n-be 3.4.8 or older, of upstream n3n
+or of n2n passes on only the IPv4 and IPv6 ones: through it, frames to
+other multicast MACs stay lost; and such an edge takes them in whatever
+its option says.  With a bridge (`filter.allow_routing`, see
+[Bridging](../advanced/Bridging.md)) they reach the devices behind it, as
+a PLC's discovery needs.  With a TUN device (`tuntap.type = tun`) there is
+IP only, so IPv4 and IPv6 multicast.
 
 ## Edge Description
 

@@ -25,7 +25,13 @@ SPDX-FileCopyrightText: Copyright Hamish Coleman
 
 ## Broadcasts
 
-... note on broadcast domain
+The community is one broadcast domain: a broadcast from a device behind one
+edge's bridge reaches every edge, and the devices behind their bridges.
+Multicast does the same where the edges allow it
+(`filter.allow_multicast`), also that of protocols without IP, such as the
+discovery of PROFINET devices (DCP); the IEEE 802.1 link-local frames
+(spanning tree, LLDP and the like) never pass, as through any bridge.  See
+[Multicast](../configure/TapConfiguration.md#multicast).
 
 ## Compile Time Option
 

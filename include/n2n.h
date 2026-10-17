@@ -120,6 +120,7 @@ void tuntap_get_address (struct tuntap_dev *tuntap);
 /* Utils */
 uint32_t bitlen2mask (uint8_t bitlen);
 uint8_t is_multi_broadcast (const n2n_mac_t dest_mac);
+uint8_t is_link_local_mac (const n2n_mac_t mac);
 void print_n3n_version ();
 int is_empty_ip_address (const n3n_sock_t * sock);
 int memxor (uint8_t *destination, const uint8_t *source, size_t len);

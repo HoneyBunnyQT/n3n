@@ -56,55 +56,29 @@
 #endif
 
 
-/** Destination 01:00:5E:00:00:00 - 01:00:5E:7F:FF:FF is multicast ethernet.
- */
-static int is_ethMulticast (const void * buf, size_t bufsize) {
+// Multicast, which filter.allow_multicast decides on: any group address
+// (see is_multi_broadcast) but broadcast, which always passes
+static bool is_multicast_frame (const uint8_t *frame, size_t len) {
 
-    int retval = 0;
-
-    /* Match 01:00:5E:00:00:00 - 01:00:5E:7F:FF:FF */
-    if(bufsize >= sizeof(ether_hdr_t)) {
-        /* copy to aligned memory */
-        ether_hdr_t eh;
-        memcpy(&eh, buf, sizeof(ether_hdr_t));
-
-        if((0x01 == eh.dhost[0]) &&
-           (0x00 == eh.dhost[1]) &&
-           (0x5E == eh.dhost[2]) &&
-           (0 == (0x80 & eh.dhost[3])))
-            retval = 1; /* This is an ethernet multicast packet [RFC1112]. */
-    }
-
-    return retval;
+    return (len >= sizeof(ether_hdr_t)) && is_multi_broadcast(frame)
+           && (memcmp(frame, broadcast_mac, N2N_MAC_SIZE) != 0);
 }
 
 
-/** Destination MAC 33:33:0:00:00:00 - 33:33:FF:FF:FF:FF is reserved for IPv6
- *    neighbour discovery.
- */
+// A frame to a link-local address (see is_link_local_mac), which the edge
+// drops both ways, whatever filter.allow_multicast says
+static bool is_link_local_frame (const uint8_t *frame, size_t len) {
+
+    return (len >= sizeof(ether_hdr_t)) && is_link_local_mac(frame);
+}
+
+
 // A neighbour solicitation's multicast address (33:33:ff and 24 bits of
 // the address asked for, RFC 4861): IPv6's ARP, which passes without
 // filter.allow_multicast as ARP does, once the edge has an IPv6 address
 static bool is_ip6_solicitation (const struct n3n_runtime_data *eee, const uint8_t *frame, size_t len) {
 
     return eee->tap.has_ip6 && (len >= 14) && (frame[0] == 0x33) && (frame[1] == 0x33) && (frame[2] == 0xff);
-}
-
-static int is_ip6_discovery (const void * buf, size_t bufsize) {
-
-    int retval = 0;
-
-    if(bufsize >= sizeof(ether_hdr_t)) {
-        /* copy to aligned memory */
-        ether_hdr_t eh;
-
-        memcpy(&eh, buf, sizeof(ether_hdr_t));
-
-        if((0x33 == eh.dhost[0]) && (0x33 == eh.dhost[1]))
-            retval = 1; /* This is an IPv6 multicast packet [RFC2464]. */
-    }
-
-    return retval;
 }
 
 
@@ -328,7 +302,13 @@ static int handle_PACKET (struct n3n_runtime_data * eee,
 
     eh = (ether_hdr_t*)eth_payload;
 
-    is_multicast = (is_ip6_discovery(eth_payload, eth_size) || is_ethMulticast(eth_payload, eth_size));
+    if(is_link_local_frame(eth_payload, eth_size)) {
+        traceEvent(TRACE_INFO, "dropping RX link-local frame");
+        STATS_INC(eee, rx_multicast_drop);
+        return(-1);
+    }
+
+    is_multicast = is_multicast_frame(eth_payload, eth_size);
 
     if(!eee->conf.tap.allow_multicast && is_multicast && !is_ip6_solicitation(eee, eth_payload, eth_size)) {
         traceEvent(TRACE_INFO, "dropping RX multicast");
@@ -925,9 +905,14 @@ static int edge_tap_take (struct n3n_runtime_data * eee,
     traceEvent(TRACE_DEBUG, "Rx TAP packet (%4d) for %s",
                (signed int)len, macaddr_str(mac_buf, mac));
 
+    if(is_link_local_frame(eth_pkt, len)) {
+        traceEvent(TRACE_INFO, "dropping Tx link-local frame");
+        STATS_INC(eee, tx_multicast_drop);
+        return 1;
+    }
+
     if(!eee->conf.tap.allow_multicast &&
-       (is_ip6_discovery(eth_pkt, len) ||
-        is_ethMulticast(eth_pkt, len)) &&
+       is_multicast_frame(eth_pkt, len) &&
        !is_ip6_solicitation(eee, eth_pkt, len)) {
         traceEvent(TRACE_INFO, "dropping Tx multicast");
         STATS_INC(eee, tx_multicast_drop);
