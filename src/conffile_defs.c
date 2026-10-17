@@ -398,11 +398,15 @@ static struct n3n_conf_option section_filter[] = {
         .type = n3n_conf_bool,
         .offset = offsetof(n2n_edge_conf_t, tap.allow_multicast),
         .desc = "Optionally enable multicast traffic",
-        .help = "Amongst other things, multicast is used for IPv6 neighbour "
-                "discovery.  If not allowed, then these multicast packets "
-                "are discarded - but for neighbour solicitations once the "
-                "edge has an IPv6 address of its own (tuntap.address6), "
-                "which pass as ARP does.",
+        .help = "IPv4 and IPv6 multicast: frames to their multicast MACs "
+                "(01:00:5e:..., 33:33:...), which service discovery uses "
+                "(SSDP, mDNS), and IPv6 neighbour discovery among other "
+                "things.  If not allowed, then these multicast packets "
+                "are discarded, both those going out and those coming in, "
+                "and counted (multicast_drop) - but for neighbour "
+                "solicitations once the edge has an IPv6 address of its "
+                "own (tuntap.address6), which pass as ARP does.  Broadcast "
+                "always passes; frames to other multicast MACs never do.",
     },
     {
         .name = "allow_routing",

@@ -191,7 +191,16 @@ virtual ones.
 ## Multicast
 
 n3n does not transmit multicast packets by default. It can be enabled by
-using the `filter.allow_multicast=true` config option.
+using the `filter.allow_multicast=true` config option, on each edge that is
+to send or to receive them: each drops them both ways otherwise, and counts
+them (`multicast_drop` in `n3nctl get_packetstats`).
+
+The option covers IPv4 and IPv6 multicast, that is frames to their
+multicast MACs (`01:00:5e:...` and `33:33:...`).  Broadcast always passes.
+Frames to other multicast MACs (such as `01:80:c2:...` of LLDP and the
+spanning tree protocol) never get through, whatever the option: the edge
+takes them for the MAC of a peer it does not know, and the supernodes do
+not pass those on.
 
 ## Edge Description
 
